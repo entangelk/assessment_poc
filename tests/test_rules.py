@@ -251,7 +251,11 @@ def test_ai_judgement_mode_skips_substring_check() -> None:
 
 
 def _make_snapshot(
-    spec_text: str = "line one\nline two\nline three\n",
+    spec_text: str = (
+        "Implement refund handling for cancelled orders.\n"
+        "Provide an audit log for every refund decision.\n"
+        "third line.\n"
+    ),
     rubric_text: str = "rline one\nrline two\nrline three\n",
     *,
     tamper_hash: str | None = None,
@@ -369,15 +373,198 @@ def test_evidence_source_ref_inside_spec_span_is_not_flagged() -> None:
 
 
 # ---------------------------------------------------------------------------
-# severity contract
+# snapshot text grounding (Defect 1)
 # ---------------------------------------------------------------------------
 
 
-def test_all_rule_zero_diagnostics_are_high_severity() -> None:
+def test_spec_text_not_in_snapshot_is_caught() -> None:
+    snapshot = _make_snapshot()
+    _attach_exists(snapshot, exists=True)
     spec = _baseline_spec()
-    spec["spec_items"].append(spec["spec_items"][0])  # duplicate
-    diagnostics = run_rule_zero(spec, _baseline_rubric(), _baseline_traces(), None)
-    assert diagnostics, "expected at least one diagnostic"
-    assert all(d.severity == "high" for d in diagnostics)
+    spec["spec_items"][0]["text"] = "FABRICATED requirement that is not in source."
+    diagnostics = run_rule_zero(spec, _baseline_rubric(), _baseline_traces(), snapshot)
+    assert "spec_text_not_in_snapshot_span" in _codes(diagnostics)
+
+
+def test_spec_text_matching_snapshot_is_not_flagged() -> None:
+    snapshot = _make_snapshot()
+    _attach_exists(snapshot, exists=True)
+    diagnostics = run_rule_zero(
+        _baseline_spec(), _baseline_rubric(), _baseline_traces(), snapshot
+    )
+    assert "spec_text_not_in_snapshot_span" not in _codes(diagnostics)
+
+
+def test_spec_quote_not_in_snapshot_is_caught() -> None:
+    snapshot = _make_snapshot()
+    _attach_exists(snapshot, exists=True)
+    spec = _baseline_spec()
+    spec["spec_items"][0]["source_ref"]["quote"] = "FABRICATED quote not in span."
+    diagnostics = run_rule_zero(spec, _baseline_rubric(), _baseline_traces(), snapshot)
+    assert "spec_quote_not_in_snapshot_span" in _codes(diagnostics)
+
+
+def test_spec_quote_in_snapshot_is_not_flagged() -> None:
+    snapshot = _make_snapshot()
+    _attach_exists(snapshot, exists=True)
+    spec = _baseline_spec()
+    spec["spec_items"][0]["source_ref"]["quote"] = "refund handling for cancelled"
+    diagnostics = run_rule_zero(spec, _baseline_rubric(), _baseline_traces(), snapshot)
+    assert "spec_quote_not_in_snapshot_span" not in _codes(diagnostics)
+
+
+def test_evidence_quote_not_in_snapshot_span_is_caught() -> None:
+    snapshot = _make_snapshot()
+    _attach_exists(snapshot, exists=True)
+    traces = _baseline_traces()
+    quote = traces["trace_links"][0]["evidence_quotes"][0]
+    quote["source_ref"] = {
+        "document_id": "DOC_SPEC",
+        "start_line": 1,
+        "end_line": 1,
+    }
+    quote["quote"] = "FABRICATED text not in line 1."
+    # Switch mode so the substring-vs-spec-text rule does not also fire.
+    quote["verification_mode"] = "ai_judgement"
+    diagnostics = run_rule_zero(_baseline_spec(), _baseline_rubric(), traces, snapshot)
+    assert "evidence_quote_not_in_snapshot_span" in _codes(diagnostics)
+
+
+def test_evidence_quote_in_snapshot_span_is_not_flagged() -> None:
+    snapshot = _make_snapshot()
+    _attach_exists(snapshot, exists=True)
+    traces = _baseline_traces()
+    traces["trace_links"][0]["evidence_quotes"][0]["source_ref"] = {
+        "document_id": "DOC_SPEC",
+        "start_line": 1,
+        "end_line": 1,
+    }
+    diagnostics = run_rule_zero(_baseline_spec(), _baseline_rubric(), traces, snapshot)
+    assert "evidence_quote_not_in_snapshot_span" not in _codes(diagnostics)
+
+
+# ---------------------------------------------------------------------------
+# evidence completeness for N:M trace links (Defect 2)
+# ---------------------------------------------------------------------------
+
+
+def test_evidence_quote_missing_for_spec_id_is_caught() -> None:
+    traces = _baseline_traces()
+    # N:M link: spec_ids has S1 and S2, evidence only covers S1.
+    traces["trace_links"][0]["spec_ids"] = ["S1", "S2"]
+    diagnostics = run_rule_zero(_baseline_spec(), _baseline_rubric(), traces, None)
+    matching = [d for d in diagnostics if d.code == "evidence_quote_missing_for_spec_id"]
+    assert matching, "expected at least one missing-evidence diagnostic"
+    assert any(d.location.get("spec_id") == "S2" for d in matching)
+
+
+def test_complete_evidence_coverage_is_not_flagged() -> None:
+    diagnostics = run_rule_zero(
+        _baseline_spec(), _baseline_rubric(), _baseline_traces(), None
+    )
+    assert "evidence_quote_missing_for_spec_id" not in _codes(diagnostics)
+
+
+def test_dangling_spec_id_is_not_double_reported_as_missing_evidence() -> None:
+    """A spec_id that does not exist in spec_items should surface only as
+    `dangling_spec_reference`; the completeness check skips it to avoid
+    duplicate noise. (over-strict guard)
+    """
+    traces = _baseline_traces()
+    traces["trace_links"][0]["spec_ids"] = ["S1", "S999"]
+    diagnostics = run_rule_zero(_baseline_spec(), _baseline_rubric(), traces, None)
+    assert "dangling_spec_reference" in _codes(diagnostics)
+    s999_missing = [
+        d
+        for d in diagnostics
+        if d.code == "evidence_quote_missing_for_spec_id"
+        and d.location.get("spec_id") == "S999"
+    ]
+    assert s999_missing == []
+
+
+# ---------------------------------------------------------------------------
+# severity contract — every Rule 0 trigger surfaces as high
+# ---------------------------------------------------------------------------
+
+
+def _trigger(spec, rubric, traces, code: str) -> None:
+    """Mutate the baseline so Rule 0 fires the given diagnostic code."""
+    if code == "duplicate_spec_id":
+        spec["spec_items"].append(copy.deepcopy(spec["spec_items"][0]))
+    elif code == "duplicate_rubric_id":
+        rubric["rubric_items"].append(copy.deepcopy(rubric["rubric_items"][0]))
+    elif code == "dangling_rubric_reference":
+        traces["trace_links"][0]["rubric_id"] = "R999"
+    elif code == "dangling_spec_reference":
+        traces["trace_links"][0]["spec_ids"] = ["S999"]
+        traces["trace_links"][0]["evidence_quotes"][0]["spec_id"] = "S999"
+    elif code == "evidence_quote_spec_id_mismatch":
+        traces["trace_links"][0]["evidence_quotes"][0]["spec_id"] = "S2"
+    elif code == "evidence_quote_empty":
+        traces["trace_links"][0]["evidence_quotes"][0]["quote"] = "   "
+    elif code == "evidence_quote_missing_for_spec_id":
+        traces["trace_links"][0]["spec_ids"] = ["S1", "S2"]
+    elif code == "evidence_quote_token_sequence_mismatch":
+        traces["trace_links"][0]["evidence_quotes"][0]["quote"] = "no match anywhere."
+    else:  # pragma: no cover - guard against typo
+        raise AssertionError(f"unknown trigger code: {code}")
+
+
+@pytest.mark.parametrize(
+    "code",
+    [
+        "duplicate_spec_id",
+        "duplicate_rubric_id",
+        "dangling_rubric_reference",
+        "dangling_spec_reference",
+        "evidence_quote_spec_id_mismatch",
+        "evidence_quote_empty",
+        "evidence_quote_missing_for_spec_id",
+        "evidence_quote_token_sequence_mismatch",
+    ],
+)
+def test_rule_zero_trigger_is_high_severity(code: str) -> None:
+    spec = _baseline_spec()
+    rubric = _baseline_rubric()
+    traces = _baseline_traces()
+    _trigger(spec, rubric, traces, code)
+    diagnostics = run_rule_zero(spec, rubric, traces, None)
+    matching = [d for d in diagnostics if d.code == code]
+    assert matching, f"expected trigger {code!r} to fire"
+    assert all(d.severity == "high" for d in matching)
+
+
+@pytest.mark.parametrize(
+    "code",
+    [
+        "spec_text_not_in_snapshot_span",
+        "spec_quote_not_in_snapshot_span",
+        "evidence_quote_not_in_snapshot_span",
+        "source_document_hash_mismatch",
+        "spec_source_ref_span_invalid",
+    ],
+)
+def test_snapshot_grounding_trigger_is_high_severity(code: str) -> None:
+    snapshot = _make_snapshot(tamper_hash="0" * 64 if code == "source_document_hash_mismatch" else None)
+    _attach_exists(snapshot, exists=True)
+    spec = _baseline_spec()
+    traces = _baseline_traces()
+    if code == "spec_text_not_in_snapshot_span":
+        spec["spec_items"][0]["text"] = "fabricated nonsense."
+    elif code == "spec_quote_not_in_snapshot_span":
+        spec["spec_items"][0]["source_ref"]["quote"] = "fabricated nonsense."
+    elif code == "evidence_quote_not_in_snapshot_span":
+        q = traces["trace_links"][0]["evidence_quotes"][0]
+        q["source_ref"] = {"document_id": "DOC_SPEC", "start_line": 1, "end_line": 1}
+        q["quote"] = "fabricated nonsense."
+        q["verification_mode"] = "ai_judgement"
+    elif code == "spec_source_ref_span_invalid":
+        spec["spec_items"][0]["source_ref"]["end_line"] = 99
+    diagnostics = run_rule_zero(spec, _baseline_rubric(), traces, snapshot)
+    matching = [d for d in diagnostics if d.code == code]
+    assert matching, f"expected trigger {code!r} to fire"
+    assert all(d.severity == "high" for d in matching)
+    # And the summary helper must also count it under "high".
     counts = severity_counts(diagnostics)
-    assert counts["high"] == counts["total"] > 0
+    assert counts["high"] >= len(matching)

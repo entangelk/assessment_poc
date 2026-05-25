@@ -3,8 +3,9 @@
 ## Current Status
 
 - Implementation plan is at v1.7 (`docs/implementation_plan_assessment_harness_poc_v1.md`) and is the canonical implementation source of truth, ahead of `docs/ideation_assessment_harness_v2.1.md`.
-- **Phase 0 iteration 1 has landed**: package scaffold, Rule 0 reference-integrity engine, `check` / `schema` / `report` CLI subcommands, eight JSON Schemas, two fixtures (`clean_assignment`, `reference_integrity`), and 31 passing tests. Docker is the canonical dev environment.
-- Phase 0 is not finished: Rule 1, Rule 2, Rule 3, three more fixtures (`orphan_scored_rubric`, `required_spec_unscored`, `optionality_mismatch`), and the `gate` command are still pending.
+- **Phase 0 iteration 1.5 landed (2026-05-25)**: the three iteration-1 audit blockers are closed. Rule 0 now grounds `spec_item.text` and `source_ref.quote` (and evidence `quote` when `source_ref` is provided) against the snapshot span text, requires evidence coverage for every `trace_links.spec_ids` member, and the CLI accepts `--output` both before and after the subcommand.
+- Phase 0 still ships only Rule 0. Rule 1, Rule 2, Rule 3, the three rule fixtures (`orphan_scored_rubric`, `required_spec_unscored`, `optionality_mismatch`), and the `gate` command are still pending.
+- Package surface: `check` / `schema` / `report` subcommands, eight JSON Schemas (with five new diagnostic codes), two fixtures (`clean_assignment`, expanded `reference_integrity`), and 67 passing tests. Docker is the canonical dev environment.
 - The PoC is an **agent-level harness**: the 1st-class caller is an AI agent (Claude Code / Codex / Gemini), not a human. Humans participate only as final reviewers.
 - The final workflow is `extract --runs N -> compact -> verify --runs N -> check -> report -> review -> gate`. Compacting is a **union-based audit operation**: every valid candidate is preserved with `support` / `identity_basis` / `variants`.
 
@@ -44,7 +45,7 @@ docker compose run --rm harness --output json check \
 - **Canonical IDs**: compacting remaps run-local IDs to canonical IDs and retains `id_map` provenance.
 - **Semantic verifier-agent**: `ai_judgement` links are checked by separate read-only multi-run verifier execution; proposals are retained in `semantic_verifications.yaml` without rewriting compacted links.
 
-## Implementation Decisions (Phase 0 iteration 1)
+## Implementation Decisions (Phase 0 iteration 1 / 1.5)
 
 - Adopted `src/` layout (`src/assessment_harness/...`); package import name unchanged from plan §7.
 - Held `agent_runners/` and `tools/` out of this iteration (Phase 2 scope per plan §3.3). No empty placeholders were created.
@@ -52,6 +53,9 @@ docker compose run --rm harness --output json check \
 - Schemas allow `additionalProperties: true` at entity objects so candidate-stage fields (`confidence`, `agent_run_id`, ...) added in Phase 2 do not break Phase 0 schemas.
 - `gate` was deliberately not stubbed: it depends on the final-review schema, which is Phase 3 work, and freezing a wrong contract risked later rework.
 - Docker is the dev environment; the `harness` and `test` services in `docker-compose.yml` bind-mount source/schemas/fixtures/tests so iterations do not require a rebuild.
+- Snapshot text grounding uses whitespace-normalized **substring** matching for `spec_item.text` (allows multi-line spans) and for all quotes. Rubric items skip `text`/`description` grounding because they are evaluator-facing summaries; only `source_ref.quote` is grounded when provided.
+- `evidence_quote_missing_for_spec_id` skips spec_ids that are already dangling, so a single broken reference does not raise two diagnostics.
+- CLI `--output` is registered on the root parser (default `text`) and on every subparser (default `argparse.SUPPRESS`), so both pre- and post-subcommand forms work and the subcommand value overrides the root value when both are given.
 
 ## Open Decisions Before Phase 2
 
@@ -64,20 +68,20 @@ docker compose run --rm harness --output json check \
 
 ## Next Tasks
 
-1. **Rule 1 — Scored Rubric Coverage** (plan §6 Rule 1). Adds `possible_orphan_scored_rubric_item` / `unconfirmed_trace_coverage` / `orphan_scored_rubric_item` findings; consumes `semantic_status` once `verify` ships. Phase 0 cut: treat `pending_verification` and any non-human-accepted status as not-final-coverage.
-2. **Rule 2 — Required Spec Coverage** (plan §6 Rule 2). `medium` provisional finding for `must` spec items without a `scored` rubric link.
-3. **Rule 3 — Optionality Consistency** (plan §6 Rule 3). `high` provisional finding when `optional`-only scored rubric weight crosses `policy.rules.optionality_mismatch.weight_threshold` (default 10).
-4. **Fixtures**: `orphan_scored_rubric`, `required_spec_unscored`, `optionality_mismatch`. Each needs under-strict / over-strict regression tests per plan §10.1.
-5. **`gate` subcommand**: implement after `final_review.schema.json` is committed. Wire exit code `1` exclusively to `gate`-confirmed blocking findings; `check` keeps emitting only provisional findings with exit `0`.
-6. **Confirm Phase 1 inputs**: real-assignment source location, NDA/anonymization scope.
-7. **Resolve Phase 2 parameters**: credentials, identity_basis, run-count policy for both agent roles, tool side-effects, raw-trace retention.
+1. **Rule 1 — Scored Rubric Coverage** (plan §6 Rule 1). Adds `possible_orphan_scored_rubric_item` / `unconfirmed_trace_coverage` / `orphan_scored_rubric_item` findings; consumes `semantic_status` once `verify` ships.
+2. **Rule 2 — Required Spec Coverage** (plan §6 Rule 2). Medium finding when a `requirement_level: must` spec has no `scored` rubric trace.
+3. **Rule 3 — Optionality Consistency** (plan §6 Rule 3). High finding when only-optional-traced `scored` rubric weight ≥ `policy.optionality_mismatch.weight_threshold`.
+4. **Fixtures**: `orphan_scored_rubric`, `required_spec_unscored`, `optionality_mismatch`, each with under-strict / over-strict regression tests aligned with §10.1.
+5. **`gate` and later phases**: implement after `final_review.schema.json`; then confirm real-assignment permissions and resolve Phase 2 runner/retention parameters.
 
 ## Verification
 
-- 31 pytest tests pass in the Docker `test` service (`docker compose run --rm test`).
-- Smoke checks executed in the `harness` service: `clean_assignment` → exit 0 / `status: success`; `reference_integrity` → exit 2 with six high diagnostics; `schema --command check` returns the stable contract; `report` renders Markdown.
+- 67 collected tests pass locally (`python3 -m pytest -q`). The test surface now covers the iteration-1 audit blockers directly: snapshot text/quote grounding, N:M evidence completeness, and both pre- and post-subcommand `--output` forms.
+- Audit probes re-run after the repair:
+  - Probe 1 (fabricated `S1` text + quote on valid span): exit `2`, diagnostics include `spec_text_not_in_snapshot_span`, `spec_quote_not_in_snapshot_span`, `evidence_quote_not_in_snapshot_span`.
+  - Probe 2 (`spec_ids: [S1, S2]` with only S1 evidence): exit `2`, `evidence_quote_missing_for_spec_id` with `spec_id=S2`, severity `high`.
+  - Probe 3 (`schema --command check --output json`): exit `0`, valid JSON envelope.
 - Repository `main` is published to `origin/main` through the SSH remote `git@github.com:entangelk/assessment_poc.git`.
-- The README.md quick start command set documents the intended CLI contract; the Phase 0 subset (`check`, `schema`, `report`) is now actually runnable.
 
 ## Project Structure
 
@@ -95,7 +99,7 @@ docker compose run --rm harness --output json check \
 - `config/policy.yaml`: default policy.
 - `fixtures/clean_assignment/`: passing fixture with source manifest, sha256, spec.md, rubric.md.
 - `fixtures/reference_integrity/`: failing fixture covering all six Rule 0 violation classes.
-- `tests/`: `test_rules.py`, `test_cli_output_contract.py`, `test_fixtures.py`, `conftest.py`.
+- `tests/`: `test_rules.py`, `test_cli_output_contract.py`, `test_fixtures.py`, `test_models.py`, `conftest.py`.
 - `docs/implementation_plan_assessment_harness_poc_v1.md`: implementation source of truth (v1.7).
 - `docs/ideation_assessment_harness_v2.1.md`: latest ideation, second in precedence.
 - `docs/ideation_assessment_harness_v2.md`, `docs/ideation_assessment_harness_v1.md`: historical references.

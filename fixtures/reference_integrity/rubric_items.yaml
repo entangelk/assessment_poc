@@ -9,6 +9,17 @@ rubric_items:
       start_line: 1
       end_line: 2
 
+  # Triggers duplicate_rubric_id alongside the other Rule 0 violations.
+  - id: R1
+    title: "Refund handling (duplicate)"
+    description: "Duplicate id; should trigger duplicate_rubric_id."
+    evaluation_role: scored
+    weight: 1
+    source_ref:
+      document_id: DOC_RUBRIC
+      start_line: 5
+      end_line: 5
+
   - id: R2
     title: "Audit log"
     description: "Scored evaluation of audit log behavior."

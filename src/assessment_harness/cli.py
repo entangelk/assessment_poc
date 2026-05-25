@@ -367,23 +367,36 @@ def _build_envelope(
 # ---------------------------------------------------------------------------
 
 
+def _add_output_arg(p: argparse.ArgumentParser, *, root: bool) -> None:
+    """Accept ``--output`` both before and after the subcommand.
+
+    Root sets the default (``text``). Subparsers use ``SUPPRESS`` so that
+    omitting ``--output`` on the subcommand leaves the root value intact, but
+    passing it on the subcommand overrides the root value. Both invocation
+    forms (``--output json check ...`` and ``check ... --output json``) work.
+    """
+    p.add_argument(
+        "--output",
+        choices=["text", "json"],
+        default="text" if root else argparse.SUPPRESS,
+        dest="output",
+        help="output format on stdout (default: text)",
+    )
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="assessment-harness",
         description="Assessment Spec Harness PoC (Phase 0).",
     )
-    parser.add_argument(
-        "--output",
-        choices=["text", "json"],
-        default="text",
-        help="output format on stdout (default: text)",
-    )
+    _add_output_arg(parser, root=True)
     sub = parser.add_subparsers(dest="subcommand", required=True)
 
     p_check = sub.add_parser(
         "check",
         help="run Rule 0 over compacted YAML and emit findings/diagnostics JSON.",
     )
+    _add_output_arg(p_check, root=False)
     p_check.add_argument("--spec-items", required=True)
     p_check.add_argument("--rubric-items", required=True)
     p_check.add_argument("--trace-links", required=True)
@@ -400,12 +413,14 @@ def _build_parser() -> argparse.ArgumentParser:
         "schema",
         help="return the stable contract for a CLI subcommand.",
     )
+    _add_output_arg(p_schema, root=False)
     p_schema.add_argument("--command", dest="command_name", required=True)
 
     p_report = sub.add_parser(
         "report",
         help="render findings + diagnostics into Markdown.",
     )
+    _add_output_arg(p_report, root=False)
     p_report.add_argument("--findings", required=True)
     p_report.add_argument("--diagnostics", required=True)
     p_report.add_argument("--out", required=True)

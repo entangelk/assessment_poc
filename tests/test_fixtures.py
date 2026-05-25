@@ -88,11 +88,13 @@ def test_reference_integrity_fixture_blocks_with_exit_two(
     codes = {d["code"] for d in diagnostics["diagnostics"]}
     expected = {
         "duplicate_spec_id",
+        "duplicate_rubric_id",
         "dangling_rubric_reference",
         "dangling_spec_reference",
         "evidence_quote_spec_id_mismatch",
         "evidence_quote_empty",
         "evidence_quote_token_sequence_mismatch",
+        "evidence_quote_missing_for_spec_id",
     }
     missing = expected - codes
     assert not missing, f"missing diagnostic codes: {missing}"

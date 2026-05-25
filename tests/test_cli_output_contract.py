@@ -112,11 +112,13 @@ def test_check_reference_integrity_returns_invalid_input(
     codes = {d["code"] for d in diag_doc["diagnostics"]}
     expected = {
         "duplicate_spec_id",
+        "duplicate_rubric_id",
         "dangling_rubric_reference",
         "dangling_spec_reference",
         "evidence_quote_spec_id_mismatch",
         "evidence_quote_empty",
         "evidence_quote_token_sequence_mismatch",
+        "evidence_quote_missing_for_spec_id",
     }
     missing = expected - codes
     assert not missing, f"missing expected diagnostics: {missing}"
@@ -232,6 +234,66 @@ def test_report_command_writes_markdown(
     text = report_path.read_text(encoding="utf-8")
     assert "Assessment Harness Report" in text
     assert "Integrity Diagnostics" in text
+
+
+def test_schema_documented_form_with_trailing_output(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The documented invocation form puts ``--output`` after the subcommand
+    (`assessment-harness schema --command check --output json`). Regression for
+    the HANDOFF-tracked CLI contract drift.
+    """
+    code, envelope, _ = _run_main(
+        ["schema", "--command", "check", "--output", "json"], capsys
+    )
+    _assert_envelope(envelope)
+    assert code == 0
+    assert envelope["command"] == "schema"
+
+
+def test_check_documented_form_with_trailing_output(
+    fixture_dir: Path,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """`check ... --output json` (subcommand-trailing form) must work too."""
+    out = tmp_path / "findings.json"
+    diag = tmp_path / "integrity_diagnostics.json"
+    argv = [
+        "check",
+        "--spec-items",
+        str(fixture_dir / "clean_assignment/spec_items.yaml"),
+        "--rubric-items",
+        str(fixture_dir / "clean_assignment/rubric_items.yaml"),
+        "--trace-links",
+        str(fixture_dir / "clean_assignment/trace_links.yaml"),
+        "--source-manifest",
+        str(fixture_dir / "clean_assignment/source_manifest.yaml"),
+        "--policy",
+        str(fixture_dir / "clean_assignment/policy.yaml"),
+        "--out",
+        str(out),
+        "--diagnostics-out",
+        str(diag),
+        "--output",
+        "json",
+    ]
+    code, envelope, _ = _run_main(argv, capsys)
+    _assert_envelope(envelope)
+    assert code == 0
+    assert envelope["status"] == "success"
+
+
+def test_subcommand_output_overrides_root_output(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Subcommand --output should override a root-level --output."""
+    code, envelope, _ = _run_main(
+        ["--output", "text", "schema", "--command", "check", "--output", "json"],
+        capsys,
+    )
+    _assert_envelope(envelope)
+    assert code == 0
 
 
 def test_stderr_is_separated_from_stdout_json(

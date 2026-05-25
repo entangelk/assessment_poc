@@ -135,8 +135,11 @@ def run_rule_zero(
                 diagnostics=diagnostics,
                 unknown_code="spec_source_ref_unknown_document",
                 span_code="spec_source_ref_span_invalid",
+                text_mismatch_code="spec_text_not_in_snapshot_span",
+                quote_mismatch_code="spec_quote_not_in_snapshot_span",
                 owner_kind="spec_item",
                 owner_id=spec.get("id"),
+                expected_text=spec.get("text"),
             )
         for rubric in rubric_items:
             _check_source_ref(
@@ -145,8 +148,11 @@ def run_rule_zero(
                 diagnostics=diagnostics,
                 unknown_code="rubric_source_ref_unknown_document",
                 span_code="rubric_source_ref_span_invalid",
+                text_mismatch_code=None,
+                quote_mismatch_code="rubric_quote_not_in_snapshot_span",
                 owner_kind="rubric_item",
                 owner_id=rubric.get("id"),
+                expected_text=None,
             )
 
     # --- trace link references and evidence quotes -----------------------
@@ -185,6 +191,37 @@ def run_rule_zero(
                             "trace_link_ref": link_ref,
                         },
                         hint=f"Add spec_item {spec_ref!r} or correct the reference.",
+                    )
+                )
+
+        # Every spec_id in spec_ids must appear as some evidence_quote.spec_id.
+        evidence_spec_ids = {
+            (quote_entry.get("spec_id"))
+            for quote_entry in (link.get("evidence_quotes") or [])
+            if quote_entry.get("spec_id")
+        }
+        for spec_ref in spec_ids:
+            if spec_ref not in spec_by_id:
+                # already reported as dangling; don't double-report.
+                continue
+            if spec_ref not in evidence_spec_ids:
+                diagnostics.append(
+                    Diagnostic(
+                        code="evidence_quote_missing_for_spec_id",
+                        severity="high",
+                        message=(
+                            f"trace_links[{link_index}].spec_ids contains "
+                            f"{spec_ref!r} but no evidence_quote covers it."
+                        ),
+                        location={
+                            "trace_link_index": link_index,
+                            "spec_id": spec_ref,
+                            "trace_link_ref": link_ref,
+                        },
+                        hint=(
+                            "Add an evidence_quote entry whose spec_id is this "
+                            "value, or drop the spec_id from spec_ids."
+                        ),
                     )
                 )
 
@@ -241,6 +278,7 @@ def run_rule_zero(
                         snapshot=snapshot,
                         diagnostics=diagnostics,
                         location=quote_loc,
+                        quote_text=quote_text,
                     )
 
             if mode == "token_sequence" and quote_text.strip():
@@ -315,8 +353,11 @@ def _check_source_ref(
     diagnostics: list[Diagnostic],
     unknown_code: str,
     span_code: str,
+    text_mismatch_code: str | None,
+    quote_mismatch_code: str | None,
     owner_kind: str,
     owner_id: str | None,
+    expected_text: str | None,
 ) -> None:
     document_id = source_ref.get("document_id")
     doc = snapshot.get(document_id) if document_id else None
@@ -387,6 +428,60 @@ def _check_source_ref(
                 hint="Adjust source_ref to a valid range or re-snapshot.",
             )
         )
+        return
+
+    # Span is valid. Compare content against snapshot when applicable.
+    span_text = doc.span_text(start_i, end_i)
+
+    if text_mismatch_code and expected_text and expected_text.strip():
+        if not _is_token_subsequence(expected_text, span_text):
+            diagnostics.append(
+                Diagnostic(
+                    code=text_mismatch_code,
+                    severity="high",
+                    message=(
+                        f"{owner_kind} {owner_id!r} text is not present in the "
+                        f"snapshot span {document_id!r}:{start_i}-{end_i}."
+                    ),
+                    location={
+                        "owner_kind": owner_kind,
+                        "owner_id": owner_id,
+                        "document_id": document_id,
+                        "start_line": start_i,
+                        "end_line": end_i,
+                    },
+                    hint=(
+                        "Make the item's text match the snapshot span "
+                        "(whitespace-normalized) or correct source_ref."
+                    ),
+                )
+            )
+
+    if quote_mismatch_code:
+        quote_text = source_ref.get("quote") or ""
+        if quote_text.strip() and not _is_token_subsequence(quote_text, span_text):
+            diagnostics.append(
+                Diagnostic(
+                    code=quote_mismatch_code,
+                    severity="high",
+                    message=(
+                        f"{owner_kind} {owner_id!r} source_ref.quote is not "
+                        f"contained in the snapshot span {document_id!r}:"
+                        f"{start_i}-{end_i}."
+                    ),
+                    location={
+                        "owner_kind": owner_kind,
+                        "owner_id": owner_id,
+                        "document_id": document_id,
+                        "start_line": start_i,
+                        "end_line": end_i,
+                    },
+                    hint=(
+                        "Make source_ref.quote a substring of the snapshot span "
+                        "(whitespace-normalized) or remove it."
+                    ),
+                )
+            )
 
 
 def _check_evidence_source_ref(
@@ -396,6 +491,7 @@ def _check_evidence_source_ref(
     snapshot: SourceSnapshot,
     diagnostics: list[Diagnostic],
     location: dict[str, Any],
+    quote_text: str,
 ) -> None:
     document_id = evidence_ref.get("document_id")
     doc = snapshot.get(document_id) if document_id else None
@@ -430,6 +526,42 @@ def _check_evidence_source_ref(
                 hint=(
                     "Set evidence source_ref to the same document and a span "
                     "inside the spec_item span."
+                ),
+            )
+        )
+        return
+
+    if not doc.path.exists() or not doc.hash_matches:
+        return
+    start = evidence_ref.get("start_line")
+    end = evidence_ref.get("end_line")
+    try:
+        start_i, end_i = int(start), int(end)
+    except (TypeError, ValueError):
+        return
+    if not doc.has_span(start_i, end_i):
+        return
+    if not quote_text.strip():
+        return
+    span_text = doc.span_text(start_i, end_i)
+    if not _is_token_subsequence(quote_text, span_text):
+        diagnostics.append(
+            Diagnostic(
+                code="evidence_quote_not_in_snapshot_span",
+                severity="high",
+                message=(
+                    "evidence_quote.quote is not present in the snapshot span "
+                    f"{document_id!r}:{start_i}-{end_i}."
+                ),
+                location={
+                    **location,
+                    "document_id": document_id,
+                    "start_line": start_i,
+                    "end_line": end_i,
+                },
+                hint=(
+                    "Make the evidence quote a substring of the snapshot span "
+                    "(whitespace-normalized) or correct evidence source_ref."
                 ),
             )
         )

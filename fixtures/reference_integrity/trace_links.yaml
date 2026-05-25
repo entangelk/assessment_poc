@@ -36,3 +36,13 @@ trace_links:
       - spec_id: S2
         quote: "Provide an audit log for every refund decision."
         verification_mode: token_sequence
+
+  # Triggers evidence_quote_missing_for_spec_id: spec_ids has both S1 and S2
+  # (both valid) but evidence_quotes only covers S1, so S2 has no evidence.
+  - rubric_id: R2
+    spec_ids: [S1, S2]
+    rationale: "N:M link with missing evidence for S2."
+    evidence_quotes:
+      - spec_id: S1
+        quote: "Implement refund handling for cancelled orders."
+        verification_mode: ai_judgement

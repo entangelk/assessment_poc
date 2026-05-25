@@ -360,3 +360,141 @@ Key behaviours:
 - Add `orphan_scored_rubric`, `required_spec_unscored`, `optionality_mismatch` fixtures.
 - Add `gate` once the `final_review` schema is committed (plan §5.6), wiring exit code `1` exclusively to `gate`-confirmed blocking findings.
 - Extend `schema --command` to cover `gate` once shipped.
+
+---
+
+## Implementation Conformance Audit - Rule 0 and Test Quality
+
+### Goals
+
+- Verify the landed implementation against the canonical v1.7 plan and current handoff, rather than relying on a passing test count.
+- Re-check whether existing tests exercise the two-directional guards required by plan section 10.1.
+
+### Completed Work
+
+- Read `HANDOFF.md`, the v1.7 implementation plan, source modules, eight schemas, fixtures, and all test files.
+- Confirmed the declared boundary: only the first Rule 0 iteration is present; Rule 1-3, their three fixtures, and `gate` are still unimplemented.
+- Ran the test suite locally and through the canonical Docker test service; both completed successfully with 31 collected tests.
+- Ran focused adversarial probes outside the existing regression inputs to check source grounding and N:M evidence completeness.
+- Executed the README-documented schema introspection command form and the form currently accepted by argparse.
+
+Files changed:
+
+- `HANDOFF.md`
+- `docs/daily_logs/2026-05-25/work_log.md`
+
+Effect:
+
+- The handoff no longer implies that passing tests establish Rule 0 conformance; the immediate repair work is identified before Rule 1-3 expansion.
+
+### Issues Found
+
+- Problem: A fabricated `spec_item.text` and matching fabricated evidence quote can be attached to a valid source span and pass Rule 0 with no diagnostic.
+  Cause: `run_rule_zero()` checks manifest hash and span bounds, but `_check_source_ref()` never compares item text or `source_ref.quote` with `Document.span_text()`.
+  Resolution: Recorded as the first implementation blocker; add source-content checks and paired regression tests before building further rules.
+  Outcome: Current source-grounding claim is not satisfied by iteration 1.
+
+- Problem: A trace link referencing `spec_ids: [S1, S2]` passes when `evidence_quotes` contains evidence only for `S1`.
+  Cause: The engine validates each provided quote against `spec_ids`, but never verifies the reverse requirement that every referenced spec has evidence.
+  Resolution: Recorded as the second blocker; implement evidence completeness validation with missing-evidence and valid N:M tests.
+  Outcome: The explicit trace-link contract in plan section 5.3 is not enforced.
+
+- Problem: The primary README introspection example fails exactly as written.
+  Cause: `--output` is registered only on the top-level argparse parser, while README uses it after the `schema` subcommand.
+  Resolution: Recorded for CLI/doc synchronization and a regression test of the documented invocation.
+  Outcome: Caller agents following the entry-point documentation receive argparse exit `2` before a JSON envelope is emitted.
+
+- Problem: Existing passing tests do not reveal either Rule 0 conformance failure.
+  Cause: Source tests assert hashes/span containment only; fixture tests deliberately run the failing integrity fixture without a manifest; no test supplies an N:M trace missing one evidence quote.
+  Resolution: Treat the 31-pass result as coverage of the implemented subset only, not proof of the planned Rule 0 contract.
+  Outcome: Test execution is healthy, but test adequacy is incomplete.
+
+### Decisions
+
+- Treated the v1.7 implementation plan as canonical because its precedence section and `HANDOFF.md` agree on that ordering.
+- Performed a review only; no implementation or test repair was made during this audit request.
+- Prioritized Rule 0 contract repairs ahead of Rule 1-3, because later findings should not operate on inputs that can falsely pass grounding.
+
+### Next Steps
+
+- Implement snapshot-text/source-ref quote checks and their under-strict/over-strict tests.
+- Enforce one evidence quote per traced spec and add valid and invalid N:M regression cases.
+- Align the documented `--output json` command ordering with the parser and test the public example.
+- Resume Rule 1-3 implementation only after the Rule 0 audit blockers are closed.
+
+## Phase 0 iteration 1.5 — Rule 0 audit blocker repair
+
+### Goals
+
+- Close the three audit blockers identified in the iteration 1 review before extending the rule set.
+- Make the test suite a meaningful conformance signal for Rule 0, not just a "31 passing" green light.
+
+### Completed Work
+
+#### Defect 1 — Snapshot text/quote grounding
+
+- Extended `_check_source_ref()` in `src/assessment_harness/rules.py` so it pulls the snapshot span text after the span check and compares it against `spec_item.text` and `source_ref.quote` (whitespace-normalized substring).
+- Extended `_check_evidence_source_ref()` similarly to compare `evidence_quote.quote` against the snapshot span when an evidence `source_ref` is provided.
+- Added five new diagnostic codes to `schemas/integrity_diagnostics.schema.json` enum: `spec_text_not_in_snapshot_span`, `spec_quote_not_in_snapshot_span`, `rubric_quote_not_in_snapshot_span`, `evidence_quote_not_in_snapshot_span`, plus `evidence_quote_missing_for_spec_id` for Defect 2.
+- Rubric items intentionally have no `text` field check (their `description`/`title` are summaries, not verbatim quotes); only `source_ref.quote` is verified against the snapshot when provided.
+
+Files changed: `src/assessment_harness/rules.py`, `schemas/integrity_diagnostics.schema.json`.
+
+Effect: Adversarial probe 1 (fabricated `spec_item.text` and quote on a valid span) now returns exit `2` with three high diagnostics (`spec_text_not_in_snapshot_span`, `spec_quote_not_in_snapshot_span`, `evidence_quote_not_in_snapshot_span`) instead of exit `0` with `[]`.
+
+#### Defect 2 — N:M trace evidence completeness
+
+- Added a reverse coverage check in `run_rule_zero()`: for every `trace_links[*].spec_ids` member that exists in `spec_items`, at least one `evidence_quotes[*].spec_id` must match. Missing coverage emits `evidence_quote_missing_for_spec_id` (high). Dangling spec_ids are skipped to avoid double-reporting.
+
+Files changed: `src/assessment_harness/rules.py`.
+
+Effect: Adversarial probe 2 (`spec_ids: [S1, S2]` with only S1 evidence) now returns exit `2` with a high `evidence_quote_missing_for_spec_id` diagnostic naming `spec_id: S2`.
+
+#### Defect 3 — CLI `--output` post-subcommand form
+
+- Refactored `_build_parser()` in `src/assessment_harness/cli.py` to register `--output` both on the root parser and on every subparser via a shared helper. Root keeps the default `text`; subparsers use `argparse.SUPPRESS`, so omitting the flag on a subcommand leaves the root value intact while specifying it overrides.
+- Both `--output json schema --command check` and `schema --command check --output json` now succeed.
+
+Files changed: `src/assessment_harness/cli.py`.
+
+Effect: README, plan §8.1.2, and HANDOFF Quick Start examples that put `--output` after the subcommand no longer fail with argparse exit `2`.
+
+#### Test coverage strengthening
+
+- `tests/test_rules.py`: added 8 new tests for snapshot text/quote grounding and evidence completeness, each with paired under-strict/over-strict guards (plus a dangling-spec-id non-duplication guard). Replaced the weak `test_all_rule_zero_diagnostics_are_high_severity` with two parametrized severity tests covering all 8 non-snapshot codes and 5 snapshot codes. Updated `_make_snapshot` default `spec_text` so existing snapshot tests also exercise the new text-matching path.
+- `tests/test_cli_output_contract.py`: added three CLI form regressions (`schema ... --output json`, `check ... --output json`, subcommand `--output` overrides root). Updated the `reference_integrity` expected diagnostic set to include `duplicate_rubric_id` and `evidence_quote_missing_for_spec_id`.
+- `tests/test_fixtures.py`: same expected-set update.
+- `tests/test_models.py` (new): 12 unit tests covering `read_yaml`, `load_validated`, `load_source_snapshot` (sha256 match/mismatch, relative path resolution), `Document.has_span` bounds, `Document.span_text` joined output and out-of-range error, and `SourceSnapshot.get` for unknown ids.
+- `fixtures/reference_integrity/rubric_items.yaml`: added a duplicate `R1` entry to trigger `duplicate_rubric_id` at fixture level.
+- `fixtures/reference_integrity/trace_links.yaml`: added a fifth trace link with `spec_ids: [S1, S2]` and only S1 evidence to trigger `evidence_quote_missing_for_spec_id` at fixture level.
+
+Files changed: `tests/test_rules.py`, `tests/test_cli_output_contract.py`, `tests/test_fixtures.py`, `tests/test_models.py` (new), `fixtures/reference_integrity/rubric_items.yaml`, `fixtures/reference_integrity/trace_links.yaml`.
+
+Effect: Test count went from 31 → 67 (36 new). The three adversarial probes that previously slipped past Rule 0 now have direct regression coverage at both the unit-rule level and the end-to-end CLI fixture level.
+
+### Issues Found
+
+- During fixture update for `reference_integrity`, the original assertion in `test_check_reference_integrity_returns_invalid_input` used `expected - codes`, which is set subtraction. Adding new triggers to the fixture without updating the expected set would have silently passed; the expected set was updated to make the new coverage explicit.
+
+### Decisions
+
+- For spec items, snapshot text comparison uses **substring** (whitespace-normalized) rather than equality. Allows multi-line spans while still catching fabricated content. Rationale: clean_assignment fixture verified to still pass; equality would have been brittle to legitimate spec excerpts that strip surrounding context.
+- Rubric items skip text/description grounding (only `source_ref.quote` is grounded when provided). Rationale: rubric `title`/`description` are intentionally summarized for evaluators and would not match verbatim snapshot lines.
+- `evidence_quote_missing_for_spec_id` skips dangling spec_ids to avoid double-reporting. Rationale: a single root cause (unknown spec_id) should not generate two diagnostics; the dangling diagnostic carries the necessary information.
+- `--output` resolution uses `argparse.SUPPRESS` on subparsers so the subcommand-level flag overrides the root-level one when both are provided. Tested via `test_subcommand_output_overrides_root_output`.
+
+### Verification
+
+- `python3 -m pytest -v` → 67 passed in 0.90s. New tests: 12 in `test_models.py`, 8 in snapshot/completeness/dangling sections of `test_rules.py`, 13 in two parametrized severity blocks of `test_rules.py`, 3 in CLI form section of `test_cli_output_contract.py`.
+- Re-ran the three original audit probes:
+  - Probe 1 (fabricated text/quote on valid span): exit `2`, diagnostics `{spec_text_not_in_snapshot_span, spec_quote_not_in_snapshot_span, evidence_quote_not_in_snapshot_span}`.
+  - Probe 2 (N:M missing evidence): exit `2`, diagnostic `evidence_quote_missing_for_spec_id` with `spec_id=S2`, severity `high`.
+  - Probe 3 (documented `schema --command check --output json`): exit `0`, valid JSON envelope.
+- Clean fixture (`clean_assignment`) continues to pass with `--source-manifest`; all `spec_item.text` and `evidence_quote.quote` entries verbatim-match their snapshot spans.
+
+### Next Steps
+
+- Resume HANDOFF Next Tasks at #4: Rule 1 (`possible_orphan_scored_rubric_item` / `unconfirmed_trace_coverage` / `orphan_scored_rubric_item`).
+- Add `orphan_scored_rubric` fixture (Rule 1) and update test_fixtures.py / test_cli_output_contract.py accordingly.
+- Then Rule 2 (`required_spec_unscored` fixture) and Rule 3 (`optionality_mismatch` fixture).
+- `gate` and Phase 2 wiring after Rules 1-3 ship.
