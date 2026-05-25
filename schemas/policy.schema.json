@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://assessment-harness/policy.schema.json",
+  "title": "Harness Policy",
+  "description": "Unified policy file: rules, compacting, runs, verification.",
+  "type": "object",
+  "properties": {
+    "rules": {
+      "type": "object",
+      "properties": {
+        "optionality_mismatch": {
+          "type": "object",
+          "properties": {
+            "weight_threshold": { "type": "number", "minimum": 0 }
+          },
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": true
+    },
+    "compacting": {
+      "type": "object",
+      "properties": {
+        "identity_basis": {
+          "type": "object",
+          "properties": {
+            "spec_item": { "type": "string" },
+            "rubric_item": { "type": "string" },
+            "trace_link": { "type": "string" }
+          },
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": true
+    },
+    "runs": {
+      "type": "object",
+      "properties": {
+        "min_valid_runs": { "type": "integer", "minimum": 1 },
+        "default_runs": { "type": "integer", "minimum": 1 },
+        "max_runs": { "type": "integer", "minimum": 1 }
+      },
+      "additionalProperties": true
+    },
+    "verification": {
+      "type": "object",
+      "properties": {
+        "default_mode": {
+          "type": "string",
+          "enum": ["token_sequence", "ai_judgement"]
+        }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}

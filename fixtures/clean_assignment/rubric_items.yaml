@@ -1,0 +1,62 @@
+rubric_items:
+  - id: R1
+    title: "Refund handling"
+    description: "Implements documented refund behavior for cancelled orders."
+    evaluation_role: scored
+    weight: 10
+    evidence_required: [code, test]
+    source_ref:
+      document_id: DOC_RUBRIC
+      start_line: 3
+      end_line: 4
+    support:
+      total_valid_runs: 1
+      found_in_runs: ["manual"]
+    identity_basis: "title+normalized_description"
+    variants: []
+
+  - id: R2
+    title: "Idempotency"
+    description: "Retries do not double-refund partial refunds."
+    evaluation_role: scored
+    weight: 8
+    evidence_required: [test]
+    source_ref:
+      document_id: DOC_RUBRIC
+      start_line: 6
+      end_line: 7
+    support:
+      total_valid_runs: 1
+      found_in_runs: ["manual"]
+    identity_basis: "title+normalized_description"
+    variants: []
+
+  - id: R3
+    title: "Audit log"
+    description: "Bonus credit for audit log entries on every refund decision."
+    evaluation_role: bonus
+    weight: 5
+    evidence_required: [code]
+    source_ref:
+      document_id: DOC_RUBRIC
+      start_line: 9
+      end_line: 10
+    support:
+      total_valid_runs: 1
+      found_in_runs: ["manual"]
+    identity_basis: "title+normalized_description"
+    variants: []
+
+  - id: R4
+    title: "Code quality"
+    description: "General code quality discussion."
+    evaluation_role: qualitative
+    source_ref:
+      document_id: DOC_RUBRIC
+      start_line: 12
+      end_line: 13
+    support:
+      total_valid_runs: 1
+      found_in_runs: ["manual"]
+    identity_basis: "title+normalized_description"
+    variants: []

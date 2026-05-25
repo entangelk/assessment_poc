@@ -1,0 +1,66 @@
+trace_links:
+  - rubric_id: R1
+    spec_ids: [S1]
+    rationale: "R1 evaluates the refund-handling requirement disclosed by S1."
+    evidence_quotes:
+      - spec_id: S1
+        quote: "Implement refund handling for cancelled orders."
+        verification_mode: token_sequence
+        source_ref:
+          document_id: DOC_SPEC
+          start_line: 5
+          end_line: 5
+    semantic_status: pending_verification
+    support:
+      total_valid_runs: 1
+      found_in_runs: ["manual"]
+    identity_basis: "rubric_id+sorted(spec_ids)"
+    variants: []
+    sources:
+      - kind: manual
+    reviewed_by: null
+    reviewed_at: null
+
+  - rubric_id: R2
+    spec_ids: [S2]
+    rationale: "R2 evaluates idempotency as disclosed by S2."
+    evidence_quotes:
+      - spec_id: S2
+        quote: "Idempotent retries are required for partial refunds."
+        verification_mode: ai_judgement
+        source_ref:
+          document_id: DOC_SPEC
+          start_line: 6
+          end_line: 6
+    semantic_status: pending_verification
+    support:
+      total_valid_runs: 1
+      found_in_runs: ["manual"]
+    identity_basis: "rubric_id+sorted(spec_ids)"
+    variants: []
+    sources:
+      - kind: manual
+    reviewed_by: null
+    reviewed_at: null
+
+  - rubric_id: R3
+    spec_ids: [S3]
+    rationale: "R3 bonus tracks the optional audit-log requirement in S3."
+    evidence_quotes:
+      - spec_id: S3
+        quote: "Provide an audit log for every refund decision."
+        verification_mode: token_sequence
+        source_ref:
+          document_id: DOC_SPEC
+          start_line: 10
+          end_line: 10
+    semantic_status: pending_verification
+    support:
+      total_valid_runs: 1
+      found_in_runs: ["manual"]
+    identity_basis: "rubric_id+sorted(spec_ids)"
+    variants: []
+    sources:
+      - kind: manual
+    reviewed_by: null
+    reviewed_at: null

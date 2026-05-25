@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://assessment-harness/rubric_items.schema.json",
+  "title": "Compacted Rubric Items",
+  "type": "object",
+  "required": ["rubric_items"],
+  "properties": {
+    "rubric_items": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/rubric_item" }
+    }
+  },
+  "additionalProperties": true,
+  "$defs": {
+    "rubric_item": {
+      "type": "object",
+      "required": ["id", "title", "evaluation_role", "source_ref"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "title": { "type": "string", "minLength": 1 },
+        "description": { "type": "string" },
+        "evaluation_role": {
+          "type": "string",
+          "enum": ["scored", "bonus", "qualitative"]
+        },
+        "weight": { "type": "number", "minimum": 0 },
+        "evidence_required": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "source_ref": {
+          "type": "object",
+          "required": ["document_id", "start_line", "end_line"],
+          "properties": {
+            "document_id": { "type": "string", "minLength": 1 },
+            "start_line": { "type": "integer", "minimum": 1 },
+            "end_line": { "type": "integer", "minimum": 1 },
+            "quote": { "type": "string" }
+          },
+          "additionalProperties": true
+        },
+        "support": {
+          "type": "object",
+          "required": ["total_valid_runs", "found_in_runs"],
+          "properties": {
+            "total_valid_runs": { "type": "integer", "minimum": 0 },
+            "found_in_runs": {
+              "type": "array",
+              "items": { "type": "string" }
+            }
+          },
+          "additionalProperties": true
+        },
+        "identity_basis": { "type": "string" },
+        "variants": {
+          "type": "array",
+          "items": { "type": "object", "additionalProperties": true }
+        }
+      },
+      "additionalProperties": true
+    }
+  }
+}

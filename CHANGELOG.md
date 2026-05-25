@@ -2,6 +2,7 @@
 
 | Date | Change | Detail |
 |---|---|---|
+| 2026-05-25 | Phase 0 implementation iteration 1: package scaffold, Rule 0 reference-integrity engine, `check`/`schema`/`report` CLI, eight JSON Schemas, two fixtures, 31 passing tests, Docker dev workflow. | [Work log](docs/daily_logs/2026-05-25/work_log.md) |
 | 2026-05-25 | Implementation plan reached v1.7; read-only multi-run semantic verifier-agent adopted as a required PoC stage. | [Work log](docs/daily_logs/2026-05-25/work_log.md) |
 | 2026-05-25 | Implementation plan reached v1.6; provisional findings/gate boundary, source grounding, and canonical ID mapping adopted. | [Work log](docs/daily_logs/2026-05-25/work_log.md) |
 | 2026-05-25 | Implementation plan reached v1.5; all Phase 0 pre-decisions adopted; README.md created. Phase 0 ready to start. | [Work log](docs/daily_logs/2026-05-25/work_log.md) |

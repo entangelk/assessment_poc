@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://assessment-harness/spec_items.schema.json",
+  "title": "Compacted Spec Items",
+  "type": "object",
+  "required": ["spec_items"],
+  "properties": {
+    "spec_items": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/spec_item" }
+    }
+  },
+  "additionalProperties": true,
+  "$defs": {
+    "spec_item": {
+      "type": "object",
+      "required": ["id", "text", "requirement_level", "source_ref"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "source": { "type": "string" },
+        "section": { "type": "string" },
+        "text": { "type": "string", "minLength": 1 },
+        "visibility": {
+          "type": "string",
+          "enum": ["candidate_facing", "evaluator_only", "internal"]
+        },
+        "requirement_level": {
+          "type": "string",
+          "enum": ["must", "optional", "informational"]
+        },
+        "source_ref": { "$ref": "#/$defs/source_ref" },
+        "support": { "$ref": "#/$defs/support" },
+        "identity_basis": { "type": "string" },
+        "variants": {
+          "type": "array",
+          "items": { "type": "object", "additionalProperties": true }
+        }
+      },
+      "additionalProperties": true
+    },
+    "source_ref": {
+      "type": "object",
+      "required": ["document_id", "start_line", "end_line"],
+      "properties": {
+        "document_id": { "type": "string", "minLength": 1 },
+        "start_line": { "type": "integer", "minimum": 1 },
+        "end_line": { "type": "integer", "minimum": 1 },
+        "quote": { "type": "string" }
+      },
+      "additionalProperties": true
+    },
+    "support": {
+      "type": "object",
+      "required": ["total_valid_runs", "found_in_runs"],
+      "properties": {
+        "total_valid_runs": { "type": "integer", "minimum": 0 },
+        "found_in_runs": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      },
+      "additionalProperties": true
+    }
+  }
+}

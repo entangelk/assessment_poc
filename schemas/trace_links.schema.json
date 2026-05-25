@@ -1,0 +1,106 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://assessment-harness/trace_links.schema.json",
+  "title": "Compacted Trace Links",
+  "type": "object",
+  "required": ["trace_links"],
+  "properties": {
+    "trace_links": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/trace_link" }
+    }
+  },
+  "additionalProperties": true,
+  "$defs": {
+    "trace_link": {
+      "type": "object",
+      "required": ["rubric_id", "spec_ids", "evidence_quotes"],
+      "properties": {
+        "rubric_id": { "type": "string", "minLength": 1 },
+        "spec_ids": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "rationale": { "type": "string" },
+        "evidence_quotes": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/evidence_quote" }
+        },
+        "semantic_status": {
+          "type": "string",
+          "enum": [
+            "pending_verification",
+            "agent_supported",
+            "agent_rejected",
+            "agent_uncertain",
+            "human_accepted",
+            "human_rejected",
+            "human_overridden",
+            "rerun_requested"
+          ]
+        },
+        "support": {
+          "type": "object",
+          "required": ["total_valid_runs", "found_in_runs"],
+          "properties": {
+            "total_valid_runs": { "type": "integer", "minimum": 0 },
+            "found_in_runs": {
+              "type": "array",
+              "items": { "type": "string" }
+            }
+          },
+          "additionalProperties": true
+        },
+        "identity_basis": { "type": "string" },
+        "variants": {
+          "type": "array",
+          "items": { "type": "object", "additionalProperties": true }
+        },
+        "sources": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["kind"],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": ["agent_run", "manual", "human_override"]
+              },
+              "run_id": { "type": "string" }
+            },
+            "additionalProperties": true
+          }
+        },
+        "reviewed_by": { "type": ["string", "null"] },
+        "reviewed_at": { "type": ["string", "null"] }
+      },
+      "additionalProperties": true
+    },
+    "evidence_quote": {
+      "type": "object",
+      "required": ["spec_id", "quote", "verification_mode"],
+      "properties": {
+        "spec_id": { "type": "string", "minLength": 1 },
+        "quote": { "type": "string" },
+        "verification_mode": {
+          "type": "string",
+          "enum": ["token_sequence", "ai_judgement"]
+        },
+        "source_ref": {
+          "type": "object",
+          "required": ["document_id", "start_line", "end_line"],
+          "properties": {
+            "document_id": { "type": "string", "minLength": 1 },
+            "start_line": { "type": "integer", "minimum": 1 },
+            "end_line": { "type": "integer", "minimum": 1 },
+            "quote": { "type": "string" }
+          },
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": true
+    }
+  }
+}

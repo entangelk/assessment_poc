@@ -1,0 +1,20 @@
+rubric_items:
+  - id: R1
+    title: "Refund handling"
+    description: "Scored evaluation of refund flow."
+    evaluation_role: scored
+    weight: 10
+    source_ref:
+      document_id: DOC_RUBRIC
+      start_line: 1
+      end_line: 2
+
+  - id: R2
+    title: "Audit log"
+    description: "Scored evaluation of audit log behavior."
+    evaluation_role: scored
+    weight: 6
+    source_ref:
+      document_id: DOC_RUBRIC
+      start_line: 3
+      end_line: 4

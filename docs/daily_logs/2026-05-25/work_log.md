@@ -279,3 +279,84 @@ Effect:
 - Before Phase 2: confirm Claude Agent SDK credential delivery, identity_basis algorithm choice from `config/policy.yaml`, `min_valid_runs`/`default_runs`/`max_runs` values, tool side-effect policy (read-only vs write-on-call), and raw trace retention/redaction policy.
 - Demonstrate `override` action at least once during Phase 3 final review on a real assignment.
 - Continue through the multi-run agent-assisted final workflow; do not treat manual validation completion as final PoC completion.
+
+---
+
+## Phase 0 Implementation - Iteration 1 (scaffold + Rule 0)
+
+### Goals
+
+- Stand up the deterministic validation core as a runnable, testable package.
+- Ship Rule 0 (Reference Integrity Diagnostic) end-to-end: schema, loader, rule engine, CLI, fixtures, and regression tests.
+- Confirm the Docker-first development workflow chosen by the owner.
+
+### Completed Work
+
+#### Packaging and dev-environment scaffold
+
+- Created `pyproject.toml` (setuptools, src layout), `Dockerfile` (python:3.11-slim), `docker-compose.yml` (`harness`/`test` services), `.dockerignore`, `.gitignore`.
+- `assessment-harness` script entry point wired to `assessment_harness.cli:main`.
+- Docker image installs the package editable and runs pytest from `/app`. Source/schema/fixture/test trees are bind-mounted in compose so iterations do not require a rebuild.
+
+Effect: a single `docker compose run --rm test` runs the full regression in a clean environment; `docker compose run --rm harness ...` invokes the CLI.
+
+#### JSON Schema set for Rule 0 surface
+
+- Added eight schemas under `schemas/`: `source_manifest`, `spec_items`, `rubric_items`, `trace_links`, `policy`, `findings`, `integrity_diagnostics`, `cli_output`.
+- `cli_output.schema.json` enforces the stable core (`status`, `exit_code`, `command`, `next_actions`) and leaves the rest informational, matching plan §8.1.1.
+- `integrity_diagnostics.schema.json` enumerates fourteen Rule 0 diagnostic codes so future codes are an explicit schema change rather than a string typo.
+
+Effect: schemas are the data contract for Phase 0; later phases extend rather than redefine them.
+
+#### Package modules
+
+- `src/assessment_harness/schemas.py` - schema loader with `ASSESSMENT_HARNESS_SCHEMA_DIR` env override (Docker `/app/schemas`).
+- `src/assessment_harness/models.py` - YAML loader with schema validation, `SourceSnapshot`/`Document` with sha256 and line/span access, `HarnessInputError` for structured input failures.
+- `src/assessment_harness/rules.py` - `run_rule_zero` covering: duplicate ids, dangling rubric/spec refs, evidence-quote spec_id mismatch, empty quote, source_ref hash/document/span integrity, evidence-source_ref containment within spec span, and `token_sequence` whitespace-normalized substring check. All diagnostics are emitted at `high` severity per spec §6.
+- `src/assessment_harness/report.py` - markdown renderer for findings + diagnostics.
+- `src/assessment_harness/cli.py` - `check`, `schema`, `report` subcommands. Exit codes follow plan §8.1: `0` clean / `2` invalid input or Rule 0 high diagnostic / `3` internal. JSON envelope is schema-validated before emission.
+
+Key behaviours:
+
+- `verification_mode = ai_judgement` deliberately skips the substring check (PoC default), routing semantic adequacy to the verifier-agent stage.
+- `verification_mode = token_sequence` enforces whitespace-normalized substring containment against `spec_item.text`.
+- On Rule 0 failure, `findings.json` is always written with `{"status": "invalid_input", "findings": []}` so caller agents can rely on the file existing.
+
+#### Fixtures
+
+- `fixtures/clean_assignment/`: spec.md + rubric.md with computed sha256 in `source_manifest.yaml`, four spec items (must/optional/informational), four rubric items including bonus and qualitative, three trace links (one `token_sequence`, one `ai_judgement`).
+- `fixtures/reference_integrity/`: deliberately violates duplicate_spec_id, dangling_rubric_reference, dangling_spec_reference, evidence_quote_spec_id_mismatch, evidence_quote_empty, and evidence_quote_token_sequence_mismatch in a single fixture.
+
+#### Tests (31 passing)
+
+- `tests/test_rules.py`: per-diagnostic under-strict (caught) and over-strict (not falsely flagged) guards for each Rule 0 code, plus `ai_judgement` skip-substring guard and whitespace-normalization guard.
+- `tests/test_cli_output_contract.py`: every command's stdout JSON validates against `cli_output.schema.json`; exit codes match the documented contract; stderr is separated from stdout JSON.
+- `tests/test_fixtures.py`: clean fixture passes with and without `--source-manifest`; reference_integrity fixture produces all expected diagnostic codes with exit 2.
+- `tests/conftest.py`: forces `ASSESSMENT_HARNESS_SCHEMA_DIR` to the repo schemas/ directory and clears the schema-loader cache between tests.
+
+#### CLI smoke checks
+
+- `docker compose run --rm harness --output json schema --command check` - returns the contract.
+- `docker compose run --rm harness --output json check ... clean_assignment ...` - exit 0, `status: success`, empty findings.
+- `docker compose run --rm harness --output json check ... reference_integrity ...` - exit 2, six high diagnostics, `next_actions: [{type: fix_reference_integrity, high_count: 6}]`.
+- `docker compose run --rm harness --output json report ...` - renders Markdown.
+
+### Issues Found
+
+- None. The first build and full test run passed without rework.
+
+### Decisions
+
+- Adopted src/ layout (`src/assessment_harness/...`) instead of the top-level path shown in plan §7. Reason: cleaner test/import boundary with editable installs; the package import name is unchanged so plan references remain accurate.
+- Held `agent_runners/` and `tools/` out of this iteration because both are explicitly Phase 2 per plan §3.3 and §7. Adding empty placeholders would be dead code under CLAUDE.md §2 (Simplicity First).
+- Chose span containment (document_id equal, evidence span contained in spec span) for evidence_source_ref vs spec source_ref check, rather than strict equality. Reason: evidence quotes are commonly a sub-span of a multi-line spec item; strict equality would force every evidence quote to mirror the whole spec span.
+- Schemas allow `additionalProperties: true` at top-level entity objects so candidate-stage informational fields (e.g., `confidence`, `agent_run_id`) can be carried through Phase 2 without a schema break.
+- Did not implement `gate` in this iteration. Reason: `gate` consumes a final-review record (plan §5.6) that is itself out of Phase 0 scope; stubbing it without final-review schema risks freezing a wrong contract.
+- Included `report` in this iteration. Reason: it has no dependency beyond findings + diagnostics and reading the rendered markdown is the fastest manual sanity check.
+
+### Next Steps
+
+- Add Rule 1 (Scored Rubric Coverage), Rule 2 (Required Spec Coverage), Rule 3 (Optionality Consistency), each with the under-strict / over-strict guards described in plan §10.1.
+- Add `orphan_scored_rubric`, `required_spec_unscored`, `optionality_mismatch` fixtures.
+- Add `gate` once the `final_review` schema is committed (plan §5.6), wiring exit code `1` exclusively to `gate`-confirmed blocking findings.
+- Extend `schema --command` to cover `gate` once shipped.

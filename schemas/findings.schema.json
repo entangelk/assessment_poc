@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://assessment-harness/findings.schema.json",
+  "title": "Findings",
+  "description": "Provisional findings produced by `check`. Final blocking verdict is only emitted by `gate`.",
+  "type": "object",
+  "required": ["status", "findings", "blocking_count"],
+  "properties": {
+    "status": {
+      "type": "string",
+      "enum": [
+        "success",
+        "provisional_findings",
+        "invalid_input",
+        "internal_error"
+      ]
+    },
+    "findings": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/finding" }
+    },
+    "diagnostics_ref": { "type": ["string", "null"] },
+    "blocking_count": { "type": "integer", "minimum": 0 },
+    "generated_at": { "type": "string" }
+  },
+  "additionalProperties": true,
+  "$defs": {
+    "finding": {
+      "type": "object",
+      "required": ["type", "severity", "decision_status", "message"],
+      "properties": {
+        "type": { "type": "string", "minLength": 1 },
+        "severity": {
+          "type": "string",
+          "enum": ["informational", "low", "medium", "high"]
+        },
+        "decision_status": {
+          "type": "string",
+          "enum": ["provisional", "confirmed", "dismissed"]
+        },
+        "rubric_id": { "type": "string" },
+        "spec_id": { "type": "string" },
+        "trace_link_ref": {
+          "type": "object",
+          "properties": {
+            "rubric_id": { "type": "string" },
+            "spec_ids": { "type": "array", "items": { "type": "string" } }
+          },
+          "additionalProperties": true
+        },
+        "message": { "type": "string", "minLength": 1 },
+        "evidence": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": true
+    }
+  }
+}

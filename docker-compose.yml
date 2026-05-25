@@ -1,0 +1,36 @@
+services:
+  harness:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: assessment-harness:dev
+    container_name: assessment-harness
+    working_dir: /app
+    volumes:
+      - ./src:/app/src
+      - ./schemas:/app/schemas
+      - ./config:/app/config
+      - ./fixtures:/app/fixtures
+      - ./tests:/app/tests
+      - ./work:/app/work
+    environment:
+      - ASSESSMENT_HARNESS_SCHEMA_DIR=/app/schemas
+      - ASSESSMENT_HARNESS_DEFAULT_POLICY=/app/config/policy.yaml
+    entrypoint: ["assessment-harness"]
+    command: ["--help"]
+
+  test:
+    image: assessment-harness:dev
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: assessment-harness-test
+    working_dir: /app
+    volumes:
+      - ./src:/app/src
+      - ./schemas:/app/schemas
+      - ./config:/app/config
+      - ./fixtures:/app/fixtures
+      - ./tests:/app/tests
+    entrypoint: ["pytest"]
+    command: ["-q"]

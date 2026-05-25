@@ -1,0 +1,40 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "assessment-harness"
+version = "0.1.0a0"
+description = "Assessment Spec Harness PoC: deterministic validation core for hiring assessment design."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "Proprietary" }
+authors = [{ name = "kdt" }]
+dependencies = [
+  "PyYAML>=6.0.1",
+  "jsonschema>=4.21.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.0.0",
+  "pytest-cov>=4.1.0",
+]
+
+[project.scripts]
+assessment-harness = "assessment_harness.cli:main"
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["assessment_harness*"]
+
+[tool.setuptools.package-data]
+assessment_harness = ["resources/*.yaml", "resources/*.json"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = "-ra -q"

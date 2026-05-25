@@ -1,0 +1,68 @@
+spec_items:
+  - id: S1
+    source: spec.md
+    section: "Requirements"
+    text: "Implement refund handling for cancelled orders."
+    visibility: candidate_facing
+    requirement_level: must
+    source_ref:
+      document_id: DOC_SPEC
+      start_line: 5
+      end_line: 5
+      quote: "Implement refund handling for cancelled orders."
+    support:
+      total_valid_runs: 1
+      found_in_runs: ["manual"]
+    identity_basis: "source+section+normalized_text"
+    variants: []
+
+  - id: S2
+    source: spec.md
+    section: "Requirements"
+    text: "Idempotent retries are required for partial refunds."
+    visibility: candidate_facing
+    requirement_level: must
+    source_ref:
+      document_id: DOC_SPEC
+      start_line: 6
+      end_line: 6
+      quote: "Idempotent retries are required for partial refunds."
+    support:
+      total_valid_runs: 1
+      found_in_runs: ["manual"]
+    identity_basis: "source+section+normalized_text"
+    variants: []
+
+  - id: S3
+    source: spec.md
+    section: "Optional features"
+    text: "Provide an audit log for every refund decision."
+    visibility: candidate_facing
+    requirement_level: optional
+    source_ref:
+      document_id: DOC_SPEC
+      start_line: 10
+      end_line: 10
+      quote: "Provide an audit log for every refund decision."
+    support:
+      total_valid_runs: 1
+      found_in_runs: ["manual"]
+    identity_basis: "source+section+normalized_text"
+    variants: []
+
+  - id: S4
+    source: spec.md
+    section: "Notes"
+    text: "This document describes the candidate-facing requirements only."
+    visibility: candidate_facing
+    requirement_level: informational
+    source_ref:
+      document_id: DOC_SPEC
+      start_line: 14
+      end_line: 14
+      quote: "This document describes the candidate-facing requirements only."
+    support:
+      total_valid_runs: 1
+      found_in_runs: ["manual"]
+    identity_basis: "source+section+normalized_text"
+    variants: []

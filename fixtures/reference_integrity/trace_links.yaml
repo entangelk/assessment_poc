@@ -1,0 +1,38 @@
+trace_links:
+  # Triggers evidence_quote_token_sequence_mismatch: quote is not a substring
+  # of the referenced spec_item.text (and verification_mode is token_sequence).
+  - rubric_id: R1
+    spec_ids: [S1]
+    rationale: "R1 traces to S1 via deliberately wrong quote."
+    evidence_quotes:
+      - spec_id: S1
+        quote: "This sentence is nowhere in the spec text."
+        verification_mode: token_sequence
+
+  # Triggers dangling_rubric_reference (R99 not in rubric_items) AND
+  # evidence_quote_spec_id_mismatch (S99 is not in spec_ids).
+  - rubric_id: R99
+    spec_ids: [S2]
+    rationale: "Reference a missing rubric and a mismatched evidence spec_id."
+    evidence_quotes:
+      - spec_id: S99
+        quote: "Anything."
+        verification_mode: ai_judgement
+
+  # Triggers evidence_quote_empty.
+  - rubric_id: R2
+    spec_ids: [S2]
+    rationale: "Reference an empty evidence quote."
+    evidence_quotes:
+      - spec_id: S2
+        quote: "   "
+        verification_mode: ai_judgement
+
+  # Triggers dangling_spec_reference (S77 not in spec_items).
+  - rubric_id: R2
+    spec_ids: [S2, S77]
+    rationale: "Reference a missing spec id alongside a real one."
+    evidence_quotes:
+      - spec_id: S2
+        quote: "Provide an audit log for every refund decision."
+        verification_mode: token_sequence

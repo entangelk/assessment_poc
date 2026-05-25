@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://assessment-harness/integrity_diagnostics.schema.json",
+  "title": "Integrity Diagnostics",
+  "description": "Rule 0 reference-integrity diagnostics. Any high diagnostic marks the input run as invalid.",
+  "type": "object",
+  "required": ["diagnostics", "summary"],
+  "properties": {
+    "diagnostics": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/diagnostic" }
+    },
+    "summary": {
+      "type": "object",
+      "required": ["total", "high"],
+      "properties": {
+        "total": { "type": "integer", "minimum": 0 },
+        "high": { "type": "integer", "minimum": 0 },
+        "medium": { "type": "integer", "minimum": 0 },
+        "low": { "type": "integer", "minimum": 0 },
+        "informational": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": true
+    },
+    "generated_at": { "type": "string" }
+  },
+  "additionalProperties": true,
+  "$defs": {
+    "diagnostic": {
+      "type": "object",
+      "required": ["code", "severity", "message"],
+      "properties": {
+        "code": {
+          "type": "string",
+          "enum": [
+            "duplicate_spec_id",
+            "duplicate_rubric_id",
+            "dangling_rubric_reference",
+            "dangling_spec_reference",
+            "evidence_quote_spec_id_mismatch",
+            "evidence_quote_empty",
+            "spec_source_ref_unknown_document",
+            "spec_source_ref_span_invalid",
+            "rubric_source_ref_unknown_document",
+            "rubric_source_ref_span_invalid",
+            "evidence_source_ref_unknown_document",
+            "evidence_source_ref_mismatch_with_spec",
+            "evidence_quote_token_sequence_mismatch",
+            "source_document_missing",
+            "source_document_hash_mismatch"
+          ]
+        },
+        "severity": {
+          "type": "string",
+          "enum": ["informational", "low", "medium", "high"]
+        },
+        "message": { "type": "string", "minLength": 1 },
+        "location": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "hint": { "type": "string" }
+      },
+      "additionalProperties": true
+    }
+  }
+}

@@ -1,0 +1,24 @@
+spec_items:
+  - id: S1
+    text: "Implement refund handling for cancelled orders."
+    requirement_level: must
+    source_ref:
+      document_id: DOC_SPEC
+      start_line: 1
+      end_line: 1
+
+  - id: S1
+    text: "Duplicate id; should trigger duplicate_spec_id."
+    requirement_level: must
+    source_ref:
+      document_id: DOC_SPEC
+      start_line: 2
+      end_line: 2
+
+  - id: S2
+    text: "Provide an audit log for every refund decision."
+    requirement_level: optional
+    source_ref:
+      document_id: DOC_SPEC
+      start_line: 3
+      end_line: 3

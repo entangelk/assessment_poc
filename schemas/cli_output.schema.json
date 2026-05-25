@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://assessment-harness/cli_output.schema.json",
+  "title": "CLI Output Envelope",
+  "description": "Stable agent-consumable CLI output. Stable core fields (status/exit_code/command/next_actions) are guaranteed; other fields are informational and may change without notice.",
+  "type": "object",
+  "required": ["status", "exit_code", "command", "next_actions"],
+  "properties": {
+    "status": {
+      "type": "string",
+      "enum": [
+        "success",
+        "provisional_findings",
+        "pending_review",
+        "fail",
+        "invalid_input",
+        "internal_error"
+      ]
+    },
+    "exit_code": {
+      "type": "integer",
+      "enum": [0, 1, 2, 3]
+    },
+    "command": { "type": "string", "minLength": 1 },
+    "next_actions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["type"],
+        "properties": {
+          "type": { "type": "string", "minLength": 1 }
+        },
+        "additionalProperties": true
+      }
+    }
+  },
+  "additionalProperties": true
+}

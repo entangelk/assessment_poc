@@ -1,0 +1,11 @@
+project_id: clean_assignment
+assessment_version: v1
+documents:
+  - document_id: DOC_SPEC
+    role: candidate_spec
+    path: source/spec.md
+    sha256: 21a7cd6e486e69839ab1fe22e07444625965e1d123f333c87c2a9a6eec72b947
+  - document_id: DOC_RUBRIC
+    role: evaluator_rubric
+    path: source/rubric.md
+    sha256: d36b47621e812e080e0ddad99b5a7b95233bc429b233b73f60f7b79eac7cba91
