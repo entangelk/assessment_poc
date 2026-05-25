@@ -203,6 +203,16 @@ Effect:
 
 - Candidate generation, semantic checking, and human verdict now have explicit ownership and storage boundaries while preserving the multi-run strategy throughout the agent-driven part of the PoC.
 
+### Initial GitHub publication over SSH
+
+- Verified that the completed documentation set was already committed locally as `4c91613` (`first commit`) on `main`.
+- Changed `origin` from HTTPS to `git@github.com:entangelk/assessment_poc.git`.
+- Published `main` to GitHub over SSH and configured it to track `origin/main`.
+
+Effect:
+
+- The repository is now accessible through its SSH-backed GitHub remote, and subsequent pushes can use the configured upstream branch.
+
 ## Issues Found
 
 ### No declared canonical specification

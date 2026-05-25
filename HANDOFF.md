@@ -53,6 +53,7 @@
 ## Verification
 
 - v1.7 resolves the remaining semantic-verification design decision by adopting a dedicated read-only verifier-agent stage before final review.
+- Repository `main` is published to `origin/main` through the SSH remote `git@github.com:entangelk/assessment_poc.git`.
 - No code or tests exist yet; verification has been limited to documentation cross-checks and structural review.
 - The README.md quick start has not been executed against any implementation because the implementation does not yet exist; it documents the intended CLI contract from the plan.
 
