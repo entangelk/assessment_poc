@@ -4,8 +4,8 @@
 
 - Implementation plan is at v1.7 (`docs/implementation_plan_assessment_harness_poc_v1.md`) and is the canonical implementation source of truth, ahead of `docs/ideation_assessment_harness_v2.1.md`.
 - **Phase 0 iteration 1.5 landed (2026-05-25)**: the three iteration-1 audit blockers are closed. Rule 0 now grounds `spec_item.text` and `source_ref.quote` (and evidence `quote` when `source_ref` is provided) against the snapshot span text, requires evidence coverage for every `trace_links.spec_ids` member, and the CLI accepts `--output` both before and after the subcommand.
-- Phase 0 still ships only Rule 0. Rule 1, Rule 2, Rule 3, the three rule fixtures (`orphan_scored_rubric`, `required_spec_unscored`, `optionality_mismatch`), and the `gate` command are still pending.
-- Package surface: `check` / `schema` / `report` subcommands, eight JSON Schemas (with five new diagnostic codes), two fixtures (`clean_assignment`, expanded `reference_integrity`), and 67 passing tests. Docker is the canonical dev environment.
+- **Phase 0 iteration 2 slice 1 landed (2026-05-26)**: Rule 1 (Scored Rubric Coverage) is now partially live. `check` runs Rule 1 after a clean Rule 0 pass and emits `possible_orphan_scored_rubric_item` (`high` / `provisional`) for any `evaluation_role == scored` rubric item with zero trace links. Findings come back as `status=provisional_findings`, `exit_code=0`, `blocking_count=0`. The `unconfirmed_trace_coverage` and bonus-informational branches of Rule 1 are still pending; Rule 2, Rule 3, and the `gate` command remain pending.
+- Package surface: `check` / `schema` / `report` subcommands, eight JSON Schemas, three fixtures (`clean_assignment`, `reference_integrity`, `orphan_scored_rubric`), and 72 passing tests. Docker is the canonical dev environment.
 - The PoC is an **agent-level harness**: the 1st-class caller is an AI agent (Claude Code / Codex / Gemini), not a human. Humans participate only as final reviewers.
 - The final workflow is `extract --runs N -> compact -> verify --runs N -> check -> report -> review -> gate`. Compacting is a **union-based audit operation**: every valid candidate is preserved with `support` / `identity_basis` / `variants`.
 
@@ -45,7 +45,7 @@ docker compose run --rm harness --output json check \
 - **Canonical IDs**: compacting remaps run-local IDs to canonical IDs and retains `id_map` provenance.
 - **Semantic verifier-agent**: `ai_judgement` links are checked by separate read-only multi-run verifier execution; proposals are retained in `semantic_verifications.yaml` without rewriting compacted links.
 
-## Implementation Decisions (Phase 0 iteration 1 / 1.5)
+## Implementation Decisions (Phase 0 iteration 1 / 1.5 / 2-slice-1)
 
 - Adopted `src/` layout (`src/assessment_harness/...`); package import name unchanged from plan §7.
 - Held `agent_runners/` and `tools/` out of this iteration (Phase 2 scope per plan §3.3). No empty placeholders were created.
@@ -56,6 +56,9 @@ docker compose run --rm harness --output json check \
 - Snapshot text grounding uses whitespace-normalized **substring** matching for `spec_item.text` (allows multi-line spans) and for all quotes. Rubric items skip `text`/`description` grounding because they are evaluator-facing summaries; only `source_ref.quote` is grounded when provided.
 - `evidence_quote_missing_for_spec_id` skips spec_ids that are already dangling, so a single broken reference does not raise two diagnostics.
 - CLI `--output` is registered on the root parser (default `text`) and on every subparser (default `argparse.SUPPRESS`), so both pre- and post-subcommand forms work and the subcommand value overrides the root value when both are given.
+- Rule 1 is sliced by `Finding` type: each branch (`possible_orphan_scored_rubric_item`, `unconfirmed_trace_coverage`, bonus informational) lands in its own iteration with its own fixture and its own under/over-strict guards. Rule 1 only runs after Rule 0 reports no high diagnostics, so it can trust unique rubric IDs and no dangling references.
+- `check` never sets `blocking_count > 0`; provisional findings (`status=provisional_findings`, `exit_code=0`) are surfaced for review but the blocking verdict is reserved for `gate` after final review.
+- `next_actions` carry one entry per finding (`review_orphan_rubric` with `rubric_id`), so a caller agent can parallelise review without de-duplication logic.
 
 ## Open Decisions Before Phase 2
 
@@ -68,19 +71,18 @@ docker compose run --rm harness --output json check \
 
 ## Next Tasks
 
-1. **Rule 1 — Scored Rubric Coverage** (plan §6 Rule 1). Adds `possible_orphan_scored_rubric_item` / `unconfirmed_trace_coverage` / `orphan_scored_rubric_item` findings; consumes `semantic_status` once `verify` ships.
-2. **Rule 2 — Required Spec Coverage** (plan §6 Rule 2). Medium finding when a `requirement_level: must` spec has no `scored` rubric trace.
-3. **Rule 3 — Optionality Consistency** (plan §6 Rule 3). High finding when only-optional-traced `scored` rubric weight ≥ `policy.optionality_mismatch.weight_threshold`.
-4. **Fixtures**: `orphan_scored_rubric`, `required_spec_unscored`, `optionality_mismatch`, each with under-strict / over-strict regression tests aligned with §10.1.
+1. **Rule 1 slice 2 — `unconfirmed_trace_coverage`** (plan §6 Rule 1). Medium / provisional finding when a scored rubric has trace links but none with `semantic_status in {human_accepted, human_overridden}`. Before implementing, decide whether `clean_assignment` should be relabelled with `human_accepted` to remain the canonical clean baseline, or whether a separate post-review clean fixture is more accurate.
+2. **Rule 1 slice 3 — bonus orphan informational finding**. `evaluation_role == bonus` rubric items without trace links surface as `informational` findings; they do not block gating.
+3. **Rule 2 — Required Spec Coverage** (plan §6 Rule 2). Medium finding when a `requirement_level: must` spec has no `scored` rubric trace. Pair with `required_spec_unscored` fixture and two-directional guards.
+4. **Rule 3 — Optionality Consistency** (plan §6 Rule 3). High finding when only-optional-traced `scored` rubric weight ≥ `policy.optionality_mismatch.weight_threshold`. Pair with `optionality_mismatch` fixture and two-directional guards.
 5. **`gate` and later phases**: implement after `final_review.schema.json`; then confirm real-assignment permissions and resolve Phase 2 runner/retention parameters.
 
 ## Verification
 
-- 67 collected tests pass locally (`python3 -m pytest -q`). The test surface now covers the iteration-1 audit blockers directly: snapshot text/quote grounding, N:M evidence completeness, and both pre- and post-subcommand `--output` forms.
-- Audit probes re-run after the repair:
-  - Probe 1 (fabricated `S1` text + quote on valid span): exit `2`, diagnostics include `spec_text_not_in_snapshot_span`, `spec_quote_not_in_snapshot_span`, `evidence_quote_not_in_snapshot_span`.
-  - Probe 2 (`spec_ids: [S1, S2]` with only S1 evidence): exit `2`, `evidence_quote_missing_for_spec_id` with `spec_id=S2`, severity `high`.
-  - Probe 3 (`schema --command check --output json`): exit `0`, valid JSON envelope.
+- 72 collected tests pass locally (`docker compose run --rm test`). The test surface now covers Rule 1 slice 1 (under-strict + three over-strict guards) on top of the iteration-1.5 audit-blocker tests.
+- Manual smoke runs after slice 1:
+  - `check` on `fixtures/orphan_scored_rubric`: exit `0`, `status=provisional_findings`, one `possible_orphan_scored_rubric_item` finding on `R2` (`severity=high`, `decision_status=provisional`), `next_actions[0].type=review_orphan_rubric`.
+  - `check` on `fixtures/clean_assignment`: exit `0`, `status=success`, no findings (Rule 1 leaves the existing clean baseline untouched).
 - Repository `main` is published to `origin/main` through the SSH remote `git@github.com:entangelk/assessment_poc.git`.
 
 ## Project Structure
@@ -90,19 +92,21 @@ docker compose run --rm harness --output json check \
 - `Dockerfile`, `docker-compose.yml`, `.dockerignore`: canonical dev/run environment.
 - `pyproject.toml`: src-layout Python package, entry point `assessment-harness`.
 - `src/assessment_harness/`: package code.
-  - `cli.py`: `check`, `schema`, `report` subcommands; envelope/exit-code contract.
+  - `cli.py`: `check`, `schema`, `report` subcommands; envelope/exit-code contract; Rule 1 wiring after a clean Rule 0 pass.
   - `models.py`: YAML+schema loader, `SourceSnapshot`/`Document` with sha256 and line/span access.
-  - `rules.py`: Rule 0 reference-integrity engine; Rules 1-3 to follow.
+  - `rules.py`: Rule 0 reference-integrity engine and Rule 1 (slice 1: `possible_orphan_scored_rubric_item`). Remaining Rule 1 branches and Rules 2-3 to follow.
   - `schemas.py`: schema loader with `ASSESSMENT_HARNESS_SCHEMA_DIR` env override.
   - `report.py`: Markdown renderer.
 - `schemas/`: eight JSON Schemas (source_manifest, spec_items, rubric_items, trace_links, policy, findings, integrity_diagnostics, cli_output).
 - `config/policy.yaml`: default policy.
 - `fixtures/clean_assignment/`: passing fixture with source manifest, sha256, spec.md, rubric.md.
 - `fixtures/reference_integrity/`: failing fixture covering all six Rule 0 violation classes.
+- `fixtures/orphan_scored_rubric/`: Rule 1 slice 1 fixture (R2 scored without trace link).
 - `tests/`: `test_rules.py`, `test_cli_output_contract.py`, `test_fixtures.py`, `test_models.py`, `conftest.py`.
 - `docs/implementation_plan_assessment_harness_poc_v1.md`: implementation source of truth (v1.7).
 - `docs/ideation_assessment_harness_v2.1.md`: latest ideation, second in precedence.
 - `docs/ideation_assessment_harness_v2.md`, `docs/ideation_assessment_harness_v1.md`: historical references.
-- `docs/daily_logs/2026-05-25/work_log.md`: full record of planning iterations (v1.0 → v1.7) and Phase 0 iteration 1.
+- `docs/daily_logs/2026-05-25/work_log.md`: full record of planning iterations (v1.0 → v1.7) and Phase 0 iteration 1 / 1.5.
+- `docs/daily_logs/2026-05-26/work_log.md`: Phase 0 iteration 2 slice 1 (Rule 1 no-trace branch).
 - `CHANGELOG.md`: major milestones.
 - `HANDOFF.md`: this file.

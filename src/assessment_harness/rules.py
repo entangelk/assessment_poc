@@ -1,7 +1,8 @@
 """Deterministic rule engine.
 
-Phase 0 ships Rule 0 (Reference Integrity Diagnostic). Rules 1-3 will land in
-the next iteration and reuse this module's data shapes.
+Phase 0 ships Rule 0 (Reference Integrity Diagnostic) plus a first slice of
+Rule 1 (Scored Rubric Coverage). Remaining Rule 1 branches (unconfirmed
+coverage, bonus informational) and Rules 2-3 land in following iterations.
 
 Each rule consumes already-schema-validated dict inputs and returns a list of
 :class:`Diagnostic` or :class:`Finding` records. Severity and decision status
@@ -567,9 +568,69 @@ def _check_evidence_source_ref(
         )
 
 
+def run_rule_one(
+    rubric_items_doc: dict[str, Any],
+    trace_links_doc: dict[str, Any],
+) -> list[Finding]:
+    """Scored Rubric Coverage (spec §6 Rule 1).
+
+    This iteration emits only the no-trace branch:
+    ``possible_orphan_scored_rubric_item`` (``high`` / ``provisional``) for any
+    ``evaluation_role == scored`` rubric item that has no compacted trace
+    link. ``unconfirmed_trace_coverage`` (links exist but none human-accepted)
+    and the bonus-orphan informational finding land in later slices; the
+    confirmed ``orphan_scored_rubric_item`` is owned by ``gate`` after final
+    review (plan §6 Rule 1).
+
+    Rule 0 already guarantees rubric IDs are unique and that every trace link
+    references an existing rubric, so this rule trusts those invariants.
+    """
+
+    findings: list[Finding] = []
+    rubric_items: list[dict[str, Any]] = rubric_items_doc.get("rubric_items", [])
+    trace_links: list[dict[str, Any]] = trace_links_doc.get("trace_links", [])
+
+    linked_rubric_ids = {
+        link.get("rubric_id")
+        for link in trace_links
+        if link.get("rubric_id")
+    }
+
+    for rubric in rubric_items:
+        if rubric.get("evaluation_role") != "scored":
+            continue
+        rid = rubric.get("id")
+        if not rid:
+            continue
+        if rid in linked_rubric_ids:
+            continue
+        findings.append(
+            Finding(
+                type="possible_orphan_scored_rubric_item",
+                severity="high",
+                decision_status="provisional",
+                rubric_id=rid,
+                message=(
+                    f"scored rubric_item {rid!r} has no trace_link to any "
+                    "spec_item; possible orphan pending final review."
+                ),
+            )
+        )
+
+    return findings
+
+
 def severity_counts(diagnostics: list[Diagnostic]) -> dict[str, int]:
     counts = {"informational": 0, "low": 0, "medium": 0, "high": 0, "total": 0}
     for diag in diagnostics:
         counts[diag.severity] = counts.get(diag.severity, 0) + 1
+        counts["total"] += 1
+    return counts
+
+
+def finding_severity_counts(findings: list[Finding]) -> dict[str, int]:
+    counts = {"informational": 0, "low": 0, "medium": 0, "high": 0, "total": 0}
+    for f in findings:
+        counts[f.severity] = counts.get(f.severity, 0) + 1
         counts["total"] += 1
     return counts

@@ -1,0 +1,18 @@
+trace_links:
+  - rubric_id: R1
+    spec_ids: [S1]
+    rationale: "R1 evaluates the refund-handling requirement disclosed by S1."
+    evidence_quotes:
+      - spec_id: S1
+        quote: "Implement refund handling for cancelled orders."
+        verification_mode: token_sequence
+    semantic_status: pending_verification
+    support:
+      total_valid_runs: 1
+      found_in_runs: ["manual"]
+    identity_basis: "rubric_id+sorted(spec_ids)"
+    variants: []
+    sources:
+      - kind: manual
+    reviewed_by: null
+    reviewed_at: null

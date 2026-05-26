@@ -25,7 +25,12 @@ from typing import Any
 
 from .models import HarnessInputError, load_source_snapshot, load_validated, load_policy
 from .report import render_markdown
-from .rules import run_rule_zero, severity_counts
+from .rules import (
+    finding_severity_counts,
+    run_rule_one,
+    run_rule_zero,
+    severity_counts,
+)
 from .schemas import validate
 
 
@@ -150,8 +155,45 @@ def _cmd_check(args: argparse.Namespace) -> CommandResult:
         _write_json(Path(args.diagnostics_out), diagnostics_payload)
         return CommandResult(envelope=envelope, exit_code=2)
 
-    # No Rule 0 issues. Phase 0 ships only Rule 0; Rules 1-3 will append
-    # provisional findings here in the next iteration.
+    # Rule 0 clean. Run subsequent provisional rules; check never emits
+    # blocking verdicts (that is gate's job).
+    rule_one_findings = run_rule_one(rubric_doc, trace_doc)
+    provisional_findings = rule_one_findings
+    finding_counts = finding_severity_counts(provisional_findings)
+
+    if provisional_findings:
+        for f in provisional_findings:
+            if f.type == "possible_orphan_scored_rubric_item":
+                next_actions.append(
+                    {
+                        "type": "review_orphan_rubric",
+                        "rubric_id": f.rubric_id,
+                        "finding_type": f.type,
+                    }
+                )
+        findings_payload = {
+            "status": "provisional_findings",
+            "findings": [f.to_dict() for f in provisional_findings],
+            "diagnostics_ref": str(Path(args.diagnostics_out).name),
+            "blocking_count": 0,
+            "generated_at": _now_iso(),
+        }
+        envelope = _build_envelope(
+            status="provisional_findings",
+            exit_code=0,
+            command="check",
+            next_actions=next_actions,
+            findings_path=str(args.out),
+            diagnostics_path=str(args.diagnostics_out),
+            blocking_count=0,
+            high_integrity_count=0,
+            provisional_high_count=finding_counts["high"],
+            provisional_medium_count=finding_counts["medium"],
+        )
+        _write_json(Path(args.out), findings_payload)
+        _write_json(Path(args.diagnostics_out), diagnostics_payload)
+        return CommandResult(envelope=envelope, exit_code=0)
+
     findings_payload = {
         "status": "success",
         "findings": [],
@@ -240,15 +282,25 @@ COMMAND_CONTRACTS: dict[str, dict[str, Any]] = {
             "diagnostics_path",
             "blocking_count",
             "high_integrity_count",
+            "provisional_high_count",
+            "provisional_medium_count",
             "input_error",
         ],
         "exit_codes": {
-            "0": "no Rule 0 violations; Phase 0 produces no provisional findings yet.",
+            "0": (
+                "no blocking outcome; status=success when no provisional "
+                "findings or status=provisional_findings when Rule 1+ raises "
+                "findings pending final review."
+            ),
             "1": "reserved for `gate` confirmed blocking finding after final review.",
             "2": "input or Rule 0 reference integrity failure (invalid_input).",
             "3": "internal error.",
         },
-        "next_actions_types": ["fix_reference_integrity", "fix_input"],
+        "next_actions_types": [
+            "fix_reference_integrity",
+            "fix_input",
+            "review_orphan_rubric",
+        ],
     },
     "report": {
         "stable_core": STABLE_CORE_FIELDS,

@@ -1,0 +1,16 @@
+spec_items:
+  - id: S1
+    source: spec.md
+    section: "Requirements"
+    text: "Implement refund handling for cancelled orders."
+    visibility: candidate_facing
+    requirement_level: must
+    source_ref:
+      document_id: DOC_SPEC
+      start_line: 1
+      end_line: 1
+    support:
+      total_valid_runs: 1
+      found_in_runs: ["manual"]
+    identity_basis: "source+section+normalized_text"
+    variants: []

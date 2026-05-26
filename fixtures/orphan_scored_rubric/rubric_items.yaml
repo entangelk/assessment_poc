@@ -1,0 +1,32 @@
+rubric_items:
+  - id: R1
+    title: "Refund handling"
+    description: "Implements documented refund behavior for cancelled orders."
+    evaluation_role: scored
+    weight: 10
+    evidence_required: [code]
+    source_ref:
+      document_id: DOC_RUBRIC
+      start_line: 1
+      end_line: 1
+    support:
+      total_valid_runs: 1
+      found_in_runs: ["manual"]
+    identity_basis: "title+normalized_description"
+    variants: []
+
+  - id: R2
+    title: "Hidden grading axis"
+    description: "Scored rubric axis that is not disclosed by any spec item."
+    evaluation_role: scored
+    weight: 8
+    evidence_required: [code]
+    source_ref:
+      document_id: DOC_RUBRIC
+      start_line: 2
+      end_line: 2
+    support:
+      total_valid_runs: 1
+      found_in_runs: ["manual"]
+    identity_basis: "title+normalized_description"
+    variants: []

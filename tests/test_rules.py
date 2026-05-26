@@ -15,7 +15,7 @@ from typing import Any
 import pytest
 
 from assessment_harness.models import Document, SourceSnapshot
-from assessment_harness.rules import run_rule_zero, severity_counts
+from assessment_harness.rules import run_rule_one, run_rule_zero, severity_counts
 
 
 # ---------------------------------------------------------------------------
@@ -533,6 +533,152 @@ def test_rule_zero_trigger_is_high_severity(code: str) -> None:
     matching = [d for d in diagnostics if d.code == code]
     assert matching, f"expected trigger {code!r} to fire"
     assert all(d.severity == "high" for d in matching)
+
+
+# ---------------------------------------------------------------------------
+# Rule 1 — Scored Rubric Coverage, slice 1: no-trace branch
+# ---------------------------------------------------------------------------
+
+
+def _findings_of_type(findings: list[Any], finding_type: str) -> list[Any]:
+    return [f for f in findings if f.type == finding_type]
+
+
+def test_scored_rubric_with_no_trace_link_surfaces_possible_orphan() -> None:
+    """Under-strict guard: a scored rubric item without any trace link must
+    raise `possible_orphan_scored_rubric_item` (high / provisional). If this
+    test stops failing on a regression that drops the no-link branch, the
+    rule has gone silent.
+    """
+    rubric = {
+        "rubric_items": [
+            {
+                "id": "R1",
+                "title": "Refund handling",
+                "evaluation_role": "scored",
+                "source_ref": {
+                    "document_id": "DOC_RUBRIC",
+                    "start_line": 1,
+                    "end_line": 1,
+                },
+            },
+            {
+                "id": "R2",
+                "title": "Idempotency",
+                "evaluation_role": "scored",
+                "source_ref": {
+                    "document_id": "DOC_RUBRIC",
+                    "start_line": 2,
+                    "end_line": 2,
+                },
+            },
+        ]
+    }
+    traces = {
+        "trace_links": [
+            {
+                "rubric_id": "R1",
+                "spec_ids": ["S1"],
+                "evidence_quotes": [
+                    {
+                        "spec_id": "S1",
+                        "quote": "...",
+                        "verification_mode": "ai_judgement",
+                    }
+                ],
+            }
+        ]
+    }
+    findings = run_rule_one(rubric, traces)
+    orphans = _findings_of_type(findings, "possible_orphan_scored_rubric_item")
+    assert len(orphans) == 1
+    assert orphans[0].rubric_id == "R2"
+    assert orphans[0].severity == "high"
+    assert orphans[0].decision_status == "provisional"
+
+
+def test_scored_rubric_with_trace_link_is_not_orphan_flagged() -> None:
+    """Over-strict guard A: a scored rubric that IS traced (any
+    semantic_status) must not be flagged as `possible_orphan_*`. If we
+    later mishandle `semantic_status` and over-promote pending coverage
+    into orphans, this guard will catch the regression.
+    """
+    rubric = {
+        "rubric_items": [
+            {
+                "id": "R1",
+                "title": "Refund handling",
+                "evaluation_role": "scored",
+                "source_ref": {
+                    "document_id": "DOC_RUBRIC",
+                    "start_line": 1,
+                    "end_line": 1,
+                },
+            }
+        ]
+    }
+    traces = {
+        "trace_links": [
+            {
+                "rubric_id": "R1",
+                "spec_ids": ["S1"],
+                "evidence_quotes": [
+                    {
+                        "spec_id": "S1",
+                        "quote": "...",
+                        "verification_mode": "ai_judgement",
+                    }
+                ],
+                "semantic_status": "pending_verification",
+            }
+        ]
+    }
+    findings = run_rule_one(rubric, traces)
+    assert _findings_of_type(findings, "possible_orphan_scored_rubric_item") == []
+
+
+def test_bonus_or_qualitative_orphan_is_not_flagged_by_rule_one_slice_one() -> None:
+    """Over-strict guard B: only `scored` items are in scope for the
+    possible-orphan branch. A `bonus` or `qualitative` item without a
+    trace must not be flagged as scored-orphan. (Bonus orphans get an
+    informational finding in a later slice; qualitative items are out of
+    scope for Rule 1 entirely.)
+    """
+    rubric = {
+        "rubric_items": [
+            {
+                "id": "RB",
+                "title": "Audit log",
+                "evaluation_role": "bonus",
+                "source_ref": {
+                    "document_id": "DOC_RUBRIC",
+                    "start_line": 1,
+                    "end_line": 1,
+                },
+            },
+            {
+                "id": "RQ",
+                "title": "Code quality",
+                "evaluation_role": "qualitative",
+                "source_ref": {
+                    "document_id": "DOC_RUBRIC",
+                    "start_line": 2,
+                    "end_line": 2,
+                },
+            },
+        ]
+    }
+    traces = {"trace_links": []}
+    findings = run_rule_one(rubric, traces)
+    assert _findings_of_type(findings, "possible_orphan_scored_rubric_item") == []
+
+
+def test_rule_one_emits_no_findings_on_baseline() -> None:
+    """The Rule 0 baseline (R1 scored, traced to S1) must produce no Rule 1
+    findings either; this keeps the existing clean fixture clean.
+    """
+    findings = run_rule_one(_baseline_rubric(), _baseline_traces())
+    assert findings == []
 
 
 @pytest.mark.parametrize(
