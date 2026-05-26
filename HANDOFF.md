@@ -80,9 +80,53 @@ docker compose run --rm harness --output json check \
 
 ## Next Tasks
 
-1. **Rule 2 — Required Spec Coverage** (plan §6 Rule 2). Medium finding when a `requirement_level: must` spec has no `scored` rubric trace. Pair with `required_spec_unscored` fixture and two-directional guards. Rule 2 is **structural only** — `semantic_status` is not consulted (Rule 1's final-coverage boundary does NOT transfer; plan v1.9 §6 scope clause).
-2. **Rule 3 — Optionality Consistency** (plan §6 Rule 3). High finding when only-optional-traced `scored` rubric weight ≥ `policy.optionality_mismatch.weight_threshold`. Pair with `optionality_mismatch` fixture and two-directional guards. Like Rule 2, structural only.
-3. **`gate` and later phases**: implement after `final_review.schema.json`; then confirm real-assignment permissions and resolve Phase 2 runner/retention parameters. `gate` is the only stage that may promote persistent `unconfirmed_trace_coverage` (medium / provisional) into `orphan_scored_rubric_item` (high / confirmed).
+### Session boundary (2026-05-26)
+
+Today's session ended after Slice 3.1. The next worker (a different AI) inherits the repo at commit `fbe1a78` (local `main`), seven commits ahead of `origin/main`. Push was deliberately deferred pending owner instruction — verify push permission before running `git push`. The plan / code / tests / docs are mutually consistent at plan v1.10.
+
+**First-touch verification** (run before any new work):
+
+```bash
+docker compose run --rm test          # expect 98 passed
+git log --oneline origin/main..main   # expect 7 commits, top = fbe1a78
+git status                            # expect clean working tree
+```
+
+If any of the three diverges from the expected state, stop and read `docs/daily_logs/2026-05-26/work_log.md` — it documents every commit landed today in narrative form.
+
+### Rule 2 — Required Spec Coverage (next slice, expected smallest unit)
+
+- **Spec source**: plan v1.10 §6 Rule 2 (`docs/implementation_plan_assessment_harness_poc_v1.md`).
+- **Condition**: a `spec_item` with `requirement_level == "must"` that no `scored` rubric_item traces to.
+- **Trace direction**: walk `trace_links`, collect every `spec_id` referenced from any link whose `rubric_id` resolves to a rubric with `evaluation_role == "scored"`. Then for each `must` spec, check whether its `id` is in that set. If not → finding.
+- **Output**: `required_spec_unscored` (proposed type literal — confirm with owner if uncertain; matches plan §7 fixture name pattern), severity `medium`, decision_status `provisional`. Carry `spec_id` on the finding.
+- **CRITICAL — structural only**: do NOT consult `semantic_status`. The Rule 1 final-coverage boundary does NOT transfer to Rule 2. Plan v1.9 §6 scope clause explicitly excludes this. If you find yourself filtering trace_links by `human_accepted` here, stop and re-read §6 Rule 2.
+- **Fixture**: build `fixtures/required_spec_unscored/` per plan §7. Should contain a `must` spec that no `scored` rubric traces to. Optionally include another `must` spec WITH coverage (to verify over-strict). Same source/manifest layout as `orphan_scored_rubric`.
+- **Two-directional guards required** (plan §10.1, CLAUDE.md §4):
+  - Under-strict: must spec without scored trace → finding emitted.
+  - Over-strict A: must spec WITH scored trace (any semantic_status, including `pending_verification`) → no finding. This guard prevents accidentally applying Rule 1's final-coverage boundary to Rule 2.
+  - Over-strict B: `optional` / `informational` spec without scored trace → no finding.
+  - Over-strict C: must spec traced only to a `bonus` or `qualitative` rubric → finding (only `scored` traces count as coverage).
+- **CLI**: add a `next_action` type (proposed: `review_uncovered_must_spec`), append to `COMMAND_CONTRACTS["check"].next_actions_types`. Update Slice 3.1's full-set assertion in `test_schema_command_returns_check_contract` to include the new entry.
+- **`clean_assignment` impact**: clean_assignment has S1 (must) → R1 (scored), S2 (must) → R2 (scored). Both must specs are covered, so Rule 2 should not change clean_assignment's baseline. Verify after wiring.
+- **Smallest unit**: do Rule 2 as ONE slice (no sub-slicing needed; it has a single finding type). Match the Rule 1 slice 1 commit's structure as a template.
+
+### Rule 3 — Optionality Consistency (after Rule 2)
+
+- Plan §6 Rule 3. High finding when only-optional-traced `scored` rubric weight ≥ `policy.optionality_mismatch.weight_threshold` (PoC default `10` in `config/policy.yaml`).
+- "Only optional traced" = every `spec_id` linked from this scored rubric has `requirement_level == "optional"`. If even one is `must`, no finding.
+- Structural only — `semantic_status` not consulted (same scope clause as Rule 2).
+- Fixture: `fixtures/optionality_mismatch/`.
+- Policy threshold: read from `policy.optionality_mismatch.weight_threshold`. The CLI already loads policy; thread it into `run_rule_three`.
+
+### `gate` and later phases
+
+- Implement after `final_review.schema.json` (Phase 3 entry point). `gate` is the only stage that may promote persistent `unconfirmed_trace_coverage` (medium / provisional) into `orphan_scored_rubric_item` (high / confirmed).
+- Real-assignment permissions and Phase 2 runner/retention parameters resolve here too.
+
+### Test-surface lessons from today's session (Slice 3.1 retrospective)
+
+When adding any new envelope field, next_action type, or schema-contract entry, also add a regression that **explicitly** asserts on it. The CLI's primary user is an AI agent; the envelope (stdout JSON) is the public contract, not the on-disk `findings.json`. Tests that only read findings.json miss envelope-shape regressions — slice 3 shipped three new envelope surfaces with no test for any of them, and the gap only surfaced via owner review. `_run_check` in `tests/test_fixtures.py` now returns the envelope as a 4-tuple to make this easy. Use it.
 
 ## Verification
 
@@ -92,7 +136,15 @@ docker compose run --rm harness --output json check \
   - `check` on grounded `fixtures/clean_assignment` with manifest: exit `0`, `status=provisional_findings`, two `unconfirmed_trace_coverage` findings on R1 and R2.
   - `check` on grounded `fixtures/reference_integrity` with manifest: exit `2`, `status=invalid_input`, all eight Rule 0 violation codes present (`high_integrity_count=9` because `evidence_quote_missing_for_spec_id` fires twice; pre-existing duplicate, not a regression).
   - `check` on `fixtures/clean_assignment` without `--source-manifest`: exit `2`, `status=invalid_input`, diagnostic `source_manifest_required`, next_action `provide_source_manifest`.
-- Repository `main` is published to `origin/main` through the SSH remote `git@github.com:entangelk/assessment_poc.git`.
+- Repository `main` is **7 commits ahead of `origin/main`** at session end (2026-05-26). Push deferred pending owner instruction. Local commits since last push, oldest first:
+  1. `3193faa` — Phase 0 iteration 2 slice 1: Rule 1 `possible_orphan_scored_rubric_item`
+  2. `8c5e270` — Phase 0 iteration 2 slice 1.5: `--source-manifest` mandated, fixtures grounded (plan v1.8)
+  3. `4a3ecbb` — Sync README and HANDOFF with plan v1.8 / slice 1.5 contract
+  4. `241440f` — Phase 0 iteration 2 slice 2: Rule 1 `unconfirmed_trace_coverage`
+  5. `642d24f` — Plan v1.9: close §6 Rule 1 ↔ §5.3.1 spec gap surfaced after slice 2
+  6. `1f01579` — Phase 0 iteration 2 slice 3: Rule 1 `orphan_bonus_rubric_item` (plan v1.10)
+  7. `fbe1a78` — Slice 3.1: lock slice 3's CLI public contract under regression tests
+- SSH remote: `git@github.com:entangelk/assessment_poc.git`. Confirm push permission with the owner before running `git push`.
 
 ## Project Structure
 

@@ -1,5 +1,56 @@
 # Work Log - 2026-05-26
 
+## Session End — Hand-off to next worker
+
+Session closed by owner instruction after Slice 3.1. The next worker is a different AI; this section is the primary hand-off entry point. Read [HANDOFF.md](../../../HANDOFF.md) for the operational status snapshot; read this section for the today-specific narrative and lessons.
+
+### State at session end
+
+- Local `main` at commit `fbe1a78`, **7 commits ahead of `origin/main`**. Push was deliberately deferred — owner did not authorize a push tonight, and the running rule for risky-or-shared actions (per CLAUDE.md) is to confirm before publishing. The next worker should confirm push permission with the owner before running `git push`.
+- 98 tests pass (`docker compose run --rm test`). Working tree is clean.
+- Plan is at v1.10. Code / tests / plan / HANDOFF / README / CHANGELOG are mutually consistent at that version.
+- Today's commits (oldest first), each landed on a green test run:
+  1. `3193faa` Slice 1 (Rule 1 `possible_orphan_scored_rubric_item`)
+  2. `8c5e270` Slice 1.5 (`--source-manifest` mandated, fixtures grounded, plan v1.8)
+  3. `4a3ecbb` Doc sync after slice 1.5
+  4. `241440f` Slice 2 (Rule 1 `unconfirmed_trace_coverage`)
+  5. `642d24f` Slice 2.5 (plan v1.9 — close §6 ↔ §5.3.1 spec gap)
+  6. `1f01579` Slice 3 (Rule 1 `orphan_bonus_rubric_item`, plan v1.10)
+  7. `fbe1a78` Slice 3.1 (test-only — lock slice 3 CLI public contract)
+
+### What was done today
+
+Rule 1 (Scored Rubric Coverage) went from "not implemented" to "all three branches live, all contract surfaces locked under regression, plan body fully consistent". Specifically:
+
+- Slice 1 added the no-trace branch (`possible_orphan_scored_rubric_item`, high / provisional).
+- Slice 1.5 mandated `--source-manifest` and grounded the two non-clean fixtures (`reference_integrity` and `orphan_scored_rubric`) — that was a plan/implementation drift discovered by the owner.
+- Slice 2 added the pending-link branch (`unconfirmed_trace_coverage`, medium / provisional). Discovered a §6 ↔ §5.3.1 plan gap during owner review and closed it in slice 2.5 (plan v1.9) — that gap was my mistake: I had recorded the resolution in HANDOFF instead of amending the plan body, which violated the canonical-document precedence (CLAUDE.md §1).
+- Slice 3 added the bonus branch (`orphan_bonus_rubric_item`, informational / provisional). Plan v1.10 locked the finding-type naming convention into the spec body.
+- Slice 3.1 was a test-only follow-up after owner review found that slice 3's new envelope fields and next_action types had no regression coverage. The envelope-side surface is now locked, including a bonus-only boundary E2E that pins `(high=0, medium=0, informational=1)`.
+
+### Next slice for the next AI
+
+Rule 2 (Required Spec Coverage). See [HANDOFF.md#next-tasks](../../../HANDOFF.md#next-tasks) for the detailed entry brief — fixture name, condition, output type, naming convention pointer, and the four required regression guards (one under-strict + three over-strict). Plan v1.10 §6 Rule 2 is the canonical source. **Critical**: Rule 2 is structural only; do not transfer Rule 1's final-coverage boundary to it. The HANDOFF Active Decisions list locks this; the plan §6 scope clause also calls it out.
+
+### Lessons (recorded for the next AI, but also for future-me)
+
+These came from owner review on this session. Each was a real mistake worth not repeating:
+
+1. **Surface spec conflicts; do not silently resolve them.** Slice 2 entered with §6 Rule 1 ↔ §5.3.1 in conflict (Rule 1's enumeration vs §5.3.1's status table). I implemented the "correct" reading and recorded the resolution in HANDOFF. Plan body stayed inconsistent. The right move was to stop, raise the conflict to the owner, get a direction, and amend the plan in the same slice. CLAUDE.md §1 says this explicitly; I violated it. Slice 2.5 had to retroactively lift the resolution into the plan.
+2. **HANDOFF cannot override the plan.** Plan is the 1st-priority canonical source. HANDOFF Active Decisions is a curated index of where the plan made decisions, plus operational notes (smoke-run shapes, version anchoring). If a decision changes what another worker implements, it goes in the plan body — full stop. Re-read this before writing anything into HANDOFF that another worker will rely on.
+3. **Tests must lock the public contract, not just the on-disk artifacts.** Slice 3 shipped three new envelope surfaces (`provisional_informational_count`, `review_orphan_bonus_rubric` next_action, schema-contract exposure of both). None of them had a regression. The slice 3 E2E test `capsys.readouterr()`'d the stdout and discarded it. Slice 3.1 had to retrofit the locks. `_run_check` in `tests/test_fixtures.py` now returns the envelope as a 4-tuple — use it for any envelope-changing slice.
+4. **Boundary cases need explicit locks even when a richer fixture exercises the same code path.** Slice 3.1's bonus-only E2E test exists because `orphan_scored_rubric` exercises `provisional_informational_count` only as part of a `(1, 1, 1)` row; removing the field would still let the rich test pass (the rich test checks the field individually, sure, but a boundary lock makes intent explicit). The bonus-only test pins the `(0, 0, 1)` row which is unreachable from any other path.
+5. **Don't skip the pattern sweep.** CLAUDE.md §4's 30-second grep was used today on slice 1 and slice 2 and caught nothing of consequence. But the slice 3 envelope-contract miss would have been caught by a sweep for "newly added envelope field → who asserts on it?" before commit. The sweep is cheap; do it for both code AND test additions.
+
+### Open verification items (next AI to confirm)
+
+- Confirm `docker compose run --rm test` still returns 98 passed on the inherited tree.
+- Confirm the four-row smoke matrix in HANDOFF Verification (clean_assignment / orphan_scored_rubric / reference_integrity / no-manifest) still produces the documented envelope shapes.
+- Confirm `git log --oneline origin/main..main` shows exactly the 7 commits listed above with the same hashes; if not, the tree has been rebased or amended and the hand-off narrative is partly invalid.
+- Read [HANDOFF.md Active Decisions](../../../HANDOFF.md#active-decisions-adopted) before any rule work — specifically the "Rule 1 final-coverage boundary" entry that locks Rule 2/3 as structural only.
+
+---
+
 ## Goals
 
 - Begin Rule 1 (Scored Rubric Coverage) in the smallest possible vertical slice.
