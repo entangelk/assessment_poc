@@ -15,6 +15,7 @@
 - Re-ran `schema --command check --output json`: it advertises `provisional_informational_count` and `review_orphan_bonus_rubric` as required by Slice 3.1's assertions.
 - Updated `HANDOFF.md` so it reflects the verified/current workflow rather than a stale pre-handoff-commit branch snapshot, and so Rule 2's as-yet-undefined finding/action literals are not treated as settled by a handoff note.
 - Corrected the bonus-only regression test docstring and retrospective wording: the test uniquely pins the informational-only `(0, 0, 1)` boundary, while the richer `(1, 1, 1)` fixture also protects the field from removal.
+- Published the verified local batch to `origin/main` after owner authorization.
 
 ### Issues Found
 
@@ -39,7 +40,6 @@
 
 ### Next Steps
 
-- Publish the reviewed commits and this documentation correction to `origin/main`.
 - Implement Rule 2 only after its finding/action literals have been fixed in the canonical plan; keep its coverage check structural and independent of `semantic_status`.
 
 ---

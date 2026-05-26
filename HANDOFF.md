@@ -122,7 +122,7 @@ When adding any new envelope field, next_action type, or schema-contract entry, 
   - `check` on grounded `fixtures/clean_assignment` with manifest: exit `0`, `status=provisional_findings`, two `unconfirmed_trace_coverage` findings on R1 and R2.
   - `check` on grounded `fixtures/reference_integrity` with manifest: exit `2`, `status=invalid_input`, all eight Rule 0 violation codes present (`high_integrity_count=9` because `evidence_quote_missing_for_spec_id` fires twice; pre-existing duplicate, not a regression).
   - `check` on `fixtures/clean_assignment` without `--source-manifest`: exit `2`, `status=invalid_input`, diagnostic `source_manifest_required`, next_action `provide_source_manifest`.
-- Publishing authorization was received from the owner during post-slice-3.1 review; the verified local batch, including the documentation correction, is to be pushed to `origin/main`.
+- Publishing authorization was received from the owner during post-slice-3.1 review; verified `main` has been published to `origin/main`.
 
 ## Project Structure
 
