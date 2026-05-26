@@ -649,7 +649,8 @@ def run_rule_one(
                     f"scored rubric_item {rid!r} has {len(rubric_links)} "
                     "trace_link(s) but none carry a final-coverage "
                     "semantic_status (human_accepted / human_overridden); "
-                    "coverage is unconfirmed until final review."
+                    "coverage is not confirmed (pending verifier-agent "
+                    "results, final human review, or gate disposition)."
                 ),
                 evidence={
                     "link_count": len(rubric_links),

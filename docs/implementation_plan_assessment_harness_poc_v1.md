@@ -1,4 +1,4 @@
-# Assessment Spec Harness PoC 구현 계획서 v1.8
+# Assessment Spec Harness PoC 구현 계획서 v1.9
 
 ## 0. 문서 목적
 
@@ -580,12 +580,14 @@ token_sequence 비교는 normalized whitespace 기준의 토큰 시퀀스 동일
 
 - 조건/결과:
   - compacted trace link 자체가 없음: `possible_orphan_scored_rubric_item`, `high`, `provisional`
-  - link는 있으나 모든 link가 `pending_verification`, `agent_supported`, `agent_rejected`, `agent_uncertain` 중 하나: `unconfirmed_trace_coverage`, `medium`, `provisional`
-  - final review 이후 모든 link가 `human_rejected` 또는 `rerun_requested`로 남고 reviewer가 orphan을 확정: `orphan_scored_rubric_item`, `high`, `confirmed`
-- 판정 상태: `human_accepted`/`human_overridden` link만 final coverage로 인정한다.
+  - link는 있으나 **어떤 link도** `semantic_status`가 `human_accepted` / `human_overridden`이 아님: `unconfirmed_trace_coverage`, `medium`, `provisional`. 이 분기는 pre-review 상태 (`pending_verification`, `agent_supported`, `agent_rejected`, `agent_uncertain`)와 post-review non-coverage 상태 (`human_rejected`, `rerun_requested`)를 모두 포함한다. §5.3.1 상태표에서 `Rule 1 coverage 기여`가 "coverage 아님"인 모든 상태가 여기에 해당한다.
+  - final review 이후 위 medium provisional이 지속되고 reviewer가 orphan을 확정: `orphan_scored_rubric_item`, `high`, `confirmed`. 이 confirmed finding은 `check`가 아닌 `gate`만 발행한다 (`gate`는 final review record를 읽어 medium provisional을 high confirmed로 승급한다).
+- 판정 상태: `human_accepted` / `human_overridden` link만 final coverage로 인정한다 (§5.3.1과 정합).
 - 차단 대상: `gate`의 confirmed finding에서만 예
 - 의도: 공개 명세와 무관한 점수 항목 탐지
 - bonus 처리: `evaluation_role == bonus`인 orphan은 별도 `informational` finding으로 report에 표시하되 차단하지 않는다.
+
+본 규칙의 final-coverage 경계 (`{human_accepted, human_overridden}`)는 Rule 1과 `gate`에서만 적용한다. Rule 2와 Rule 3은 `semantic_status`와 무관하게 §6의 본문 조건만으로 finding을 발화한다.
 
 ### Rule 2. Required Spec Coverage
 
@@ -1124,6 +1126,15 @@ Phase 2/3 전 확정할 사항:
 ---
 
 ## 15. 변경 이력
+
+### v1.9 (2026-05-26)
+
+핵심 변경: **§6 Rule 1의 `unconfirmed_trace_coverage` 분기를 §5.3.1 상태표와 정합화**.
+
+- **이유**: v1.8까지의 §6 Rule 1은 `unconfirmed_trace_coverage` 발화 대상으로 `pending_verification` / `agent_supported` / `agent_rejected` / `agent_uncertain`만 열거했지만, §5.3.1 상태표는 `human_rejected`와 `rerun_requested`도 "coverage 아님"으로 분류한다. 두 절이 어긋나서, post-review non-coverage 상태가 `check` 단계에서 어떤 finding을 emit하는지 spec gap이 있었다. 구현 (Phase 0 iteration 2 slice 2)이 §5.3.1과 자동화 흐름의 의도에 맞게 두 상태도 medium provisional로 처리하고 있었으나, plan 본문은 그대로였다.
+- **§6 Rule 1 본문 갱신**: medium provisional 분기를 "어떤 link도 `human_accepted` / `human_overridden`이 아닌 경우"로 일반화하여 §5.3.1과 정합. 셋째 분기 (confirmed orphan)는 `gate`가 final review 이후 medium provisional을 high confirmed로 승급한다는 흐름을 명시.
+- **경계 적용 범위 명시**: final-coverage 경계 (`{human_accepted, human_overridden}`)는 Rule 1과 `gate`에서만 사용한다. Rule 2/3은 `semantic_status`와 무관하게 §6의 본문 조건만으로 finding을 발화한다 (HANDOFF Active Decisions 정정과 정합).
+- **구현 영향 없음**: rules.py / cli.py / 테스트는 이미 v1.9 본문과 일치한다. 본 v1.9는 plan 본문이 구현·§5.3.1과 정합하도록 spec gap을 닫는 변경이다.
 
 ### v1.8 (2026-05-26)
 

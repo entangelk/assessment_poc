@@ -77,6 +77,61 @@ Effect:
 
 ---
 
+## Slice 2.5 — plan v1.8 → v1.9: close the §6 Rule 1 spec gap surfaced after slice 2
+
+### Goals
+
+- Reconcile the canonical implementation plan with the slice 2 implementation so that the 1st-priority source of truth (plan) is not lagging behind the harness. Slice 2 had introduced an extension to plan §6 Rule 1 (treating `human_rejected` / `rerun_requested` as `unconfirmed_trace_coverage` triggers) but only recorded the decision in HANDOFF, leaving the plan body inconsistent with §5.3.1's own status table.
+- Correct two related documentation defects flagged after slice 2: (1) HANDOFF's "Final-coverage boundary" decision claimed the boundary applied to Rule 2 too, but plan §6 Rule 2 is purely structural and does not consult `semantic_status`; (2) README and HANDOFF status notes still described Rule 1 as "slice 1 only" after slice 2 had landed; (3) the `unconfirmed_trace_coverage` message ended with "coverage is unconfirmed until final review", which is inaccurate when applied to `human_rejected` / `rerun_requested` (those states already reflect a completed review).
+
+### Completed Work
+
+#### Plan v1.8 → v1.9
+
+- Rewrote plan §6 Rule 1's medium-provisional branch so that `unconfirmed_trace_coverage` fires for any link whose `semantic_status` is *not* `human_accepted` / `human_overridden`. The new wording explicitly names pre-review (`pending_verification`, `agent_*`) and post-review non-coverage (`human_rejected`, `rerun_requested`) states, matching §5.3.1's status table directly.
+- Rewrote the confirmed-orphan third branch to clarify that `gate` (not `check`) promotes persistent medium provisional into `orphan_scored_rubric_item` (high / confirmed) after final review.
+- Added a one-line scope clause: the final-coverage boundary applies to Rule 1 and `gate` only; Rule 2 / Rule 3 do not consult `semantic_status` and fire purely on §6's structural conditions.
+- Added §15 v1.9 entry documenting the rationale (close §5.3.1 ↔ §6 gap) and noting that the implementation already matched the new wording (no code change needed for this slice).
+
+#### HANDOFF Active Decisions correction
+
+- Edited the "Rule 1 final-coverage boundary" entry to scope the boundary to Rule 1 and `gate` only. Explicitly notes that Rule 2 / Rule 3 are not affected — protects the next worker from over-implementing Rule 2 with semantic-status gates.
+- Bumped canonical-spec version reference from v1.8 to v1.9.
+- Updated rules.py description in the Project Structure block to reflect that `possible_orphan_scored_rubric_item` + `unconfirmed_trace_coverage` are both live; only the bonus informational branch and Rules 2-3 remain.
+- Disambiguated the slice 1.5 historical entry: section numbers `§5.0 / §5.1 / §11` are unchanged in v1.9; the version reference is dropped from the historical landing note so readers do not confuse it with the current canonical version.
+
+#### README status notes
+
+- "Phase 0 진행 상태" row now reflects slice 2 (both Rule 1 branches live; bonus informational, Rule 2, Rule 3, and `gate` still pending).
+- "문서" table canonical-version reference updated to v1.9.
+- "필수 인자" callout for `--source-manifest` drops the version reference (section numbers are stable across v1.8 → v1.9).
+
+#### Message wording generalized
+
+- `rules.py`: `unconfirmed_trace_coverage` message tail changed from "coverage is unconfirmed until final review." to "coverage is not confirmed (pending verifier-agent results, final human review, or gate disposition).". The new wording is accurate for both pre-review and post-review non-coverage states. Verified manually on `clean_assignment` (status pending_verification): message renders correctly; pytest 85 still passes.
+
+### Files Changed
+
+- `docs/implementation_plan_assessment_harness_poc_v1.md` (v1.8 → v1.9)
+- `HANDOFF.md`
+- `README.md`
+- `src/assessment_harness/rules.py`
+
+### Issues Found
+
+- Problem: at slice 2 entry I detected the §6 ↔ §5.3.1 gap but only recorded the resolution in HANDOFF rather than amending the plan body. This violated CLAUDE.md §1 (surface spec conflicts, do not silently pick a side). The plan was then briefly ahead of the source-of-truth document while HANDOFF carried the actual contract.
+- Cause: I treated the gap as a downstream interpretation issue rather than as a spec edit. The rule-of-thumb here should be: if the resolution would change what a different worker implements, the plan body — not HANDOFF — is the right place for the resolution.
+- Resolution: slice 2.5 (this work) lifts the resolution from HANDOFF into plan §6 Rule 1 and §15 v1.9. HANDOFF Active Decisions is rewritten as a *reference* to the plan rather than as the primary store of the decision. Going forward, any spec gap will surface to the user before implementation, and the plan body will be amended in the same slice that ships the implementation.
+- Outcome: plan, code, and tests are now mutually consistent at v1.9.
+
+### Decisions
+
+- Plan is the only mechanism for changing rule semantics. HANDOFF Active Decisions becomes a curated index of where canonical decisions live in the plan, plus operational notes (smoke-run shapes, version anchoring) that have no place in the spec itself.
+- Rule 2 and Rule 3 will be implemented strictly per plan §6 body — no semantic_status filtering. The Rule 1 boundary does not transfer; revisiting that decision will require a plan edit, not a HANDOFF note.
+- Finding messages must be accurate for every lifecycle state the rule fires on. Future rule additions follow the same constraint.
+
+---
+
 ## Slice 2 — `unconfirmed_trace_coverage` finding
 
 ### Goals
