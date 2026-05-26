@@ -568,33 +568,49 @@ def _check_evidence_source_ref(
         )
 
 
+HUMAN_ACCEPTED_SEMANTIC_STATUSES: frozenset[str] = frozenset(
+    {"human_accepted", "human_overridden"}
+)
+
+
 def run_rule_one(
     rubric_items_doc: dict[str, Any],
     trace_links_doc: dict[str, Any],
 ) -> list[Finding]:
     """Scored Rubric Coverage (spec §6 Rule 1).
 
-    This iteration emits only the no-trace branch:
-    ``possible_orphan_scored_rubric_item`` (``high`` / ``provisional``) for any
-    ``evaluation_role == scored`` rubric item that has no compacted trace
-    link. ``unconfirmed_trace_coverage`` (links exist but none human-accepted)
-    and the bonus-orphan informational finding land in later slices; the
-    confirmed ``orphan_scored_rubric_item`` is owned by ``gate`` after final
-    review (plan §6 Rule 1).
+    Phase 0 emits two provisional branches:
 
-    Rule 0 already guarantees rubric IDs are unique and that every trace link
-    references an existing rubric, so this rule trusts those invariants.
+    - ``possible_orphan_scored_rubric_item`` (``high`` / ``provisional``)
+      for any ``evaluation_role == scored`` rubric item that has no
+      compacted trace link at all.
+    - ``unconfirmed_trace_coverage`` (``medium`` / ``provisional``) when a
+      scored rubric has at least one trace link but none of those links
+      carry a final-coverage ``semantic_status``
+      (``human_accepted`` / ``human_overridden``). Per plan §6 Rule 1,
+      only human-accepted / human-overridden links count as final
+      coverage; ``pending_verification`` / ``agent_*`` are pre-review
+      states, and ``human_rejected`` / ``rerun_requested`` are
+      post-review states pointing toward orphan_scored_rubric_item which
+      ``gate`` (not ``check``) confirms.
+
+    The bonus-orphan informational finding and the confirmed
+    ``orphan_scored_rubric_item`` (gate territory) land in later slices.
+
+    Rule 0 already guarantees rubric IDs are unique and that every trace
+    link references an existing rubric, so this rule trusts those
+    invariants.
     """
 
     findings: list[Finding] = []
     rubric_items: list[dict[str, Any]] = rubric_items_doc.get("rubric_items", [])
     trace_links: list[dict[str, Any]] = trace_links_doc.get("trace_links", [])
 
-    linked_rubric_ids = {
-        link.get("rubric_id")
-        for link in trace_links
-        if link.get("rubric_id")
-    }
+    links_by_rubric: dict[str, list[dict[str, Any]]] = {}
+    for link in trace_links:
+        rid = link.get("rubric_id")
+        if rid:
+            links_by_rubric.setdefault(rid, []).append(link)
 
     for rubric in rubric_items:
         if rubric.get("evaluation_role") != "scored":
@@ -602,18 +618,43 @@ def run_rule_one(
         rid = rubric.get("id")
         if not rid:
             continue
-        if rid in linked_rubric_ids:
+
+        rubric_links = links_by_rubric.get(rid, [])
+        if not rubric_links:
+            findings.append(
+                Finding(
+                    type="possible_orphan_scored_rubric_item",
+                    severity="high",
+                    decision_status="provisional",
+                    rubric_id=rid,
+                    message=(
+                        f"scored rubric_item {rid!r} has no trace_link to any "
+                        "spec_item; possible orphan pending final review."
+                    ),
+                )
+            )
             continue
+
+        statuses = [link.get("semantic_status") for link in rubric_links]
+        if any(s in HUMAN_ACCEPTED_SEMANTIC_STATUSES for s in statuses):
+            continue
+
         findings.append(
             Finding(
-                type="possible_orphan_scored_rubric_item",
-                severity="high",
+                type="unconfirmed_trace_coverage",
+                severity="medium",
                 decision_status="provisional",
                 rubric_id=rid,
                 message=(
-                    f"scored rubric_item {rid!r} has no trace_link to any "
-                    "spec_item; possible orphan pending final review."
+                    f"scored rubric_item {rid!r} has {len(rubric_links)} "
+                    "trace_link(s) but none carry a final-coverage "
+                    "semantic_status (human_accepted / human_overridden); "
+                    "coverage is unconfirmed until final review."
                 ),
+                evidence={
+                    "link_count": len(rubric_links),
+                    "semantic_statuses": statuses,
+                },
             )
         )
 

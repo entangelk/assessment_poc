@@ -77,6 +77,67 @@ Effect:
 
 ---
 
+## Slice 2 — `unconfirmed_trace_coverage` finding
+
+### Goals
+
+- Add the second Rule 1 branch per plan §6: scored rubrics whose trace links exist but carry no final-coverage `semantic_status` (`human_accepted` / `human_overridden`) must surface as `unconfirmed_trace_coverage` (medium / provisional).
+- Update the `clean_assignment` E2E baseline to reflect that the canonical pre-review state is `status=provisional_findings` with medium findings, not `status=success`. The PoC's automation flow never reaches `human_accepted` on its own, so the medium baseline is what callers will actually see.
+
+### Completed Work
+
+#### Rule 1 slice 2 branch
+
+- Extended `run_rule_one` in `src/assessment_harness/rules.py` to inspect each scored rubric's trace links. The control flow is now:
+  - No links for a scored rubric → `possible_orphan_scored_rubric_item` (slice 1).
+  - Any link with `semantic_status in {human_accepted, human_overridden}` → coverage confirmed, no finding.
+  - Otherwise → `unconfirmed_trace_coverage` (medium / provisional) with `evidence={"link_count": N, "semantic_statuses": [...]}` so caller agents can drill into which statuses are present.
+- Introduced module constant `HUMAN_ACCEPTED_SEMANTIC_STATUSES` so the same boundary is reusable in slice 3 / Rule 2 / `gate`.
+- The two branches are mutually exclusive: each scored rubric produces at most one Rule 1 finding.
+
+#### CLI wiring
+
+- `_cmd_check` appends a `review_unconfirmed_trace_coverage` next_action per medium finding (alongside the existing `review_orphan_rubric` for highs).
+- `COMMAND_CONTRACTS["check"].next_actions_types` adds `review_unconfirmed_trace_coverage`.
+
+#### Two-directional regression guards
+
+- Six parametrized under-strict guards covering every non-final-coverage `semantic_status` (`pending_verification`, `agent_supported`, `agent_rejected`, `agent_uncertain`, `human_rejected`, `rerun_requested`). Plus a missing-`semantic_status` variant.
+- Over-strict guard A (two-parametrized): `human_accepted` and `human_overridden` must suppress the finding.
+- Over-strict guard B: among multiple links for the same rubric, ONE `human_accepted` is enough to suppress the finding even if the others remain pending.
+- Over-strict guard C: a scored rubric with no link emits only `possible_orphan_*`, not also `unconfirmed_trace_coverage` — protects against double-counting.
+- Over-strict guard D: `bonus` and `qualitative` rubrics stay out of the unconfirmed branch even with pending links (bonus orphans are slice 3 territory).
+- The previous baseline test `test_rule_one_emits_no_findings_on_baseline` was renamed to `test_rule_one_baseline_emits_unconfirmed_trace_coverage` and rewritten to reflect that the baseline (R1 scored, traced with no semantic_status) is now a medium finding, not a clean pass.
+
+#### E2E test updates
+
+- `test_clean_assignment_yields_pre_review_unconfirmed_trace_coverage` (replacing `test_clean_assignment_passes_check_with_manifest`): asserts `status=provisional_findings`, `blocking_count=0`, exactly two `unconfirmed_trace_coverage` findings on R1 and R2 (both scored, both with pending_verification links), and that no other finding types appear (over-strict on the same baseline).
+- `test_orphan_scored_rubric_fixture_emits_possible_orphan` now asserts BOTH branches: 1 high `possible_orphan_scored_rubric_item` on R2, 1 medium `unconfirmed_trace_coverage` on R1.
+- `test_check_clean_fixture_returns_success` in `tests/test_cli_output_contract.py` (kept under the same name because the contract test still verifies "clean fixture → exit 0"; just the success-vs-provisional shape changed) and `test_check_documented_form_with_trailing_output` were rewritten to expect `status=provisional_findings` plus two `review_unconfirmed_trace_coverage` next_actions.
+
+### Files Changed
+
+- `src/assessment_harness/rules.py`
+- `src/assessment_harness/cli.py`
+- `tests/test_rules.py`
+- `tests/test_fixtures.py`
+- `tests/test_cli_output_contract.py`
+
+### Issues Found
+
+- Problem: `human_rejected` / `rerun_requested` are not listed in plan §6 Rule 1's literal enumeration of pre-review states (only `pending_verification` / `agent_*`). However, plan also says only `human_accepted` / `human_overridden` count as final coverage. The two enumerations don't quite match.
+- Cause: plan §6 enumerates the "pre-review" states explicitly but doesn't enumerate the "post-review-rejected" states symmetrically.
+- Resolution: implementation treats any `semantic_status` *outside* the human-accepted set (including post-review rejections) as triggering `unconfirmed_trace_coverage`. Rationale: such links are not coverage; only `gate` should make the confirmed `orphan_scored_rubric_item` call after final review. The parametrized under-strict tests explicitly include `human_rejected` and `rerun_requested` to lock this behaviour in. Surface this in HANDOFF Active Decisions so slice 3 / gate work uses the same boundary.
+- Outcome: rule passes 85 tests; canonical `clean_assignment` baseline now reflects automation-only reality.
+
+### Decisions
+
+- Final-coverage boundary is `{human_accepted, human_overridden}`. Everything else (including post-review `human_rejected` / `rerun_requested`) is non-coverage. `gate` is responsible for promoting persistent non-coverage into `orphan_scored_rubric_item` (confirmed) after final review.
+- `unconfirmed_trace_coverage` carries `evidence={"link_count", "semantic_statuses"}` for caller-agent triage. This is the minimum needed for an agent to decide between "still in `verify` lifecycle" vs "stuck after review" without re-walking the trace_links file.
+- `clean_assignment` keeps `pending_verification` on its trace links per the user's automation-first decision. The PoC's canonical clean fixture is therefore a *medium-findings* baseline; reaching `status=success` requires final-review evidence which Phase 3 will supply.
+
+---
+
 ## Slice 1.5 — `--source-manifest` made mandatory (plan v1.8)
 
 ### Goals

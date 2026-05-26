@@ -61,14 +61,23 @@ def test_check_clean_fixture_returns_success(
     code, envelope, _ = _run_main(argv, capsys)
     _assert_envelope(envelope)
     assert code == 0
-    assert envelope["status"] == "success"
+    # Slice 2: clean_assignment is pre-review (every link pending_verification),
+    # so the canonical baseline now surfaces medium provisional findings.
+    assert envelope["status"] == "provisional_findings"
     assert envelope["exit_code"] == 0
     assert envelope["command"] == "check"
-    assert envelope["next_actions"] == []
+    # next_actions carries one review_unconfirmed_trace_coverage per scored
+    # rubric (R1, R2). R3 is bonus, R4 is qualitative, neither in scope yet.
+    assert all(
+        a["type"] == "review_unconfirmed_trace_coverage" for a in envelope["next_actions"]
+    )
+    assert len(envelope["next_actions"]) == 2
 
     findings_doc = json.loads(out.read_text(encoding="utf-8"))
-    assert findings_doc["status"] == "success"
-    assert findings_doc["findings"] == []
+    assert findings_doc["status"] == "provisional_findings"
+    assert findings_doc["blocking_count"] == 0
+    types = {f["type"] for f in findings_doc["findings"]}
+    assert types == {"unconfirmed_trace_coverage"}
     diag_doc = json.loads(diag.read_text(encoding="utf-8"))
     assert diag_doc["summary"]["high"] == 0
 
@@ -371,7 +380,9 @@ def test_check_documented_form_with_trailing_output(
     code, envelope, _ = _run_main(argv, capsys)
     _assert_envelope(envelope)
     assert code == 0
-    assert envelope["status"] == "success"
+    # Slice 2: clean_assignment now baselines on provisional_findings (see
+    # test_check_clean_fixture_returns_success for the full rationale).
+    assert envelope["status"] == "provisional_findings"
 
 
 def test_subcommand_output_overrides_root_output(

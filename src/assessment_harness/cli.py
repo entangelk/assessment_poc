@@ -172,6 +172,14 @@ def _cmd_check(args: argparse.Namespace) -> CommandResult:
                         "finding_type": f.type,
                     }
                 )
+            elif f.type == "unconfirmed_trace_coverage":
+                next_actions.append(
+                    {
+                        "type": "review_unconfirmed_trace_coverage",
+                        "rubric_id": f.rubric_id,
+                        "finding_type": f.type,
+                    }
+                )
         findings_payload = {
             "status": "provisional_findings",
             "findings": [f.to_dict() for f in provisional_findings],
@@ -371,6 +379,7 @@ COMMAND_CONTRACTS: dict[str, dict[str, Any]] = {
             "fix_input",
             "provide_source_manifest",
             "review_orphan_rubric",
+            "review_unconfirmed_trace_coverage",
         ],
     },
     "report": {

@@ -673,12 +673,200 @@ def test_bonus_or_qualitative_orphan_is_not_flagged_by_rule_one_slice_one() -> N
     assert _findings_of_type(findings, "possible_orphan_scored_rubric_item") == []
 
 
-def test_rule_one_emits_no_findings_on_baseline() -> None:
-    """The Rule 0 baseline (R1 scored, traced to S1) must produce no Rule 1
-    findings either; this keeps the existing clean fixture clean.
+def test_rule_one_baseline_emits_unconfirmed_trace_coverage() -> None:
+    """The Rule 0 baseline (R1 scored, traced to S1 with no semantic_status)
+    must now produce exactly one `unconfirmed_trace_coverage` finding
+    (medium / provisional) because the link is not yet human-accepted.
+    Documents the pre-review state per plan §6 Rule 1.
     """
     findings = run_rule_one(_baseline_rubric(), _baseline_traces())
-    assert findings == []
+    types = [f.type for f in findings]
+    assert types == ["unconfirmed_trace_coverage"]
+    assert findings[0].severity == "medium"
+    assert findings[0].decision_status == "provisional"
+    assert findings[0].rubric_id == "R1"
+
+
+# ---------------------------------------------------------------------------
+# Rule 1 — Scored Rubric Coverage, slice 2: unconfirmed_trace_coverage branch
+# ---------------------------------------------------------------------------
+
+
+def _rubric_one_scored() -> dict[str, Any]:
+    return {
+        "rubric_items": [
+            {
+                "id": "R1",
+                "title": "Refund handling",
+                "evaluation_role": "scored",
+                "source_ref": {
+                    "document_id": "DOC_RUBRIC",
+                    "start_line": 1,
+                    "end_line": 1,
+                },
+            }
+        ]
+    }
+
+
+def _trace_with_status(status: str | None) -> dict[str, Any]:
+    link: dict[str, Any] = {
+        "rubric_id": "R1",
+        "spec_ids": ["S1"],
+        "evidence_quotes": [
+            {
+                "spec_id": "S1",
+                "quote": "...",
+                "verification_mode": "ai_judgement",
+            }
+        ],
+    }
+    if status is not None:
+        link["semantic_status"] = status
+    return {"trace_links": [link]}
+
+
+@pytest.mark.parametrize(
+    "status",
+    [
+        "pending_verification",
+        "agent_supported",
+        "agent_rejected",
+        "agent_uncertain",
+        "human_rejected",
+        "rerun_requested",
+    ],
+)
+def test_non_human_accepted_status_yields_unconfirmed_trace_coverage(
+    status: str,
+) -> None:
+    """Under-strict guard: every non-final-coverage semantic_status (pre-review
+    pending/agent_* plus post-review human_rejected/rerun_requested) must
+    surface `unconfirmed_trace_coverage` (medium / provisional).
+    """
+    findings = run_rule_one(_rubric_one_scored(), _trace_with_status(status))
+    matching = [f for f in findings if f.type == "unconfirmed_trace_coverage"]
+    assert len(matching) == 1
+    assert matching[0].severity == "medium"
+    assert matching[0].decision_status == "provisional"
+    assert matching[0].rubric_id == "R1"
+    assert matching[0].evidence is not None
+    assert matching[0].evidence["link_count"] == 1
+    assert matching[0].evidence["semantic_statuses"] == [status]
+
+
+def test_missing_semantic_status_yields_unconfirmed_trace_coverage() -> None:
+    """Under-strict guard variant: a trace link with no `semantic_status` at
+    all (Phase 0 baseline before semantic verifier runs) is also pre-review,
+    so the rule must flag it.
+    """
+    findings = run_rule_one(_rubric_one_scored(), _trace_with_status(None))
+    matching = [f for f in findings if f.type == "unconfirmed_trace_coverage"]
+    assert len(matching) == 1
+
+
+@pytest.mark.parametrize("status", ["human_accepted", "human_overridden"])
+def test_human_accepted_status_skips_unconfirmed_trace_coverage(status: str) -> None:
+    """Over-strict guard A: `human_accepted` and `human_overridden` are the
+    only statuses that count as final coverage per plan §6 Rule 1. They must
+    suppress the unconfirmed finding entirely.
+    """
+    findings = run_rule_one(_rubric_one_scored(), _trace_with_status(status))
+    assert _findings_of_type(findings, "unconfirmed_trace_coverage") == []
+    assert _findings_of_type(findings, "possible_orphan_scored_rubric_item") == []
+
+
+def test_any_human_accepted_link_suppresses_unconfirmed_finding() -> None:
+    """Over-strict guard B: among multiple links for the same rubric, even
+    one `human_accepted` is enough to confirm coverage — the medium finding
+    must not fire just because OTHER links remain pending.
+    """
+    traces = {
+        "trace_links": [
+            {
+                "rubric_id": "R1",
+                "spec_ids": ["S1"],
+                "evidence_quotes": [
+                    {"spec_id": "S1", "quote": "x", "verification_mode": "ai_judgement"}
+                ],
+                "semantic_status": "pending_verification",
+            },
+            {
+                "rubric_id": "R1",
+                "spec_ids": ["S2"],
+                "evidence_quotes": [
+                    {"spec_id": "S2", "quote": "y", "verification_mode": "ai_judgement"}
+                ],
+                "semantic_status": "human_accepted",
+            },
+        ]
+    }
+    findings = run_rule_one(_rubric_one_scored(), traces)
+    assert _findings_of_type(findings, "unconfirmed_trace_coverage") == []
+
+
+def test_orphan_and_unconfirmed_are_mutually_exclusive() -> None:
+    """Over-strict guard C: a scored rubric without any link surfaces only as
+    `possible_orphan`. The `unconfirmed_trace_coverage` branch must not also
+    fire on the same rubric — that would double-count one orphan.
+    """
+    rubric = _rubric_one_scored()
+    findings = run_rule_one(rubric, {"trace_links": []})
+    types = [f.type for f in findings]
+    assert types == ["possible_orphan_scored_rubric_item"]
+
+
+def test_bonus_qualitative_skipped_even_with_pending_links() -> None:
+    """Over-strict guard D: `bonus` / `qualitative` rubric items stay out of
+    the `unconfirmed_trace_coverage` branch even when they have pending
+    links. Bonus orphan handling is slice 3 territory.
+    """
+    rubric = {
+        "rubric_items": [
+            {
+                "id": "RB",
+                "title": "Audit log",
+                "evaluation_role": "bonus",
+                "source_ref": {
+                    "document_id": "DOC_RUBRIC",
+                    "start_line": 1,
+                    "end_line": 1,
+                },
+            },
+            {
+                "id": "RQ",
+                "title": "Code quality",
+                "evaluation_role": "qualitative",
+                "source_ref": {
+                    "document_id": "DOC_RUBRIC",
+                    "start_line": 2,
+                    "end_line": 2,
+                },
+            },
+        ]
+    }
+    traces = {
+        "trace_links": [
+            {
+                "rubric_id": "RB",
+                "spec_ids": ["S1"],
+                "evidence_quotes": [
+                    {"spec_id": "S1", "quote": "x", "verification_mode": "ai_judgement"}
+                ],
+                "semantic_status": "pending_verification",
+            },
+            {
+                "rubric_id": "RQ",
+                "spec_ids": ["S1"],
+                "evidence_quotes": [
+                    {"spec_id": "S1", "quote": "y", "verification_mode": "ai_judgement"}
+                ],
+                "semantic_status": "pending_verification",
+            },
+        ]
+    }
+    findings = run_rule_one(rubric, traces)
+    assert _findings_of_type(findings, "unconfirmed_trace_coverage") == []
 
 
 @pytest.mark.parametrize(
