@@ -1,5 +1,49 @@
 # Work Log - 2026-05-26
 
+## Codex Review — Slice 3.1 Verification and Publication Preparation
+
+### Goals
+
+- Independently verify that `fbe1a78` closes the Slice 3 CLI contract test gap.
+- Check the session handoff notes against the canonical plan and actual Git state, then publish the verified batch as requested by the owner.
+
+### Completed Work
+
+- Reviewed `fbe1a78`: confirmed the fixture E2E helper now parses the stdout envelope, the all-three-branch fixture locks count/action mapping, schema introspection locks the full public sets, and a dedicated bonus-only E2E locks `(high=0, medium=0, informational=1)`.
+- Re-ran the Docker suite: 98 tests pass.
+- Re-ran the documented smoke matrix: `clean_assignment` gives `(0, 2, 0)`, `orphan_scored_rubric` gives `(1, 1, 1)` and all three review actions, `reference_integrity` returns `invalid_input` with nine high diagnostics, and missing `--source-manifest` returns `invalid_input` with `provide_source_manifest`.
+- Re-ran `schema --command check --output json`: it advertises `provisional_informational_count` and `review_orphan_bonus_rubric` as required by Slice 3.1's assertions.
+- Updated `HANDOFF.md` so it reflects the verified/current workflow rather than a stale pre-handoff-commit branch snapshot, and so Rule 2's as-yet-undefined finding/action literals are not treated as settled by a handoff note.
+- Corrected the bonus-only regression test docstring and retrospective wording: the test uniquely pins the informational-only `(0, 0, 1)` boundary, while the richer `(1, 1, 1)` fixture also protects the field from removal.
+
+### Issues Found
+
+- Problem: `fa71c7e` described local `main` as `fbe1a78`, seven commits ahead of `origin/main`, although committing the handoff itself made `fa71c7e` the HEAD and the branch eight commits ahead.
+  Cause: the handoff captured pre-commit branch state as if it remained the post-commit current snapshot.
+  Resolution: removed brittle expected-HEAD/commit-count instructions and recorded the owner's publication authorization instead.
+  Outcome: the operational handoff no longer asks the next worker to expect a state that cannot exist after the handoff commit.
+- Problem: the Rule 2 entry brief proposed `required_spec_unscored` and `review_uncovered_must_spec` while plan v1.10 §6 specifies Rule 2 behavior/severity/status but does not settle either public literal.
+  Cause: implementation guidance ran ahead of the canonical specification.
+  Resolution: marked the literals as an explicit pre-code decision that must be confirmed and added to the plan body first.
+  Outcome: the next implementation slice will not silently elevate HANDOFF suggestions above the plan.
+- Problem: the session lesson said removing `provisional_informational_count` could still pass the rich `orphan_scored_rubric` E2E even though Slice 3.1 also added a direct assertion on that field in that same test.
+  Cause: the rationale for the bonus-only case overstated its exclusivity after the richer test was strengthened.
+  Resolution: retained the bonus-only boundary test but corrected its purpose below: it documents the caller-relevant `(0, 0, 1)` state explicitly, while either E2E now catches field removal.
+  Outcome: the test suite remains strong and the handoff explanation no longer contradicts its assertions.
+
+### Decisions
+
+- Slice 3.1 requires no production-code correction: its new regression coverage addresses the reviewed defect and passes independently.
+- No new Rule 2 public string is decided in this review. Naming is observable CLI/schema contract and belongs in the canonical plan before code.
+- The owner explicitly authorized publishing the verified local batch in this task; the prior deferred-push instruction is superseded.
+
+### Next Steps
+
+- Publish the reviewed commits and this documentation correction to `origin/main`.
+- Implement Rule 2 only after its finding/action literals have been fixed in the canonical plan; keep its coverage check structural and independent of `semantic_status`.
+
+---
+
 ## Session End — Hand-off to next worker
 
 Session closed by owner instruction after Slice 3.1. The next worker is a different AI; this section is the primary hand-off entry point. Read [HANDOFF.md](../../../HANDOFF.md) for the operational status snapshot; read this section for the today-specific narrative and lessons.
@@ -39,7 +83,7 @@ These came from owner review on this session. Each was a real mistake worth not 
 1. **Surface spec conflicts; do not silently resolve them.** Slice 2 entered with §6 Rule 1 ↔ §5.3.1 in conflict (Rule 1's enumeration vs §5.3.1's status table). I implemented the "correct" reading and recorded the resolution in HANDOFF. Plan body stayed inconsistent. The right move was to stop, raise the conflict to the owner, get a direction, and amend the plan in the same slice. CLAUDE.md §1 says this explicitly; I violated it. Slice 2.5 had to retroactively lift the resolution into the plan.
 2. **HANDOFF cannot override the plan.** Plan is the 1st-priority canonical source. HANDOFF Active Decisions is a curated index of where the plan made decisions, plus operational notes (smoke-run shapes, version anchoring). If a decision changes what another worker implements, it goes in the plan body — full stop. Re-read this before writing anything into HANDOFF that another worker will rely on.
 3. **Tests must lock the public contract, not just the on-disk artifacts.** Slice 3 shipped three new envelope surfaces (`provisional_informational_count`, `review_orphan_bonus_rubric` next_action, schema-contract exposure of both). None of them had a regression. The slice 3 E2E test `capsys.readouterr()`'d the stdout and discarded it. Slice 3.1 had to retrofit the locks. `_run_check` in `tests/test_fixtures.py` now returns the envelope as a 4-tuple — use it for any envelope-changing slice.
-4. **Boundary cases need explicit locks even when a richer fixture exercises the same code path.** Slice 3.1's bonus-only E2E test exists because `orphan_scored_rubric` exercises `provisional_informational_count` only as part of a `(1, 1, 1)` row; removing the field would still let the rich test pass (the rich test checks the field individually, sure, but a boundary lock makes intent explicit). The bonus-only test pins the `(0, 0, 1)` row which is unreachable from any other path.
+4. **Boundary cases need explicit locks even when a richer fixture exercises the same code path.** Slice 3.1's richer `orphan_scored_rubric` E2E now directly asserts `provisional_informational_count`, so it already catches field removal. The bonus-only E2E has a different purpose: it pins the caller-relevant `(0, 0, 1)` row, making the "only informational findings exist" meaning explicit rather than incidental to the `(1, 1, 1)` mixed case.
 5. **Don't skip the pattern sweep.** CLAUDE.md §4's 30-second grep was used today on slice 1 and slice 2 and caught nothing of consequence. But the slice 3 envelope-contract miss would have been caught by a sweep for "newly added envelope field → who asserts on it?" before commit. The sweep is cheap; do it for both code AND test additions.
 
 ### Open verification items (next AI to confirm)

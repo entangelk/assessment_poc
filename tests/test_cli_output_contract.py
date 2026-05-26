@@ -447,11 +447,10 @@ def test_check_with_bonus_only_orphan_locks_informational_envelope_boundary(
     trigger is a bonus orphan, the envelope must carry
     `provisional_high_count=0`, `provisional_medium_count=0`,
     `provisional_informational_count=1`, and exactly one
-    `review_orphan_bonus_rubric` next_action. This is the only case where
-    the informational field is non-zero on a Phase 0 input, so the
-    boundary needs an explicit lock — otherwise removing
-    `provisional_informational_count` from the envelope would never fail
-    a test as long as Rule 1 finding emission still works.
+    `review_orphan_bonus_rubric` next_action. This isolates the case where
+    the informational count is the only non-zero provisional count, so the
+    caller-relevant boundary is explicit rather than incidental to the
+    mixed `(1, 1, 1)` fixture.
     """
     root = tmp_path / "bonus_only"
     root.mkdir()
