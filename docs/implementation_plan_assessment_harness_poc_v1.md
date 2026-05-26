@@ -1,4 +1,4 @@
-# Assessment Spec Harness PoC 구현 계획서 v1.7
+# Assessment Spec Harness PoC 구현 계획서 v1.8
 
 ## 0. 문서 목적
 
@@ -713,6 +713,7 @@ assessment-harness check \
   --spec-items fixtures/orphan_scored_rubric/spec_items.yaml \
   --rubric-items fixtures/orphan_scored_rubric/rubric_items.yaml \
   --trace-links fixtures/orphan_scored_rubric/trace_links.yaml \
+  --source-manifest fixtures/orphan_scored_rubric/source_manifest.yaml \
   --policy fixtures/orphan_scored_rubric/policy.yaml \
   --out findings.json \
   --diagnostics-out integrity_diagnostics.json
@@ -722,6 +723,8 @@ assessment-harness report \
   --diagnostics integrity_diagnostics.json \
   --out report.md
 ```
+
+`--source-manifest`는 Phase 0의 필수 인자다 (§5.0 / §5.1 / §11). 생략하면 `check`는 `status=invalid_input`, exit `2`, 진단 코드 `source_manifest_required`, next_action `provide_source_manifest`를 반환한다. argparse 단계에서 거부하지 않고 구조화된 envelope을 stdout에 출력하므로 caller agent는 인자 누락도 정상 흐름의 결과로 복구 가능하다.
 
 Phase 0에서 `--semantic-verifications`가 생략된 경우 `token_sequence` evidence만 결정적으로 검사하며, `ai_judgement` trace link는 `pending_verification`으로 취급한다. Phase 2 이후 agent-assisted 흐름에서는 `verify` 산출물을 `check`/`report`/`review`에 명시적으로 전달한다.
 
@@ -1121,6 +1124,15 @@ Phase 2/3 전 확정할 사항:
 ---
 
 ## 15. 변경 이력
+
+### v1.8 (2026-05-26)
+
+핵심 변경: **`--source-manifest`를 Phase 0 `check`의 필수 인자로 확정**.
+
+- **이유**: §5.0 ("PoC는 DB/RAG 없이도 원문 grounding을 검증해야 한다"), §5.1 ("Rule 0는 snapshot 원문에 대한 일치도 확인한다"), §11 ("Phase 0 산출물: source snapshot manifest와 item/quote `source_ref`") 세 절이 manifest를 입력 계약의 필수 요소로 못박는다. v1.7까지의 §8 CLI 예시가 manifest를 생략하고 있어 내부 충돌이 있었으나, 자동화 흐름은 `extract` 단계에서 manifest를 자동 생성하는 모델이므로 "필수" 쪽이 spec 정신과 운영 흐름 모두에 정합한다.
+- **CLI 동작**: `--source-manifest` 누락 시 argparse는 통과시키되 `_cmd_check`가 즉시 `status=invalid_input` / exit `2` / 진단 코드 `source_manifest_required` (severity `high`) / next_action `provide_source_manifest`를 반환한다. 이렇게 처리해야 caller agent가 stdout JSON envelope을 읽고 자동 복구할 수 있다 (argparse `required=True`는 usage text를 stderr로 내보내어 contract 위반).
+- **§8 예시 갱신**: §8 Phase 0 CLI 예시에 `--source-manifest` 인자 추가.
+- **fixture 갱신**: `fixtures/orphan_scored_rubric/`과 `fixtures/reference_integrity/`에 `source/spec.md`, `source/rubric.md`, `source_manifest.yaml`을 추가하여 grounded 입력으로 변환. `clean_assignment`는 이미 grounded.
 
 ### v1.7 (2026-05-25)
 

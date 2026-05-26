@@ -2,10 +2,11 @@
 
 ## Current Status
 
-- Implementation plan is at v1.7 (`docs/implementation_plan_assessment_harness_poc_v1.md`) and is the canonical implementation source of truth, ahead of `docs/ideation_assessment_harness_v2.1.md`.
+- Implementation plan is at v1.8 (`docs/implementation_plan_assessment_harness_poc_v1.md`) and is the canonical implementation source of truth, ahead of `docs/ideation_assessment_harness_v2.1.md`.
 - **Phase 0 iteration 1.5 landed (2026-05-25)**: the three iteration-1 audit blockers are closed. Rule 0 now grounds `spec_item.text` and `source_ref.quote` (and evidence `quote` when `source_ref` is provided) against the snapshot span text, requires evidence coverage for every `trace_links.spec_ids` member, and the CLI accepts `--output` both before and after the subcommand.
 - **Phase 0 iteration 2 slice 1 landed (2026-05-26)**: Rule 1 (Scored Rubric Coverage) is now partially live. `check` runs Rule 1 after a clean Rule 0 pass and emits `possible_orphan_scored_rubric_item` (`high` / `provisional`) for any `evaluation_role == scored` rubric item with zero trace links. Findings come back as `status=provisional_findings`, `exit_code=0`, `blocking_count=0`. The `unconfirmed_trace_coverage` and bonus-informational branches of Rule 1 are still pending; Rule 2, Rule 3, and the `gate` command remain pending.
-- Package surface: `check` / `schema` / `report` subcommands, eight JSON Schemas, three fixtures (`clean_assignment`, `reference_integrity`, `orphan_scored_rubric`), and 72 passing tests. Docker is the canonical dev environment.
+- **Phase 0 iteration 2 slice 1.5 landed (2026-05-26)**: `--source-manifest` is now a required `check` input per plan v1.8 §5.0 / §5.1 / §11. Omitting it returns `status=invalid_input` / exit `2` with diagnostic `source_manifest_required` and next_action `provide_source_manifest`. Both `orphan_scored_rubric` and `reference_integrity` fixtures are grounded with their own `source/spec.md`, `source/rubric.md`, and `source_manifest.yaml` (sha256-verified).
+- Package surface: `check` / `schema` / `report` subcommands, eight JSON Schemas (integrity diagnostics gains `source_manifest_required`), three fully-grounded fixtures (`clean_assignment`, `reference_integrity`, `orphan_scored_rubric`), and 73 passing tests. Docker is the canonical dev environment.
 - The PoC is an **agent-level harness**: the 1st-class caller is an AI agent (Claude Code / Codex / Gemini), not a human. Humans participate only as final reviewers.
 - The final workflow is `extract --runs N -> compact -> verify --runs N -> check -> report -> review -> gate`. Compacting is a **union-based audit operation**: every valid candidate is preserved with `support` / `identity_basis` / `variants`.
 
@@ -32,7 +33,8 @@ docker compose run --rm harness --output json check \
 
 ## Active Decisions (Adopted)
 
-- **Canonical specification**: v1.7 implementation plan first, then `v2.1` ideation. Earlier ideation versions are historical.
+- **Canonical specification**: v1.8 implementation plan first, then `v2.1` ideation. Earlier ideation versions are historical.
+- **`--source-manifest` is a required `check` input** (plan v1.8 §5.0 / §5.1 / §11): Phase 0 mandates immutable source snapshot grounding. Missing manifest → `status=invalid_input` / exit `2` / diagnostic `source_manifest_required` / next_action `provide_source_manifest`. argparse keeps the flag declared as `default=None` so caller agents always receive the structured envelope on stdout instead of argparse's usage text on stderr.
 - **Rule 0 evidence verification**: per-entry `verification_mode`. `token_sequence` for opt-in strict substring matching of pre-inserted quantitative markers; `ai_judgement` is the PoC default and routes semantic checks through `review_queue` and the verifier-agent stage.
 - **CLI output stability**: four-field stable core (`status`, `exit_code`, `command`, `next_actions`) plus informational fields with a `schema --command <name>` self-discovery command.
 - **Policy unification**: `config/policy.yaml` is the single policy file with `rules`, `compacting`, `runs`, and `verification` sections.
@@ -79,10 +81,11 @@ docker compose run --rm harness --output json check \
 
 ## Verification
 
-- 72 collected tests pass locally (`docker compose run --rm test`). The test surface now covers Rule 1 slice 1 (under-strict + three over-strict guards) on top of the iteration-1.5 audit-blocker tests.
-- Manual smoke runs after slice 1:
-  - `check` on `fixtures/orphan_scored_rubric`: exit `0`, `status=provisional_findings`, one `possible_orphan_scored_rubric_item` finding on `R2` (`severity=high`, `decision_status=provisional`), `next_actions[0].type=review_orphan_rubric`.
-  - `check` on `fixtures/clean_assignment`: exit `0`, `status=success`, no findings (Rule 1 leaves the existing clean baseline untouched).
+- 73 collected tests pass locally (`docker compose run --rm test`). The test surface now covers Rule 1 slice 1 (under-strict + three over-strict guards) and slice 1.5 (mandatory `--source-manifest`) on top of the iteration-1.5 audit-blocker tests.
+- Manual smoke runs after slice 1.5:
+  - `check` on grounded `fixtures/orphan_scored_rubric` with manifest: exit `0`, `status=provisional_findings`, one `possible_orphan_scored_rubric_item` finding on `R2`, `next_actions[0].type=review_orphan_rubric`.
+  - `check` on grounded `fixtures/reference_integrity` with manifest: exit `2`, `status=invalid_input`, all eight Rule 0 violation codes present (`high_integrity_count=9` because `evidence_quote_missing_for_spec_id` fires twice; pre-existing duplicate, not a regression).
+  - `check` on `fixtures/clean_assignment` without `--source-manifest`: exit `2`, `status=invalid_input`, diagnostic `source_manifest_required`, next_action `provide_source_manifest`.
 - Repository `main` is published to `origin/main` through the SSH remote `git@github.com:entangelk/assessment_poc.git`.
 
 ## Project Structure
@@ -100,10 +103,10 @@ docker compose run --rm harness --output json check \
 - `schemas/`: eight JSON Schemas (source_manifest, spec_items, rubric_items, trace_links, policy, findings, integrity_diagnostics, cli_output).
 - `config/policy.yaml`: default policy.
 - `fixtures/clean_assignment/`: passing fixture with source manifest, sha256, spec.md, rubric.md.
-- `fixtures/reference_integrity/`: failing fixture covering all six Rule 0 violation classes.
-- `fixtures/orphan_scored_rubric/`: Rule 1 slice 1 fixture (R2 scored without trace link).
+- `fixtures/reference_integrity/`: grounded failing fixture covering all six Rule 0 violation classes; carries its own `source/spec.md`, `source/rubric.md`, and `source_manifest.yaml`.
+- `fixtures/orphan_scored_rubric/`: grounded Rule 1 slice 1 fixture (R2 scored without trace link); same `source/` + manifest layout.
 - `tests/`: `test_rules.py`, `test_cli_output_contract.py`, `test_fixtures.py`, `test_models.py`, `conftest.py`.
-- `docs/implementation_plan_assessment_harness_poc_v1.md`: implementation source of truth (v1.7).
+- `docs/implementation_plan_assessment_harness_poc_v1.md`: implementation source of truth (v1.8).
 - `docs/ideation_assessment_harness_v2.1.md`: latest ideation, second in precedence.
 - `docs/ideation_assessment_harness_v2.md`, `docs/ideation_assessment_harness_v1.md`: historical references.
 - `docs/daily_logs/2026-05-25/work_log.md`: full record of planning iterations (v1.0 → v1.7) and Phase 0 iteration 1 / 1.5.

@@ -90,6 +90,8 @@ def test_check_reference_integrity_returns_invalid_input(
         str(fixture_dir / "reference_integrity/rubric_items.yaml"),
         "--trace-links",
         str(fixture_dir / "reference_integrity/trace_links.yaml"),
+        "--source-manifest",
+        str(fixture_dir / "reference_integrity/source_manifest.yaml"),
         "--policy",
         str(fixture_dir / "reference_integrity/policy.yaml"),
         "--out",
@@ -141,6 +143,11 @@ def test_check_missing_input_returns_invalid_input(
         str(tmp_path / "nope.yaml"),
         "--trace-links",
         str(tmp_path / "nope.yaml"),
+        # --source-manifest is mandatory; provide a path that exists past the
+        # manifest-required check so this test still exercises the YAML
+        # not-found path rather than short-circuiting on missing manifest.
+        "--source-manifest",
+        str(tmp_path / "manifest-also-missing.yaml"),
         "--out",
         str(out),
         "--diagnostics-out",
@@ -151,6 +158,89 @@ def test_check_missing_input_returns_invalid_input(
     assert code == 2
     assert envelope["status"] == "invalid_input"
     assert any(action.get("type") == "fix_input" for action in envelope["next_actions"])
+
+
+def test_check_without_source_manifest_returns_invalid_input(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Under-strict guard for plan v1.8 §5.0: omitting `--source-manifest`
+    must exit `2` with `status=invalid_input`, surface a
+    `source_manifest_required` diagnostic, and write a `provide_source_manifest`
+    next_action so caller agents can recover automatically.
+    """
+    out = tmp_path / "findings.json"
+    diag = tmp_path / "integrity_diagnostics.json"
+    argv = [
+        "--output",
+        "json",
+        "check",
+        "--spec-items",
+        str(tmp_path / "nope.yaml"),
+        "--rubric-items",
+        str(tmp_path / "nope.yaml"),
+        "--trace-links",
+        str(tmp_path / "nope.yaml"),
+        "--out",
+        str(out),
+        "--diagnostics-out",
+        str(diag),
+    ]
+    code, envelope, _ = _run_main(argv, capsys)
+    _assert_envelope(envelope)
+    assert code == 2
+    assert envelope["status"] == "invalid_input"
+    assert any(
+        action.get("type") == "provide_source_manifest"
+        for action in envelope["next_actions"]
+    )
+
+    diag_doc = json.loads(diag.read_text(encoding="utf-8"))
+    codes = {d["code"] for d in diag_doc["diagnostics"]}
+    assert "source_manifest_required" in codes
+
+
+def test_check_with_source_manifest_does_not_surface_manifest_required(
+    fixture_dir: Path,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Over-strict guard for plan v1.8 §5.0: a clean fixture WITH manifest
+    must not synthesize the manifest-required diagnostic. If a regression
+    started emitting `source_manifest_required` unconditionally, this guard
+    catches it.
+    """
+    out = tmp_path / "findings.json"
+    diag = tmp_path / "integrity_diagnostics.json"
+    argv = [
+        "--output",
+        "json",
+        "check",
+        "--spec-items",
+        str(fixture_dir / "clean_assignment/spec_items.yaml"),
+        "--rubric-items",
+        str(fixture_dir / "clean_assignment/rubric_items.yaml"),
+        "--trace-links",
+        str(fixture_dir / "clean_assignment/trace_links.yaml"),
+        "--source-manifest",
+        str(fixture_dir / "clean_assignment/source_manifest.yaml"),
+        "--policy",
+        str(fixture_dir / "clean_assignment/policy.yaml"),
+        "--out",
+        str(out),
+        "--diagnostics-out",
+        str(diag),
+    ]
+    code, envelope, _ = _run_main(argv, capsys)
+    _assert_envelope(envelope)
+    assert code == 0
+    diag_doc = json.loads(diag.read_text(encoding="utf-8"))
+    codes = {d["code"] for d in diag_doc["diagnostics"]}
+    assert "source_manifest_required" not in codes
+    assert not any(
+        action.get("type") == "provide_source_manifest"
+        for action in envelope["next_actions"]
+    )
 
 
 def test_schema_command_returns_check_contract(
@@ -314,6 +404,8 @@ def test_stderr_is_separated_from_stdout_json(
             str(tmp_path / "missing.yaml"),
             "--trace-links",
             str(tmp_path / "missing.yaml"),
+            "--source-manifest",
+            str(tmp_path / "manifest-also-missing.yaml"),
             "--out",
             str(out),
             "--diagnostics-out",

@@ -2,6 +2,7 @@
 
 | Date | Change | Detail |
 |---|---|---|
+| 2026-05-26 | Phase 0 iteration 2 slice 1.5: `--source-manifest` mandated as a `check` input (plan v1.8 §5.0/§5.1/§11), both non-clean fixtures grounded with source/manifest, new `source_manifest_required` diagnostic, 73 passing tests. | [Work log](docs/daily_logs/2026-05-26/work_log.md) |
 | 2026-05-26 | Phase 0 iteration 2 slice 1: Rule 1 `possible_orphan_scored_rubric_item` finding, `orphan_scored_rubric` fixture, two-directional regression guards, 72 passing tests. | [Work log](docs/daily_logs/2026-05-26/work_log.md) |
 | 2026-05-25 | Phase 0 implementation iteration 1: package scaffold, Rule 0 reference-integrity engine, `check`/`schema`/`report` CLI, eight JSON Schemas, two fixtures, 31 passing tests, Docker dev workflow. | [Work log](docs/daily_logs/2026-05-25/work_log.md) |
 | 2026-05-25 | Implementation plan reached v1.7; read-only multi-run semantic verifier-agent adopted as a required PoC stage. | [Work log](docs/daily_logs/2026-05-25/work_log.md) |

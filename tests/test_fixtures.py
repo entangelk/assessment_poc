@@ -63,28 +63,16 @@ def test_clean_assignment_passes_check_with_manifest(
     assert diagnostics["diagnostics"] == []
 
 
-def test_clean_assignment_passes_check_without_manifest(
-    fixture_dir: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    code, findings, diagnostics = _run_check(
-        fixture_dir / "clean_assignment", tmp_path, use_manifest=False
-    )
-    capsys.readouterr()
-    assert code == 0, f"diagnostics: {diagnostics}"
-    assert findings["status"] == "success"
-    assert diagnostics["summary"]["high"] == 0
-
-
 def test_orphan_scored_rubric_fixture_emits_possible_orphan(
     fixture_dir: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """Under-strict guard: the orphan_scored_rubric fixture (R2 scored but
     untraced) must yield a `possible_orphan_scored_rubric_item` finding,
     `status=provisional_findings`, exit code 0, blocking_count 0. Rule 0
-    diagnostics stay clean (no manifest → no grounding diagnostics).
+    diagnostics stay clean because the fixture is now grounded (Slice 1.5).
     """
     code, findings, diagnostics = _run_check(
-        fixture_dir / "orphan_scored_rubric", tmp_path, use_manifest=False
+        fixture_dir / "orphan_scored_rubric", tmp_path, use_manifest=True
     )
     capsys.readouterr()
     assert code == 0, f"diagnostics: {diagnostics}, findings: {findings}"
@@ -106,7 +94,7 @@ def test_reference_integrity_fixture_blocks_with_exit_two(
     fixture_dir: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     code, findings, diagnostics = _run_check(
-        fixture_dir / "reference_integrity", tmp_path, use_manifest=False
+        fixture_dir / "reference_integrity", tmp_path, use_manifest=True
     )
     capsys.readouterr()
     assert code == 2

@@ -1,0 +1,11 @@
+project_id: reference_integrity
+assessment_version: v1
+documents:
+  - document_id: DOC_SPEC
+    role: candidate_spec
+    path: source/spec.md
+    sha256: 062aba1ef6821504473387047e3efde7bff6ea251c1a7c8918ee8f11efc15d4a
+  - document_id: DOC_RUBRIC
+    role: evaluator_rubric
+    path: source/rubric.md
+    sha256: 8bf354f5ae0501256e488a638b45c2a9cc88e0597b6ce1f696d1769dd493cb70

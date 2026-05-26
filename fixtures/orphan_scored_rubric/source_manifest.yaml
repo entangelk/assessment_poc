@@ -1,0 +1,11 @@
+project_id: orphan_scored_rubric
+assessment_version: v1
+documents:
+  - document_id: DOC_SPEC
+    role: candidate_spec
+    path: source/spec.md
+    sha256: ccb1124dcdc8f8e1f0d75b670ae1cd32c562fe68a55869848143ff7ead2300f2
+  - document_id: DOC_RUBRIC
+    role: evaluator_rubric
+    path: source/rubric.md
+    sha256: d597f9be37ae9876f4c68af55ac7d27d0f35303eaa0f442b39df229262dcd4a8

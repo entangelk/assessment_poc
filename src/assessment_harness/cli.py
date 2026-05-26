@@ -92,6 +92,9 @@ def _cmd_check(args: argparse.Namespace) -> CommandResult:
     findings_payload: dict[str, Any]
     diagnostics_payload: dict[str, Any]
 
+    if not args.source_manifest:
+        return _check_missing_manifest(args, next_actions)
+
     try:
         spec_doc = load_validated(Path(args.spec_items), "spec_items")
         rubric_doc = load_validated(Path(args.rubric_items), "rubric_items")
@@ -105,12 +108,10 @@ def _cmd_check(args: argparse.Namespace) -> CommandResult:
     except HarnessInputError as exc:
         return _check_invalid_input(args, exc, next_actions)
 
-    snapshot = None
-    if args.source_manifest:
-        try:
-            snapshot = load_source_snapshot(Path(args.source_manifest))
-        except HarnessInputError as exc:
-            return _check_invalid_input(args, exc, next_actions)
+    try:
+        snapshot = load_source_snapshot(Path(args.source_manifest))
+    except HarnessInputError as exc:
+        return _check_invalid_input(args, exc, next_actions)
 
     diagnostics = run_rule_zero(spec_doc, rubric_doc, trace_doc, snapshot)
     counts = severity_counts(diagnostics)
@@ -216,6 +217,75 @@ def _cmd_check(args: argparse.Namespace) -> CommandResult:
     return CommandResult(envelope=envelope, exit_code=0)
 
 
+def _check_missing_manifest(
+    args: argparse.Namespace, next_actions: list[dict[str, Any]]
+) -> CommandResult:
+    """`--source-manifest` is required (plan v1.8 §5.0). Emit a structured
+    diagnostic so caller agents see the failure on stdout, not just argparse
+    usage text on stderr.
+    """
+    message = (
+        "--source-manifest is required: Phase 0 mandates immutable source "
+        "snapshot grounding (plan §5.0 / §5.1 / §11)."
+    )
+    sys.stderr.write(f"[assessment-harness] {message}\n")
+
+    diagnostic = {
+        "code": "source_manifest_required",
+        "severity": "high",
+        "message": message,
+        "location": {"argument": "--source-manifest"},
+        "hint": (
+            "Pass --source-manifest <path> pointing at the snapshot manifest "
+            "for this assessment. See fixtures/clean_assignment/source_manifest.yaml."
+        ),
+    }
+    diagnostics_payload = {
+        "diagnostics": [diagnostic],
+        "summary": {
+            "total": 1,
+            "high": 1,
+            "medium": 0,
+            "low": 0,
+            "informational": 0,
+        },
+        "generated_at": _now_iso(),
+    }
+    findings_payload = {
+        "status": "invalid_input",
+        "findings": [],
+        "diagnostics_ref": str(Path(args.diagnostics_out).name),
+        "blocking_count": 0,
+        "generated_at": _now_iso(),
+        "input_error": message,
+    }
+    try:
+        _write_json(Path(args.out), findings_payload)
+        _write_json(Path(args.diagnostics_out), diagnostics_payload)
+    except OSError:
+        pass
+
+    next_actions.append(
+        {
+            "type": "provide_source_manifest",
+            "argument": "--source-manifest",
+            "message": message,
+        }
+    )
+    envelope = _build_envelope(
+        status="invalid_input",
+        exit_code=2,
+        command="check",
+        next_actions=next_actions,
+        findings_path=str(args.out),
+        diagnostics_path=str(args.diagnostics_out),
+        blocking_count=0,
+        high_integrity_count=1,
+        input_error=message,
+    )
+    return CommandResult(envelope=envelope, exit_code=2)
+
+
 def _check_invalid_input(
     args: argparse.Namespace, exc: HarnessInputError, next_actions: list[dict[str, Any]]
 ) -> CommandResult:
@@ -299,6 +369,7 @@ COMMAND_CONTRACTS: dict[str, dict[str, Any]] = {
         "next_actions_types": [
             "fix_reference_integrity",
             "fix_input",
+            "provide_source_manifest",
             "review_orphan_rubric",
         ],
     },
@@ -452,7 +523,15 @@ def _build_parser() -> argparse.ArgumentParser:
     p_check.add_argument("--spec-items", required=True)
     p_check.add_argument("--rubric-items", required=True)
     p_check.add_argument("--trace-links", required=True)
-    p_check.add_argument("--source-manifest", default=None)
+    p_check.add_argument(
+        "--source-manifest",
+        default=None,
+        help=(
+            "required: path to the immutable source snapshot manifest "
+            "(plan §5.0). Omitting it returns invalid_input / exit 2 with "
+            "diagnostic source_manifest_required."
+        ),
+    )
     p_check.add_argument("--policy", default=None)
     p_check.add_argument("--out", required=True, help="findings.json output path")
     p_check.add_argument(

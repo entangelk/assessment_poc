@@ -52,7 +52,8 @@
             "evidence_quote_not_in_snapshot_span",
             "evidence_quote_token_sequence_mismatch",
             "source_document_missing",
-            "source_document_hash_mismatch"
+            "source_document_hash_mismatch",
+            "source_manifest_required"
           ]
         },
         "severity": {
