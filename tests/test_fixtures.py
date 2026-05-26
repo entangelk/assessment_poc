@@ -88,15 +88,16 @@ def test_clean_assignment_yields_pre_review_unconfirmed_trace_coverage(
     assert other_types == set(), f"unexpected finding types: {other_types}"
 
 
-def test_orphan_scored_rubric_fixture_emits_possible_orphan(
+def test_orphan_scored_rubric_fixture_emits_all_three_rule_one_branches(
     fixture_dir: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Under-strict guard: the orphan_scored_rubric fixture must yield
-    BOTH Rule 1 branches:
+    """Under-strict guard: the orphan_scored_rubric fixture must yield ALL
+    THREE Rule 1 branches (slices 1+2+3):
 
     - R2 (scored, untraced) → `possible_orphan_scored_rubric_item` (high)
     - R1 (scored, traced with pending_verification) →
       `unconfirmed_trace_coverage` (medium)
+    - R3 (bonus, untraced) → `orphan_bonus_rubric_item` (informational)
 
     `status=provisional_findings`, exit code 0, blocking_count 0. Rule 0
     diagnostics stay clean because the fixture is grounded (Slice 1.5).
@@ -110,25 +111,15 @@ def test_orphan_scored_rubric_fixture_emits_possible_orphan(
     assert findings["blocking_count"] == 0
     assert diagnostics["summary"]["high"] == 0
 
-    orphan = [
-        f
+    by_rubric = {
+        f["rubric_id"]: (f["type"], f["severity"], f["decision_status"])
         for f in findings["findings"]
-        if f["type"] == "possible_orphan_scored_rubric_item"
-    ]
-    assert len(orphan) == 1
-    assert orphan[0]["rubric_id"] == "R2"
-    assert orphan[0]["severity"] == "high"
-    assert orphan[0]["decision_status"] == "provisional"
-
-    unconfirmed = [
-        f
-        for f in findings["findings"]
-        if f["type"] == "unconfirmed_trace_coverage"
-    ]
-    assert len(unconfirmed) == 1
-    assert unconfirmed[0]["rubric_id"] == "R1"
-    assert unconfirmed[0]["severity"] == "medium"
-    assert unconfirmed[0]["decision_status"] == "provisional"
+    }
+    assert by_rubric == {
+        "R1": ("unconfirmed_trace_coverage", "medium", "provisional"),
+        "R2": ("possible_orphan_scored_rubric_item", "high", "provisional"),
+        "R3": ("orphan_bonus_rubric_item", "informational", "provisional"),
+    }
 
 
 def test_reference_integrity_fixture_blocks_with_exit_two(

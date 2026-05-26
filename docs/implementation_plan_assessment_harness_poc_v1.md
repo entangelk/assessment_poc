@@ -1,4 +1,4 @@
-# Assessment Spec Harness PoC 구현 계획서 v1.9
+# Assessment Spec Harness PoC 구현 계획서 v1.10
 
 ## 0. 문서 목적
 
@@ -585,7 +585,9 @@ token_sequence 비교는 normalized whitespace 기준의 토큰 시퀀스 동일
 - 판정 상태: `human_accepted` / `human_overridden` link만 final coverage로 인정한다 (§5.3.1과 정합).
 - 차단 대상: `gate`의 confirmed finding에서만 예
 - 의도: 공개 명세와 무관한 점수 항목 탐지
-- bonus 처리: `evaluation_role == bonus`인 orphan은 별도 `informational` finding으로 report에 표시하되 차단하지 않는다.
+- bonus 처리: `evaluation_role == bonus`이며 trace link가 없는 rubric item은 `orphan_bonus_rubric_item` (`informational`, `provisional`) finding으로 report에 표시하되 차단하지 않는다. semantic_status는 확인하지 않는다 — bonus는 채점 자체가 보조이므로 link가 *있는 한* coverage 의문은 informational에도 미달한다고 본다.
+
+**Finding type naming convention**: Rule 1의 무추적(no-trace) 분기는 `{possible_orphan_scored, orphan_bonus}_rubric_item` 형태로 prefix만 다르고 접미사는 공유한다. 의도는 caller agent가 type 문자열만 보고도 "no-trace에 대한 finding이고 차이는 `evaluation_role`뿐"임을 추론하게 만드는 것. 향후 Rule 1 확장 (예: `orphan_qualitative_rubric_item`)에도 같은 convention을 적용한다. `scored`만 `possible_` prefix를 붙이는 이유는 §6의 셋째 분기에서 `gate`가 같은 rubric을 `orphan_scored_rubric_item` (`high`, `confirmed`)으로 승급할 수 있어 "현재 가능성" 단계임을 구분하기 위함이며, bonus / qualitative는 그러한 승급 경로가 없으므로 `possible_`을 붙이지 않는다.
 
 본 규칙의 final-coverage 경계 (`{human_accepted, human_overridden}`)는 Rule 1과 `gate`에서만 적용한다. Rule 2와 Rule 3은 `semantic_status`와 무관하게 §6의 본문 조건만으로 finding을 발화한다.
 
@@ -1126,6 +1128,14 @@ Phase 2/3 전 확정할 사항:
 ---
 
 ## 15. 변경 이력
+
+### v1.10 (2026-05-26)
+
+핵심 변경: **§6 Rule 1 bonus 처리에 finding type 문자열을 명시 + naming convention 메모**.
+
+- v1.9까지의 §6 Rule 1은 "bonus orphan은 informational finding"이라고 적었으나 `type` 문자열을 지정하지 않았다. Phase 0 iteration 2 slice 3 구현에서 `orphan_bonus_rubric_item`을 사용하게 되어, 이 type 이름과 선택 근거를 plan 본문에 박아 다음 작업자가 같은 convention을 따르도록 한다.
+- 추가된 convention: Rule 1의 no-trace 분기는 `{possible_orphan_scored, orphan_bonus}_rubric_item` 형태. `possible_` prefix는 `gate`가 confirmed orphan으로 승급할 수 있는 scored 분기에만 붙인다. bonus/qualitative는 승급 경로가 없으므로 prefix를 생략한다.
+- bonus 처리 조건도 명시: trace link가 없는 경우만 finding이며, semantic_status는 확인하지 않는다.
 
 ### v1.9 (2026-05-26)
 

@@ -8,4 +8,4 @@ documents:
   - document_id: DOC_RUBRIC
     role: evaluator_rubric
     path: source/rubric.md
-    sha256: d597f9be37ae9876f4c68af55ac7d27d0f35303eaa0f442b39df229262dcd4a8
+    sha256: 7d364d271d55c3a88a85b9864ea4f40039c5f3b2798ebbdc21c59f6812104478

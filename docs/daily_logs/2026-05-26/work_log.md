@@ -77,6 +77,70 @@ Effect:
 
 ---
 
+## Slice 3 — `orphan_bonus_rubric_item` (Rule 1 completes; plan v1.10)
+
+### Goals
+
+- Close the last Rule 1 branch per plan §6: `evaluation_role == bonus` rubric items with no trace link surface as `informational` / `provisional` findings that do not block gating.
+- Lock the finding type name in the plan (not just in HANDOFF) and record the naming convention so future Rule 1 / Rule 2 / Rule 3 finding types stay symmetric.
+
+### Completed Work
+
+#### Plan v1.9 → v1.10
+
+- Replaced §6 Rule 1's bonus-handling line with a concrete contract: type literal `orphan_bonus_rubric_item`, severity `informational`, decision_status `provisional`, condition "trace link 없음", `semantic_status` is not consulted.
+- Added a "Finding type naming convention" memo at the bottom of §6 Rule 1. Rule 1 no-trace findings share the `_rubric_item` suffix and differ only by prefix: `possible_orphan_scored` (scored, because `gate` may promote to confirmed) vs `orphan_bonus` (bonus, no symmetric promotion path). Any future Rule 1 extension (e.g. qualitative orphan, if scope grows) must follow the same convention without re-deciding.
+- §15 v1.10 entry documents the change and notes that implementation in this slice matches the new plan body.
+
+#### Rule 1 third branch
+
+- Restructured the per-rubric loop in `run_rule_one`. The dispatch is now `evaluation_role == bonus` → bonus branch; `evaluation_role == scored` → scored branches; else continue. Bonus branch fires `orphan_bonus_rubric_item` only when `rubric_links` is empty.
+- Expanded the `run_rule_one` docstring to describe all three branches in one place. References plan v1.10 §6 explicitly so future readers do not have to cross-reference HANDOFF.
+- Module constant `HUMAN_ACCEPTED_SEMANTIC_STATUSES` (introduced in slice 2) is left in place but not consulted by the bonus branch per the plan memo.
+
+#### CLI wiring
+
+- `_cmd_check` adds a `review_orphan_bonus_rubric` next_action per informational finding (alongside `review_orphan_rubric` and `review_unconfirmed_trace_coverage`).
+- Envelope gains `provisional_informational_count` so caller agents can distinguish "had no high/medium but did surface bonus orphans" from "had genuinely no findings".
+- `COMMAND_CONTRACTS["check"]`: `informational` field list adds `provisional_informational_count`; `next_actions_types` adds `review_orphan_bonus_rubric`.
+
+#### Two-directional regression guards
+
+- Under-strict: bonus rubric without link → exactly one `orphan_bonus_rubric_item`, severity `informational`, decision_status `provisional`.
+- Over-strict A (eight parametrized): bonus rubric WITH any link (any of the eight `semantic_status` values, including `human_accepted`) must not be flagged. Locks the plan v1.10 rule "semantic_status is not consulted for bonus" against any future drift toward Rule-1-style status checks for bonus items.
+- Over-strict B: scored rubric without link emits only `possible_orphan_scored_rubric_item`, never `orphan_bonus_rubric_item`. Locks the mutual exclusivity by `evaluation_role`.
+- Over-strict C: qualitative rubric without link produces zero findings. Qualitative is out of Rule 1's scope per plan §6.
+- Integration guard `test_three_rubrics_three_branches_coexist`: one document with all three Rule 1 trigger patterns produces exactly three findings keyed by `rubric_id` → `(type, severity)`. Locks slice 1 + slice 2 + slice 3 against each other in one fast unit test.
+
+#### Fixture extension
+
+- `fixtures/orphan_scored_rubric/`: added R3 (bonus, untraced) to `rubric_items.yaml`; appended a third line "R3 Untraced bonus axis" to `source/rubric.md`; recomputed the sha256 in `source_manifest.yaml`. The fixture's primary intent (testing Rule 1 no-trace cases on scored rubrics) is unchanged; the bonus addition is a Rule 1 sub-case that lives naturally alongside per plan §7 (which lists only `orphan_scored_rubric` and not a separate bonus fixture).
+- `tests/test_fixtures.py`: replaced `test_orphan_scored_rubric_fixture_emits_possible_orphan` with `test_orphan_scored_rubric_fixture_emits_all_three_rule_one_branches`. The new test asserts a complete `rubric_id → (type, severity, decision_status)` mapping for R1/R2/R3 — stricter than the previous version and shows the three branches coexisting on one fixture.
+
+### Files Changed
+
+- `docs/implementation_plan_assessment_harness_poc_v1.md` (v1.9 → v1.10)
+- `src/assessment_harness/rules.py`
+- `src/assessment_harness/cli.py`
+- `tests/test_rules.py`
+- `tests/test_fixtures.py`
+- `fixtures/orphan_scored_rubric/rubric_items.yaml`
+- `fixtures/orphan_scored_rubric/source/rubric.md`
+- `fixtures/orphan_scored_rubric/source_manifest.yaml`
+
+### Issues Found
+
+- Problem: in slice 2's `test_bonus_qualitative_skipped_even_with_pending_links`, bonus rubrics with pending links were correctly excluded from `unconfirmed_trace_coverage`, but the test did not assert that they were *also* not flagged by some other Rule 1 branch. After slice 3 added the bonus branch, that test still passes (bonus+link → no finding), but the gap motivated the explicit over-strict A parametrization in slice 3 that enumerates all eight `semantic_status` values plus an inline assertion that `orphan_bonus_rubric_item` is empty.
+- Outcome: 97 tests pass; slice 1/2/3 are pairwise locked by mutual exclusivity tests and the new three-way integration guard.
+
+### Decisions
+
+- Finding type literal goes in the plan body (not just HANDOFF or rules.py) so the canonical document is the only place a future worker has to consult. The slice 2.5 lesson — "if the resolution would change what another worker implements, put it in the plan" — is now applied proactively for finding type naming.
+- The naming convention memo in plan §6 is deliberately compact: it states the rule (`{prefix_}orphan_{role}_rubric_item`) and the reason for the asymmetric `possible_` prefix (`gate` promotion path). Anything more detailed belongs in §15 changelog or per-slice work logs, not in the operational rule body.
+- `provisional_informational_count` is added to the CLI envelope rather than being inferred from the findings list. Reason: informational counts will become important once Rule 1 / Rule 2 / Rule 3 are all live and a caller agent needs to distinguish "noise-free clean state" from "no high/medium but still has informational items to review".
+
+---
+
 ## Slice 2.5 — plan v1.8 → v1.9: close the §6 Rule 1 spec gap surfaced after slice 2
 
 ### Goals

@@ -30,3 +30,19 @@ rubric_items:
       found_in_runs: ["manual"]
     identity_basis: "title+normalized_description"
     variants: []
+
+  - id: R3
+    title: "Untraced bonus axis"
+    description: "Bonus rubric without trace; exercises slice 3 orphan_bonus_rubric_item branch."
+    evaluation_role: bonus
+    weight: 2
+    evidence_required: [code]
+    source_ref:
+      document_id: DOC_RUBRIC
+      start_line: 3
+      end_line: 3
+    support:
+      total_valid_runs: 1
+      found_in_runs: ["manual"]
+    identity_basis: "title+normalized_description"
+    variants: []

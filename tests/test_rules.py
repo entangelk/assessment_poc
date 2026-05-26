@@ -869,6 +869,167 @@ def test_bonus_qualitative_skipped_even_with_pending_links() -> None:
     assert _findings_of_type(findings, "unconfirmed_trace_coverage") == []
 
 
+# ---------------------------------------------------------------------------
+# Rule 1 — Scored Rubric Coverage, slice 3: orphan_bonus_rubric_item branch
+# ---------------------------------------------------------------------------
+
+
+def _bonus_rubric(rid: str = "RB") -> dict[str, Any]:
+    return {
+        "rubric_items": [
+            {
+                "id": rid,
+                "title": "Audit log",
+                "evaluation_role": "bonus",
+                "source_ref": {
+                    "document_id": "DOC_RUBRIC",
+                    "start_line": 1,
+                    "end_line": 1,
+                },
+            }
+        ]
+    }
+
+
+def test_bonus_rubric_without_link_yields_orphan_bonus_finding() -> None:
+    """Under-strict guard: a bonus rubric item with no trace link must
+    surface `orphan_bonus_rubric_item` (informational / provisional). Per
+    plan v1.10 §6 Rule 1, bonus orphans do not block gating; the severity
+    must stay `informational`.
+    """
+    findings = run_rule_one(_bonus_rubric(), {"trace_links": []})
+    matching = _findings_of_type(findings, "orphan_bonus_rubric_item")
+    assert len(matching) == 1
+    assert matching[0].rubric_id == "RB"
+    assert matching[0].severity == "informational"
+    assert matching[0].decision_status == "provisional"
+
+
+@pytest.mark.parametrize(
+    "status",
+    [
+        "pending_verification",
+        "agent_supported",
+        "agent_rejected",
+        "agent_uncertain",
+        "human_accepted",
+        "human_overridden",
+        "human_rejected",
+        "rerun_requested",
+    ],
+)
+def test_bonus_rubric_with_any_link_is_not_orphan_bonus(status: str) -> None:
+    """Over-strict guard A: a bonus rubric WITH any trace link (regardless
+    of semantic_status) must not be flagged. Per plan v1.10 §6 Rule 1,
+    semantic_status is not consulted for bonus items — having a link is
+    enough to suppress the informational finding.
+    """
+    traces = {
+        "trace_links": [
+            {
+                "rubric_id": "RB",
+                "spec_ids": ["S1"],
+                "evidence_quotes": [
+                    {"spec_id": "S1", "quote": "x", "verification_mode": "ai_judgement"}
+                ],
+                "semantic_status": status,
+            }
+        ]
+    }
+    findings = run_rule_one(_bonus_rubric(), traces)
+    assert _findings_of_type(findings, "orphan_bonus_rubric_item") == []
+
+
+def test_scored_orphan_is_not_also_flagged_as_bonus_orphan() -> None:
+    """Over-strict guard B: an `evaluation_role == scored` rubric with no
+    link must only emit `possible_orphan_scored_rubric_item`, NOT also
+    `orphan_bonus_rubric_item`. The two branches are mutually exclusive on
+    `evaluation_role`.
+    """
+    findings = run_rule_one(_rubric_one_scored(), {"trace_links": []})
+    types = sorted({f.type for f in findings})
+    assert types == ["possible_orphan_scored_rubric_item"]
+
+
+def test_qualitative_rubric_without_link_is_not_flagged() -> None:
+    """Over-strict guard C: a qualitative rubric without a link stays
+    out of Rule 1 entirely — neither scored-orphan nor bonus-orphan
+    branches apply. (Qualitative items are out of Rule 1's scope per
+    plan §6.)
+    """
+    rubric = {
+        "rubric_items": [
+            {
+                "id": "RQ",
+                "title": "Code quality",
+                "evaluation_role": "qualitative",
+                "source_ref": {
+                    "document_id": "DOC_RUBRIC",
+                    "start_line": 1,
+                    "end_line": 1,
+                },
+            }
+        ]
+    }
+    findings = run_rule_one(rubric, {"trace_links": []})
+    assert findings == []
+
+
+def test_three_rubrics_three_branches_coexist() -> None:
+    """Integration-style guard: a single rubric_items document mixing
+    scored/no-trace + scored/pending + bonus/no-trace + qualitative must
+    produce exactly three findings (one per Rule 1 branch) with the right
+    rubric_ids. Locks slice 1 + slice 2 + slice 3 against each other.
+    """
+    rubric = {
+        "rubric_items": [
+            {
+                "id": "R_SCORED_NO_LINK",
+                "title": "scored no-trace",
+                "evaluation_role": "scored",
+                "source_ref": {"document_id": "DOC_RUBRIC", "start_line": 1, "end_line": 1},
+            },
+            {
+                "id": "R_SCORED_PENDING",
+                "title": "scored pending",
+                "evaluation_role": "scored",
+                "source_ref": {"document_id": "DOC_RUBRIC", "start_line": 2, "end_line": 2},
+            },
+            {
+                "id": "R_BONUS_NO_LINK",
+                "title": "bonus no-trace",
+                "evaluation_role": "bonus",
+                "source_ref": {"document_id": "DOC_RUBRIC", "start_line": 3, "end_line": 3},
+            },
+            {
+                "id": "R_QUAL",
+                "title": "qualitative",
+                "evaluation_role": "qualitative",
+                "source_ref": {"document_id": "DOC_RUBRIC", "start_line": 4, "end_line": 4},
+            },
+        ]
+    }
+    traces = {
+        "trace_links": [
+            {
+                "rubric_id": "R_SCORED_PENDING",
+                "spec_ids": ["S1"],
+                "evidence_quotes": [
+                    {"spec_id": "S1", "quote": "x", "verification_mode": "ai_judgement"}
+                ],
+                "semantic_status": "pending_verification",
+            }
+        ]
+    }
+    findings = run_rule_one(rubric, traces)
+    by_rubric = {(f.rubric_id, f.type, f.severity) for f in findings}
+    assert by_rubric == {
+        ("R_SCORED_NO_LINK", "possible_orphan_scored_rubric_item", "high"),
+        ("R_SCORED_PENDING", "unconfirmed_trace_coverage", "medium"),
+        ("R_BONUS_NO_LINK", "orphan_bonus_rubric_item", "informational"),
+    }
+
+
 @pytest.mark.parametrize(
     "code",
     [

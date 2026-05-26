@@ -2,12 +2,14 @@
 
 ## Current Status
 
-- Implementation plan is at v1.9 (`docs/implementation_plan_assessment_harness_poc_v1.md`) and is the canonical implementation source of truth, ahead of `docs/ideation_assessment_harness_v2.1.md`.
+- Implementation plan is at v1.10 (`docs/implementation_plan_assessment_harness_poc_v1.md`) and is the canonical implementation source of truth, ahead of `docs/ideation_assessment_harness_v2.1.md`.
 - **Phase 0 iteration 1.5 landed (2026-05-25)**: the three iteration-1 audit blockers are closed. Rule 0 now grounds `spec_item.text` and `source_ref.quote` (and evidence `quote` when `source_ref` is provided) against the snapshot span text, requires evidence coverage for every `trace_links.spec_ids` member, and the CLI accepts `--output` both before and after the subcommand.
 - **Phase 0 iteration 2 slice 1 landed (2026-05-26)**: Rule 1 (Scored Rubric Coverage) is now partially live. `check` runs Rule 1 after a clean Rule 0 pass and emits `possible_orphan_scored_rubric_item` (`high` / `provisional`) for any `evaluation_role == scored` rubric item with zero trace links. Findings come back as `status=provisional_findings`, `exit_code=0`, `blocking_count=0`. The `unconfirmed_trace_coverage` and bonus-informational branches of Rule 1 are still pending; Rule 2, Rule 3, and the `gate` command remain pending.
 - **Phase 0 iteration 2 slice 1.5 landed (2026-05-26)**: `--source-manifest` is now a required `check` input per plan §5.0 / §5.1 / §11 (decision introduced in plan v1.8; section numbers unchanged in v1.9). Omitting it returns `status=invalid_input` / exit `2` with diagnostic `source_manifest_required` and next_action `provide_source_manifest`. Both `orphan_scored_rubric` and `reference_integrity` fixtures are grounded with their own `source/spec.md`, `source/rubric.md`, and `source_manifest.yaml` (sha256-verified).
-- **Phase 0 iteration 2 slice 2 landed (2026-05-26)**: Rule 1's second branch (`unconfirmed_trace_coverage`, medium / provisional) is live. Any scored rubric whose trace links have no `human_accepted` / `human_overridden` semantic_status surfaces a medium finding with `evidence={link_count, semantic_statuses}`. `clean_assignment` is now the canonical pre-review baseline: `status=provisional_findings`, two medium findings (R1, R2), `blocking_count=0`. The bonus-informational branch of Rule 1, plus Rule 2, Rule 3, and `gate`, are still pending.
-- Package surface: `check` / `schema` / `report` subcommands, eight JSON Schemas, three fully-grounded fixtures (`clean_assignment`, `reference_integrity`, `orphan_scored_rubric`), and 85 passing tests. Docker is the canonical dev environment.
+- **Phase 0 iteration 2 slice 2 landed (2026-05-26)**: Rule 1's second branch (`unconfirmed_trace_coverage`, medium / provisional) is live. Any scored rubric whose trace links have no `human_accepted` / `human_overridden` semantic_status surfaces a medium finding with `evidence={link_count, semantic_statuses}`. `clean_assignment` is now the canonical pre-review baseline: `status=provisional_findings`, two medium findings (R1, R2), `blocking_count=0`.
+- **Phase 0 iteration 2 slice 2.5 landed (2026-05-26, doc-only)**: closed the §6 Rule 1 ↔ §5.3.1 spec gap in plan v1.9. The medium-provisional branch is now explicitly defined as "any link not in {human_accepted, human_overridden}". Final-coverage boundary scoped to Rule 1 / `gate` only.
+- **Phase 0 iteration 2 slice 3 landed (2026-05-26)**: Rule 1 is feature-complete. `orphan_bonus_rubric_item` (informational / provisional) fires for any bonus rubric without a trace link. `semantic_status` is not consulted for bonus items per plan v1.10 §6. The CLI envelope gains `provisional_informational_count`. Rule 2, Rule 3, and `gate` remain pending.
+- Package surface: `check` / `schema` / `report` subcommands, eight JSON Schemas, three fully-grounded fixtures (`clean_assignment`, `reference_integrity`, `orphan_scored_rubric` with R3 bonus untraced), and 97 passing tests. Docker is the canonical dev environment.
 - The PoC is an **agent-level harness**: the 1st-class caller is an AI agent (Claude Code / Codex / Gemini), not a human. Humans participate only as final reviewers.
 - The final workflow is `extract --runs N -> compact -> verify --runs N -> check -> report -> review -> gate`. Compacting is a **union-based audit operation**: every valid candidate is preserved with `support` / `identity_basis` / `variants`.
 
@@ -34,7 +36,8 @@ docker compose run --rm harness --output json check \
 
 ## Active Decisions (Adopted)
 
-- **Canonical specification**: v1.9 implementation plan first, then `v2.1` ideation. Earlier ideation versions are historical.
+- **Canonical specification**: v1.10 implementation plan first, then `v2.1` ideation. Earlier ideation versions are historical.
+- **Rule 1 finding type naming convention** (plan v1.10 §6): no-trace findings follow `{prefix_}orphan_{role}_rubric_item`. `possible_` prefix marks scored items because `gate` may promote them to confirmed; bonus / qualitative have no symmetric promotion path so prefix is omitted. Any future Rule 1 extension applies the same convention without re-deciding the literal.
 - **`--source-manifest` is a required `check` input** (plan v1.9 §5.0 / §5.1 / §11): Phase 0 mandates immutable source snapshot grounding. Missing manifest → `status=invalid_input` / exit `2` / diagnostic `source_manifest_required` / next_action `provide_source_manifest`. argparse keeps the flag declared as `default=None` so caller agents always receive the structured envelope on stdout instead of argparse's usage text on stderr.
 - **Rule 1 final-coverage boundary** (plan v1.9 §6 Rule 1, §5.3.1): the only `semantic_status` values that count as final coverage for Rule 1 are `human_accepted` and `human_overridden`. Everything else — pre-review (`pending_verification`, `agent_*`) and post-review non-coverage (`human_rejected`, `rerun_requested`) — surfaces as `unconfirmed_trace_coverage` (medium / provisional) in `check`. `gate` is the only stage that may promote persistent non-coverage into a confirmed `orphan_scored_rubric_item`. **This boundary applies to Rule 1 and `gate` only.** Rule 2 and Rule 3 do not consult `semantic_status` (they use the structural conditions in plan §6 Rule 2 / Rule 3).
 - **`clean_assignment` is an automation-only baseline**: trace links stay on `pending_verification` so the fixture matches the state a real agent run produces. The canonical pre-review outcome is therefore `status=provisional_findings` with N medium `unconfirmed_trace_coverage` findings, not `status=success`. Reaching `success` requires final-review evidence, which Phase 3 will supply.
@@ -76,17 +79,16 @@ docker compose run --rm harness --output json check \
 
 ## Next Tasks
 
-1. **Rule 1 slice 3 — bonus orphan informational finding**. `evaluation_role == bonus` rubric items without trace links surface as `informational` findings; they do not block gating. Pair with an `orphan_bonus_rubric` fixture (or extend an existing one) and two-directional guards. Decide the finding `type` string before implementation — current candidates: `orphan_bonus_rubric_item`, `bonus_rubric_unreferenced`. Pick once and lock.
-3. **Rule 2 — Required Spec Coverage** (plan §6 Rule 2). Medium finding when a `requirement_level: must` spec has no `scored` rubric trace. Pair with `required_spec_unscored` fixture and two-directional guards.
-4. **Rule 3 — Optionality Consistency** (plan §6 Rule 3). High finding when only-optional-traced `scored` rubric weight ≥ `policy.optionality_mismatch.weight_threshold`. Pair with `optionality_mismatch` fixture and two-directional guards.
-5. **`gate` and later phases**: implement after `final_review.schema.json`; then confirm real-assignment permissions and resolve Phase 2 runner/retention parameters.
+1. **Rule 2 — Required Spec Coverage** (plan §6 Rule 2). Medium finding when a `requirement_level: must` spec has no `scored` rubric trace. Pair with `required_spec_unscored` fixture and two-directional guards. Rule 2 is **structural only** — `semantic_status` is not consulted (Rule 1's final-coverage boundary does NOT transfer; plan v1.9 §6 scope clause).
+2. **Rule 3 — Optionality Consistency** (plan §6 Rule 3). High finding when only-optional-traced `scored` rubric weight ≥ `policy.optionality_mismatch.weight_threshold`. Pair with `optionality_mismatch` fixture and two-directional guards. Like Rule 2, structural only.
+3. **`gate` and later phases**: implement after `final_review.schema.json`; then confirm real-assignment permissions and resolve Phase 2 runner/retention parameters. `gate` is the only stage that may promote persistent `unconfirmed_trace_coverage` (medium / provisional) into `orphan_scored_rubric_item` (high / confirmed).
 
 ## Verification
 
-- 85 collected tests pass locally (`docker compose run --rm test`). Slice 2 added six parametrized under-strict guards (one per non-final-coverage `semantic_status`), four over-strict guards (human_accepted/human_overridden suppression, any-link-accepted suppression, orphan/unconfirmed mutual exclusivity, bonus/qualitative out-of-scope), plus a missing-`semantic_status` variant and renamed baseline test.
-- Manual smoke runs after slice 2:
-  - `check` on grounded `fixtures/clean_assignment` with manifest: exit `0`, `status=provisional_findings`, two `unconfirmed_trace_coverage` findings on R1 and R2 (both scored, both with pending_verification links), `provisional_medium_count=2`.
-  - `check` on grounded `fixtures/orphan_scored_rubric` with manifest: exit `0`, `status=provisional_findings`, one `possible_orphan_scored_rubric_item` (R2, high) plus one `unconfirmed_trace_coverage` (R1, medium); `provisional_high_count=1`, `provisional_medium_count=1`.
+- 97 collected tests pass locally (`docker compose run --rm test`). Slice 3 added a parametrized over-strict guard across all eight `semantic_status` values, plus mutual-exclusivity, qualitative out-of-scope, and three-way integration guards.
+- Manual smoke runs after slice 3:
+  - `check` on grounded `fixtures/orphan_scored_rubric` with manifest: exit `0`, `status=provisional_findings`, all three Rule 1 branches visible — `unconfirmed_trace_coverage` on R1 (medium), `possible_orphan_scored_rubric_item` on R2 (high), `orphan_bonus_rubric_item` on R3 (informational). `provisional_high_count=1`, `provisional_medium_count=1`, `provisional_informational_count=1`.
+  - `check` on grounded `fixtures/clean_assignment` with manifest: exit `0`, `status=provisional_findings`, two `unconfirmed_trace_coverage` findings on R1 and R2.
   - `check` on grounded `fixtures/reference_integrity` with manifest: exit `2`, `status=invalid_input`, all eight Rule 0 violation codes present (`high_integrity_count=9` because `evidence_quote_missing_for_spec_id` fires twice; pre-existing duplicate, not a regression).
   - `check` on `fixtures/clean_assignment` without `--source-manifest`: exit `2`, `status=invalid_input`, diagnostic `source_manifest_required`, next_action `provide_source_manifest`.
 - Repository `main` is published to `origin/main` through the SSH remote `git@github.com:entangelk/assessment_poc.git`.
@@ -100,16 +102,16 @@ docker compose run --rm harness --output json check \
 - `src/assessment_harness/`: package code.
   - `cli.py`: `check`, `schema`, `report` subcommands; envelope/exit-code contract; Rule 1 wiring after a clean Rule 0 pass.
   - `models.py`: YAML+schema loader, `SourceSnapshot`/`Document` with sha256 and line/span access.
-  - `rules.py`: Rule 0 reference-integrity engine and Rule 1 (`possible_orphan_scored_rubric_item` + `unconfirmed_trace_coverage`). `HUMAN_ACCEPTED_SEMANTIC_STATUSES` module constant locks the Rule-1-only final-coverage boundary. Bonus-informational branch and Rules 2-3 to follow.
+  - `rules.py`: Rule 0 reference-integrity engine and Rule 1 (`possible_orphan_scored_rubric_item` + `unconfirmed_trace_coverage` + `orphan_bonus_rubric_item`; all three branches live). `HUMAN_ACCEPTED_SEMANTIC_STATUSES` module constant locks the Rule-1-only final-coverage boundary. Rules 2-3 to follow.
   - `schemas.py`: schema loader with `ASSESSMENT_HARNESS_SCHEMA_DIR` env override.
   - `report.py`: Markdown renderer.
 - `schemas/`: eight JSON Schemas (source_manifest, spec_items, rubric_items, trace_links, policy, findings, integrity_diagnostics, cli_output).
 - `config/policy.yaml`: default policy.
 - `fixtures/clean_assignment/`: passing fixture with source manifest, sha256, spec.md, rubric.md.
 - `fixtures/reference_integrity/`: grounded failing fixture covering all six Rule 0 violation classes; carries its own `source/spec.md`, `source/rubric.md`, and `source_manifest.yaml`.
-- `fixtures/orphan_scored_rubric/`: grounded Rule 1 slice 1 fixture (R2 scored without trace link); same `source/` + manifest layout.
+- `fixtures/orphan_scored_rubric/`: grounded Rule 1 end-to-end fixture exercising all three branches: R1 (scored, traced with pending_verification) → unconfirmed_trace_coverage, R2 (scored, untraced) → possible_orphan_scored_rubric_item, R3 (bonus, untraced) → orphan_bonus_rubric_item. Same `source/` + manifest layout.
 - `tests/`: `test_rules.py`, `test_cli_output_contract.py`, `test_fixtures.py`, `test_models.py`, `conftest.py`.
-- `docs/implementation_plan_assessment_harness_poc_v1.md`: implementation source of truth (v1.9).
+- `docs/implementation_plan_assessment_harness_poc_v1.md`: implementation source of truth (v1.10).
 - `docs/ideation_assessment_harness_v2.1.md`: latest ideation, second in precedence.
 - `docs/ideation_assessment_harness_v2.md`, `docs/ideation_assessment_harness_v1.md`: historical references.
 - `docs/daily_logs/2026-05-25/work_log.md`: full record of planning iterations (v1.0 → v1.7) and Phase 0 iteration 1 / 1.5.

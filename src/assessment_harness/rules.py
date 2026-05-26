@@ -577,25 +577,30 @@ def run_rule_one(
     rubric_items_doc: dict[str, Any],
     trace_links_doc: dict[str, Any],
 ) -> list[Finding]:
-    """Scored Rubric Coverage (spec §6 Rule 1).
+    """Scored Rubric Coverage (plan v1.10 §6 Rule 1).
 
-    Phase 0 emits two provisional branches:
+    Phase 0 emits three provisional branches:
 
     - ``possible_orphan_scored_rubric_item`` (``high`` / ``provisional``)
-      for any ``evaluation_role == scored`` rubric item that has no
-      compacted trace link at all.
+      for any ``evaluation_role == scored`` rubric item with no compacted
+      trace link. The ``possible_`` prefix marks scored items because
+      ``gate`` (not ``check``) may later promote the same rubric to
+      ``orphan_scored_rubric_item`` (``high`` / ``confirmed``) after
+      final review.
     - ``unconfirmed_trace_coverage`` (``medium`` / ``provisional``) when a
-      scored rubric has at least one trace link but none of those links
-      carry a final-coverage ``semantic_status``
-      (``human_accepted`` / ``human_overridden``). Per plan §6 Rule 1,
-      only human-accepted / human-overridden links count as final
-      coverage; ``pending_verification`` / ``agent_*`` are pre-review
-      states, and ``human_rejected`` / ``rerun_requested`` are
-      post-review states pointing toward orphan_scored_rubric_item which
-      ``gate`` (not ``check``) confirms.
-
-    The bonus-orphan informational finding and the confirmed
-    ``orphan_scored_rubric_item`` (gate territory) land in later slices.
+      scored rubric has at least one trace link but none carry a
+      final-coverage ``semantic_status``
+      (``human_accepted`` / ``human_overridden``). Per plan §5.3.1 and
+      §6 Rule 1, pre-review (``pending_verification`` / ``agent_*``) and
+      post-review non-coverage (``human_rejected`` / ``rerun_requested``)
+      states all fall here; only ``gate`` may promote persistent
+      non-coverage into the confirmed orphan finding.
+    - ``orphan_bonus_rubric_item`` (``informational`` / ``provisional``)
+      for any ``evaluation_role == bonus`` rubric item with no compacted
+      trace link. Bonus orphans never block gating; the ``possible_``
+      prefix is omitted because there is no symmetric confirmed promotion
+      path (plan §6 Rule 1 bonus 처리 + naming convention memo).
+      ``semantic_status`` is not consulted for bonus items.
 
     Rule 0 already guarantees rubric IDs are unique and that every trace
     link references an existing rubric, so this rule trusts those
@@ -613,13 +618,32 @@ def run_rule_one(
             links_by_rubric.setdefault(rid, []).append(link)
 
     for rubric in rubric_items:
-        if rubric.get("evaluation_role") != "scored":
-            continue
+        evaluation_role = rubric.get("evaluation_role")
         rid = rubric.get("id")
         if not rid:
             continue
-
         rubric_links = links_by_rubric.get(rid, [])
+
+        if evaluation_role == "bonus":
+            if not rubric_links:
+                findings.append(
+                    Finding(
+                        type="orphan_bonus_rubric_item",
+                        severity="informational",
+                        decision_status="provisional",
+                        rubric_id=rid,
+                        message=(
+                            f"bonus rubric_item {rid!r} has no trace_link to "
+                            "any spec_item; informational only — bonus orphans "
+                            "do not block gating."
+                        ),
+                    )
+                )
+            continue
+
+        if evaluation_role != "scored":
+            continue
+
         if not rubric_links:
             findings.append(
                 Finding(

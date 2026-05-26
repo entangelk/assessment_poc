@@ -180,6 +180,14 @@ def _cmd_check(args: argparse.Namespace) -> CommandResult:
                         "finding_type": f.type,
                     }
                 )
+            elif f.type == "orphan_bonus_rubric_item":
+                next_actions.append(
+                    {
+                        "type": "review_orphan_bonus_rubric",
+                        "rubric_id": f.rubric_id,
+                        "finding_type": f.type,
+                    }
+                )
         findings_payload = {
             "status": "provisional_findings",
             "findings": [f.to_dict() for f in provisional_findings],
@@ -198,6 +206,7 @@ def _cmd_check(args: argparse.Namespace) -> CommandResult:
             high_integrity_count=0,
             provisional_high_count=finding_counts["high"],
             provisional_medium_count=finding_counts["medium"],
+            provisional_informational_count=finding_counts["informational"],
         )
         _write_json(Path(args.out), findings_payload)
         _write_json(Path(args.diagnostics_out), diagnostics_payload)
@@ -362,6 +371,7 @@ COMMAND_CONTRACTS: dict[str, dict[str, Any]] = {
             "high_integrity_count",
             "provisional_high_count",
             "provisional_medium_count",
+            "provisional_informational_count",
             "input_error",
         ],
         "exit_codes": {
@@ -380,6 +390,7 @@ COMMAND_CONTRACTS: dict[str, dict[str, Any]] = {
             "provide_source_manifest",
             "review_orphan_rubric",
             "review_unconfirmed_trace_coverage",
+            "review_orphan_bonus_rubric",
         ],
     },
     "report": {
