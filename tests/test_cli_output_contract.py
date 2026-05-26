@@ -9,10 +9,12 @@ Every command must:
 
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 
 import pytest
+import yaml
 
 from assessment_harness.cli import STABLE_CORE_FIELDS, main
 from assessment_harness.schemas import validate
@@ -266,7 +268,38 @@ def test_schema_command_returns_check_contract(
     assert contract["stable_core"] == STABLE_CORE_FIELDS
     assert "0" in contract["exit_codes"]
     assert "2" in contract["exit_codes"]
-    assert "fix_reference_integrity" in contract["next_actions_types"]
+
+    # Lock the public next_actions_types surface so removals are caught.
+    # Each entry below corresponds to a code path a caller agent depends on:
+    #   fix_reference_integrity      -- Rule 0 high-diagnostic recovery
+    #   fix_input                    -- generic input load failure
+    #   provide_source_manifest      -- slice 1.5 mandatory manifest
+    #   review_orphan_rubric         -- slice 1 high possible_orphan
+    #   review_unconfirmed_trace_coverage -- slice 2 medium provisional
+    #   review_orphan_bonus_rubric   -- slice 3 informational bonus orphan
+    expected_actions = {
+        "fix_reference_integrity",
+        "fix_input",
+        "provide_source_manifest",
+        "review_orphan_rubric",
+        "review_unconfirmed_trace_coverage",
+        "review_orphan_bonus_rubric",
+    }
+    assert set(contract["next_actions_types"]) == expected_actions
+
+    # Lock the public informational fields. Each entry is a documented
+    # envelope field a caller agent may consume.
+    expected_informational = {
+        "findings_path",
+        "diagnostics_path",
+        "blocking_count",
+        "high_integrity_count",
+        "provisional_high_count",
+        "provisional_medium_count",
+        "provisional_informational_count",
+        "input_error",
+    }
+    assert set(contract["informational"]) == expected_informational
 
 
 def test_schema_command_rejects_unknown_command(
@@ -348,6 +381,147 @@ def test_schema_documented_form_with_trailing_output(
     _assert_envelope(envelope)
     assert code == 0
     assert envelope["command"] == "schema"
+
+
+def _write_minimal_grounded_fixture(
+    root: Path,
+    *,
+    spec_items: list[dict],
+    rubric_items: list[dict],
+    trace_links: list[dict],
+    spec_md_text: str,
+    rubric_md_text: str,
+) -> dict[str, Path]:
+    """Build an in-tmp grounded fixture (source files + sha256 manifest +
+    schema-valid YAMLs). Returns paths keyed by argv-style names so the test
+    can build the CLI invocation directly. Used by boundary tests that need
+    isolated single-purpose inputs.
+    """
+    source = root / "source"
+    source.mkdir()
+    spec_md = source / "spec.md"
+    rubric_md = source / "rubric.md"
+    spec_md.write_text(spec_md_text, encoding="utf-8")
+    rubric_md.write_text(rubric_md_text, encoding="utf-8")
+
+    manifest = {
+        "project_id": root.name,
+        "assessment_version": "v1",
+        "documents": [
+            {
+                "document_id": "DOC_SPEC",
+                "role": "candidate_spec",
+                "path": "source/spec.md",
+                "sha256": hashlib.sha256(spec_md.read_bytes()).hexdigest(),
+            },
+            {
+                "document_id": "DOC_RUBRIC",
+                "role": "evaluator_rubric",
+                "path": "source/rubric.md",
+                "sha256": hashlib.sha256(rubric_md.read_bytes()).hexdigest(),
+            },
+        ],
+    }
+    paths = {
+        "spec_items": root / "spec_items.yaml",
+        "rubric_items": root / "rubric_items.yaml",
+        "trace_links": root / "trace_links.yaml",
+        "source_manifest": root / "source_manifest.yaml",
+    }
+    paths["spec_items"].write_text(yaml.safe_dump({"spec_items": spec_items}), encoding="utf-8")
+    paths["rubric_items"].write_text(
+        yaml.safe_dump({"rubric_items": rubric_items}), encoding="utf-8"
+    )
+    paths["trace_links"].write_text(
+        yaml.safe_dump({"trace_links": trace_links}), encoding="utf-8"
+    )
+    paths["source_manifest"].write_text(yaml.safe_dump(manifest), encoding="utf-8")
+    return paths
+
+
+def test_check_with_bonus_only_orphan_locks_informational_envelope_boundary(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Lock the envelope informational boundary: when the only Rule 1
+    trigger is a bonus orphan, the envelope must carry
+    `provisional_high_count=0`, `provisional_medium_count=0`,
+    `provisional_informational_count=1`, and exactly one
+    `review_orphan_bonus_rubric` next_action. This is the only case where
+    the informational field is non-zero on a Phase 0 input, so the
+    boundary needs an explicit lock — otherwise removing
+    `provisional_informational_count` from the envelope would never fail
+    a test as long as Rule 1 finding emission still works.
+    """
+    root = tmp_path / "bonus_only"
+    root.mkdir()
+    paths = _write_minimal_grounded_fixture(
+        root,
+        spec_items=[
+            {
+                "id": "S1",
+                "text": "placeholder spec line.",
+                "requirement_level": "informational",
+                "source_ref": {
+                    "document_id": "DOC_SPEC",
+                    "start_line": 1,
+                    "end_line": 1,
+                },
+            }
+        ],
+        rubric_items=[
+            {
+                "id": "RB",
+                "title": "Bonus axis without trace",
+                "evaluation_role": "bonus",
+                "source_ref": {
+                    "document_id": "DOC_RUBRIC",
+                    "start_line": 1,
+                    "end_line": 1,
+                },
+            }
+        ],
+        trace_links=[],
+        spec_md_text="placeholder spec line.\n",
+        rubric_md_text="RB Bonus axis without trace\n",
+    )
+
+    out = root / "findings.json"
+    diag = root / "diag.json"
+    argv = [
+        "--output",
+        "json",
+        "check",
+        "--spec-items",
+        str(paths["spec_items"]),
+        "--rubric-items",
+        str(paths["rubric_items"]),
+        "--trace-links",
+        str(paths["trace_links"]),
+        "--source-manifest",
+        str(paths["source_manifest"]),
+        "--out",
+        str(out),
+        "--diagnostics-out",
+        str(diag),
+    ]
+    code, envelope, _ = _run_main(argv, capsys)
+    _assert_envelope(envelope)
+    assert code == 0
+    assert envelope["status"] == "provisional_findings"
+    assert envelope["provisional_high_count"] == 0
+    assert envelope["provisional_medium_count"] == 0
+    assert envelope["provisional_informational_count"] == 1
+    assert [a["type"] for a in envelope["next_actions"]] == [
+        "review_orphan_bonus_rubric"
+    ]
+    assert envelope["next_actions"][0]["rubric_id"] == "RB"
+
+    # Findings file mirrors the envelope.
+    findings_doc = json.loads(out.read_text(encoding="utf-8"))
+    assert len(findings_doc["findings"]) == 1
+    assert findings_doc["findings"][0]["type"] == "orphan_bonus_rubric_item"
+    assert findings_doc["findings"][0]["severity"] == "informational"
 
 
 def test_check_documented_form_with_trailing_output(

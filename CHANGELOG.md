@@ -2,6 +2,7 @@
 
 | Date | Change | Detail |
 |---|---|---|
+| 2026-05-26 | Slice 3.1 (test-only): lock slice 3's CLI public contract under regression. `_run_check` surfaces envelope; schema contract test enforces full `next_actions_types` and `informational` field sets; new bonus-only boundary E2E. 98 passing tests. | [Work log](docs/daily_logs/2026-05-26/work_log.md) |
 | 2026-05-26 | Phase 0 iteration 2 slice 3: Rule 1 feature-complete. `orphan_bonus_rubric_item` (informational/provisional) added per plan v1.10 §6. CLI envelope gains `provisional_informational_count`. `orphan_scored_rubric` fixture extended with R3 bonus untraced. 97 passing tests. | [Work log](docs/daily_logs/2026-05-26/work_log.md) |
 | 2026-05-26 | Plan v1.9: close §6 Rule 1 ↔ §5.3.1 spec gap so the canonical plan matches slice 2's implementation. Rule 1 final-coverage boundary now scoped to Rule 1 / `gate` only (Rule 2/3 unaffected). Message wording generalized for accuracy across pre/post-review states. | [Work log](docs/daily_logs/2026-05-26/work_log.md) |
 | 2026-05-26 | Phase 0 iteration 2 slice 2: Rule 1 `unconfirmed_trace_coverage` finding (medium/provisional), final-coverage boundary fixed at `{human_accepted, human_overridden}`, `clean_assignment` canonical baseline shifted to `status=provisional_findings` with 2 mediums, 85 passing tests. | [Work log](docs/daily_logs/2026-05-26/work_log.md) |

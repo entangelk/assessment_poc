@@ -77,6 +77,51 @@ Effect:
 
 ---
 
+## Slice 3.1 — lock slice 3's CLI public contract under tests
+
+### Goals
+
+- Bring the slice 3 CLI contract additions under regression test. As-shipped slice 3 added `provisional_informational_count` (envelope field), `review_orphan_bonus_rubric` (next_action), and exposed both in `schema --command check`'s contract — but no test asserted on any of them. A future change could remove the field or the action and the 97 existing tests would all stay green.
+- Add a boundary lock so the "high=0, medium=0, informational=1" path (bonus-only orphan) is verified end-to-end with the CLI, not just via the unit-level rule call.
+
+### Completed Work
+
+#### `_run_check` helper extended to surface stdout envelope
+
+- `tests/test_fixtures.py`: `_run_check` now takes `capsys` and returns a 4-tuple `(exit_code, envelope, findings_doc, diagnostics_doc)`. Drains stdout inside the helper. Three callers updated; each gained a small envelope-side assertion block alongside the findings/diagnostics checks.
+- `test_clean_assignment_yields_pre_review_unconfirmed_trace_coverage` now asserts `provisional_high_count=0`, `provisional_medium_count=2`, `provisional_informational_count=0`. Locks the clean baseline's full envelope shape.
+- `test_orphan_scored_rubric_fixture_emits_all_three_rule_one_branches` adds two locks: (1) all three `provisional_*_count` envelope fields are exactly 1, and (2) `next_actions` contains exactly three entries keyed by `(action_type, rubric_id)` — one per branch. This protects both new envelope contracts simultaneously.
+- `test_reference_integrity_fixture_blocks_with_exit_two` adds `envelope["status"] == "invalid_input"` so the failure path's envelope is also kept under assertion.
+
+#### Schema-contract assertions
+
+- `tests/test_cli_output_contract.py::test_schema_command_returns_check_contract`: the previous assertion only checked that `fix_reference_integrity` was present in `next_actions_types`. Now asserts the full set: `{fix_reference_integrity, fix_input, provide_source_manifest, review_orphan_rubric, review_unconfirmed_trace_coverage, review_orphan_bonus_rubric}`. Equivalently for `informational`: the full set including `provisional_informational_count`. Inline comments tag each entry with the code path it backs so a removal can be reviewed against the intent.
+
+#### Bonus-only boundary E2E
+
+- New helper `_write_minimal_grounded_fixture(root, ...)` in `tests/test_cli_output_contract.py` builds a sha256-verified manifest plus single-line source files plus minimal schema-valid YAMLs in a tmp directory. Lets boundary tests construct single-purpose inputs without polluting the canonical fixture set under `fixtures/`.
+- New `test_check_with_bonus_only_orphan_locks_informational_envelope_boundary`: one spec item, one bonus rubric, zero trace links. Asserts `exit_code=0`, `status=provisional_findings`, `provisional_high_count=0`, `provisional_medium_count=0`, `provisional_informational_count=1`, and exactly one `review_orphan_bonus_rubric` next_action with `rubric_id="RB"`. This is the **only** path that exercises the `informational == 1, high == 0, medium == 0` envelope row, so a removal of `provisional_informational_count` from `_build_envelope` would now fail here (vs being silently accepted before).
+
+### Files Changed
+
+- `tests/test_fixtures.py`
+- `tests/test_cli_output_contract.py`
+
+### Issues Found
+
+- Problem: slice 3 added three new public contract surfaces (envelope field, next_action type, schema introspection entry) without adding regression for any of them. The slice's intent was to let caller agents distinguish "noise-free clean" from "no high/medium but informational present", but that distinction was only exercisable via manual smoke runs.
+- Cause: the slice 3 E2E test (`test_orphan_scored_rubric_fixture_emits_all_three_rule_one_branches`) discarded the captured stdout (`capsys.readouterr()` was called but the result was thrown away). The new fields landed on a code path that was being silently ignored.
+- Resolution: thread `capsys` through `_run_check` and surface the envelope as a returned value. Tests now assert against both the on-disk findings file *and* the agent-visible envelope. Verified by re-running pytest: 97 → 98 passing.
+- Outcome: the slice 3 contract is now locked. Any of the three regressions (envelope field removal, next_action removal, schema introspection drop) would now fail at least one explicit test.
+
+### Decisions
+
+- E2E helpers must return the envelope, not just the on-disk artifacts. The CLI's public face is the envelope; tests that only read `findings.json` are testing the wrong surface for slices that change envelope contract.
+- Boundary cases that only one input shape can reach (here: `informational == 1, high == 0, medium == 0`) need a dedicated locked test even if a richer fixture already exercises the same code path with non-zero highs/mediums. Otherwise a count's existence is implicit in the richer test and removable without detection.
+- Inline-fixture helpers (`_write_minimal_grounded_fixture`) belong in the test file that owns the boundary, not in `fixtures/`. Adding a permanent fixture for a single boundary lock would inflate the canonical fixture set with single-purpose inputs that plan §7 does not list.
+
+---
+
 ## Slice 3 — `orphan_bonus_rubric_item` (Rule 1 completes; plan v1.10)
 
 ### Goals

@@ -19,9 +19,15 @@ from assessment_harness.cli import main
 def _run_check(
     fixture_subdir: Path,
     tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
     *,
     use_manifest: bool,
-) -> tuple[int, dict, dict]:
+) -> tuple[int, dict, dict, dict]:
+    """Run `check` end-to-end and return ``(exit_code, envelope, findings_doc,
+    diagnostics_doc)``. The CLI envelope is captured from stdout so tests can
+    assert on the public agent-consumable contract (informational counts,
+    next_actions) — not just on the on-disk findings/diagnostics files.
+    """
     out = tmp_path / "findings.json"
     diag = tmp_path / "integrity_diagnostics.json"
     argv = [
@@ -44,9 +50,11 @@ def _run_check(
     if use_manifest:
         argv += ["--source-manifest", str(fixture_subdir / "source_manifest.yaml")]
     code = main(argv)
+    captured = capsys.readouterr()
+    envelope = json.loads(captured.out)
     findings_doc = json.loads(out.read_text(encoding="utf-8"))
     diag_doc = json.loads(diag.read_text(encoding="utf-8"))
-    return code, findings_doc, diag_doc
+    return code, envelope, findings_doc, diag_doc
 
 
 def test_clean_assignment_yields_pre_review_unconfirmed_trace_coverage(
@@ -61,10 +69,9 @@ def test_clean_assignment_yields_pre_review_unconfirmed_trace_coverage(
     cannot synthesize `human_accepted` on its own, so this medium baseline
     *is* the canonical post-Rule-0 state.
     """
-    code, findings, diagnostics = _run_check(
-        fixture_dir / "clean_assignment", tmp_path, use_manifest=True
+    code, envelope, findings, diagnostics = _run_check(
+        fixture_dir / "clean_assignment", tmp_path, capsys, use_manifest=True
     )
-    capsys.readouterr()
     assert code == 0, f"diagnostics: {diagnostics}"
     assert findings["status"] == "provisional_findings"
     assert findings["blocking_count"] == 0
@@ -87,6 +94,12 @@ def test_clean_assignment_yields_pre_review_unconfirmed_trace_coverage(
     other_types = {f["type"] for f in findings["findings"]} - {"unconfirmed_trace_coverage"}
     assert other_types == set(), f"unexpected finding types: {other_types}"
 
+    # CLI envelope contract: clean_assignment baseline keeps medium count
+    # only — protects the public envelope field from silent removal.
+    assert envelope["provisional_high_count"] == 0
+    assert envelope["provisional_medium_count"] == 2
+    assert envelope["provisional_informational_count"] == 0
+
 
 def test_orphan_scored_rubric_fixture_emits_all_three_rule_one_branches(
     fixture_dir: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
@@ -102,10 +115,9 @@ def test_orphan_scored_rubric_fixture_emits_all_three_rule_one_branches(
     `status=provisional_findings`, exit code 0, blocking_count 0. Rule 0
     diagnostics stay clean because the fixture is grounded (Slice 1.5).
     """
-    code, findings, diagnostics = _run_check(
-        fixture_dir / "orphan_scored_rubric", tmp_path, use_manifest=True
+    code, envelope, findings, diagnostics = _run_check(
+        fixture_dir / "orphan_scored_rubric", tmp_path, capsys, use_manifest=True
     )
-    capsys.readouterr()
     assert code == 0, f"diagnostics: {diagnostics}, findings: {findings}"
     assert findings["status"] == "provisional_findings"
     assert findings["blocking_count"] == 0
@@ -121,15 +133,33 @@ def test_orphan_scored_rubric_fixture_emits_all_three_rule_one_branches(
         "R3": ("orphan_bonus_rubric_item", "informational", "provisional"),
     }
 
+    # CLI envelope contract for the all-three-branches case: the public
+    # informational fields and the per-branch next_actions are part of the
+    # slice 3 contract. Lock them so a future change cannot quietly remove
+    # `provisional_informational_count` or the `review_orphan_bonus_rubric`
+    # action while finding emission still succeeds.
+    assert envelope["status"] == "provisional_findings"
+    assert envelope["provisional_high_count"] == 1
+    assert envelope["provisional_medium_count"] == 1
+    assert envelope["provisional_informational_count"] == 1
+    actions_by_rubric = {
+        (a["type"], a["rubric_id"]) for a in envelope["next_actions"]
+    }
+    assert actions_by_rubric == {
+        ("review_unconfirmed_trace_coverage", "R1"),
+        ("review_orphan_rubric", "R2"),
+        ("review_orphan_bonus_rubric", "R3"),
+    }
+
 
 def test_reference_integrity_fixture_blocks_with_exit_two(
     fixture_dir: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    code, findings, diagnostics = _run_check(
-        fixture_dir / "reference_integrity", tmp_path, use_manifest=True
+    code, envelope, findings, diagnostics = _run_check(
+        fixture_dir / "reference_integrity", tmp_path, capsys, use_manifest=True
     )
-    capsys.readouterr()
     assert code == 2
+    assert envelope["status"] == "invalid_input"
     assert findings["status"] == "invalid_input"
     assert findings["findings"] == []
     codes = {d["code"] for d in diagnostics["diagnostics"]}
