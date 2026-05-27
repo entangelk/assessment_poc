@@ -1,0 +1,17 @@
+rules:
+  optionality_mismatch:
+    weight_threshold: 10
+
+compacting:
+  identity_basis:
+    spec_item: "source+section+normalized_text"
+    rubric_item: "title+normalized_description"
+    trace_link: "rubric_id+sorted(spec_ids)"
+
+runs:
+  min_valid_runs: 2
+  default_runs: 3
+  max_runs: 7
+
+verification:
+  default_mode: ai_judgement

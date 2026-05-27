@@ -1,0 +1,61 @@
+spec_items:
+  - id: S_COVERED
+    source: spec.md
+    section: "Requirements"
+    text: "Implement refund handling for cancelled orders."
+    visibility: candidate_facing
+    requirement_level: must
+    source_ref:
+      document_id: DOC_SPEC
+      start_line: 1
+      end_line: 1
+  - id: S_UNTRACED
+    source: spec.md
+    section: "Requirements"
+    text: "Persist a cancellation reason."
+    visibility: candidate_facing
+    requirement_level: must
+    source_ref:
+      document_id: DOC_SPEC
+      start_line: 2
+      end_line: 2
+  - id: S_BONUS_ONLY
+    source: spec.md
+    section: "Requirements"
+    text: "Export a cancellation audit log."
+    visibility: candidate_facing
+    requirement_level: must
+    source_ref:
+      document_id: DOC_SPEC
+      start_line: 3
+      end_line: 3
+  - id: S_QUAL_ONLY
+    source: spec.md
+    section: "Requirements"
+    text: "Document retry behavior."
+    visibility: candidate_facing
+    requirement_level: must
+    source_ref:
+      document_id: DOC_SPEC
+      start_line: 4
+      end_line: 4
+  - id: S_OPTIONAL
+    source: spec.md
+    section: "Optional"
+    text: "Provide a timing dashboard."
+    visibility: candidate_facing
+    requirement_level: optional
+    source_ref:
+      document_id: DOC_SPEC
+      start_line: 5
+      end_line: 5
+  - id: S_INFO
+    source: spec.md
+    section: "Notes"
+    text: "Examples are illustrative."
+    visibility: candidate_facing
+    requirement_level: informational
+    source_ref:
+      document_id: DOC_SPEC
+      start_line: 6
+      end_line: 6

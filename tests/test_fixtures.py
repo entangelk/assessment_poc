@@ -181,12 +181,12 @@ def test_reference_integrity_fixture_blocks_with_exit_two(
     assert diagnostics["summary"]["high"] >= len(expected)
 
 
-def test_bonus_misuse_fixture_emits_l1_l5_l6_and_orphan_boundaries(
+def test_bonus_misuse_fixture_emits_l1_l5_l6_rule_two_and_orphan_boundaries(
     fixture_dir: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """Lint boundary guard: RB1 traces must S1 and co-fires L1 plus L5;
     RB2 traces optional S2 and fires neither; RB3 remains a Rule 1 orphan;
-    RB4 traces must S3 without scored coverage and co-fires L5 plus L6.
+    RB4 traces must S3 without scored coverage and co-fires Rule 2, L5, and L6.
     """
     root = fixture_dir / "bonus_misuse"
     out = tmp_path / "findings.json"
@@ -220,7 +220,7 @@ def test_bonus_misuse_fixture_emits_l1_l5_l6_and_orphan_boundaries(
     assert envelope["review_queue_path"] == str(queue_path)
     assert envelope["review_queue_count"] == 2
     assert envelope["provisional_high_count"] == 1
-    assert envelope["provisional_medium_count"] == 4
+    assert envelope["provisional_medium_count"] == 5
     assert envelope["provisional_informational_count"] == 1
     assert {
         (a["type"], a.get("spec_id"), a.get("rubric_id"))
@@ -230,6 +230,7 @@ def test_bonus_misuse_fixture_emits_l1_l5_l6_and_orphan_boundaries(
         ("review_bonus_mandatory_only", None, "RB1"),
         ("review_orphan_bonus_rubric", None, "RB3"),
         ("review_mandatory_spec_bonus_only", "S3", None),
+        ("review_uncovered_must_spec", "S3", None),
     }
     assert validate("review_queue", queue) == []
     assert validate("findings", findings) == []
@@ -248,6 +249,8 @@ def test_bonus_misuse_fixture_emits_l1_l5_l6_and_orphan_boundaries(
     assert [(f["spec_id"], f["bonus_rubric_ids"], f["severity"]) for f in l6] == [
         ("S3", ["RB4"], "high")
     ]
+    rule_two = [f for f in findings["findings"] if f["type"] == "uncovered_must_spec_item"]
+    assert [(f["spec_id"], f["severity"]) for f in rule_two] == [("S3", "medium")]
     orphan_bonus = [f for f in findings["findings"] if f["type"] == "orphan_bonus_rubric_item"]
     assert [(f["rubric_id"], f["severity"]) for f in orphan_bonus] == [
         ("RB3", "informational")
@@ -262,4 +265,42 @@ def test_bonus_misuse_fixture_emits_l1_l5_l6_and_orphan_boundaries(
     assert queue["review_queue"][1]["target"] == {
         "spec_id": "S3",
         "bonus_rubric_ids": ["RB4"],
+    }
+
+
+def test_uncovered_must_spec_fixture_locks_rule_two_structural_boundary(
+    fixture_dir: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Rule 2 fixture: an untraced must, a bonus-only must, and a
+    qualitative-only must are uncovered, while pending scored coverage and
+    non-mandatory specs are not. Bonus-only coverage also preserves L5/L6.
+    """
+    code, envelope, findings, diagnostics = _run_check(
+        fixture_dir / "uncovered_must_spec", tmp_path, capsys, use_manifest=True
+    )
+    assert code == 0, f"diagnostics: {diagnostics}, findings: {findings}"
+    assert diagnostics["diagnostics"] == []
+    rule_two = [
+        f for f in findings["findings"] if f["type"] == "uncovered_must_spec_item"
+    ]
+    assert [(f["spec_id"], f["severity"]) for f in rule_two] == [
+        ("S_UNTRACED", "medium"),
+        ("S_BONUS_ONLY", "medium"),
+        ("S_QUAL_ONLY", "medium"),
+    ]
+    assert "S_COVERED" not in {f["spec_id"] for f in rule_two}
+    assert "S_OPTIONAL" not in {f["spec_id"] for f in rule_two}
+    assert "S_INFO" not in {f["spec_id"] for f in rule_two}
+
+    assert envelope["provisional_high_count"] == 1
+    assert envelope["provisional_medium_count"] == 5
+    assert envelope["provisional_informational_count"] == 0
+    assert {
+        (action["type"], action.get("spec_id"))
+        for action in envelope["next_actions"]
+    } >= {
+        ("review_uncovered_must_spec", "S_UNTRACED"),
+        ("review_uncovered_must_spec", "S_BONUS_ONLY"),
+        ("review_uncovered_must_spec", "S_QUAL_ONLY"),
+        ("review_mandatory_spec_bonus_only", "S_BONUS_ONLY"),
     }

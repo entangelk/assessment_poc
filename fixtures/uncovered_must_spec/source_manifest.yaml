@@ -1,0 +1,11 @@
+project_id: uncovered_must_spec
+assessment_version: v1
+documents:
+  - document_id: DOC_SPEC
+    role: candidate_spec
+    path: source/spec.md
+    sha256: bc2d577f091b64de92a093210b1ddb29aa65798e5fcc4d5e275128efcbfd8cf6
+  - document_id: DOC_RUBRIC
+    role: evaluator_rubric
+    path: source/rubric.md
+    sha256: 42e90663c64ad2b3e3039a836ecfab9b934ee445bed4ce235ee66cd4a8419c76

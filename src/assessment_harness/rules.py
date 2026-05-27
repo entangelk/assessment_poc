@@ -1,8 +1,8 @@
 """Deterministic rule engine.
 
 Phase 0 ships Rule 0 (Reference Integrity Diagnostic), Rule 1 (Scored Rubric
-Coverage), and incremental lint-family slices. Rules 2-3 land in following
-iterations.
+Coverage), Rule 2 (Required Spec Coverage), and incremental lint-family
+slices. Rule 3 lands in a following iteration.
 
 Each rule consumes already-schema-validated dict inputs and returns a list of
 :class:`Diagnostic` or :class:`Finding` records. Severity and decision status
@@ -586,7 +586,7 @@ def run_rule_one(
     rubric_items_doc: dict[str, Any],
     trace_links_doc: dict[str, Any],
 ) -> list[Finding]:
-    """Scored Rubric Coverage (plan v1.13 §6 Rule 1).
+    """Scored Rubric Coverage (plan v1.14 §6 Rule 1).
 
     Phase 0 emits three provisional branches:
 
@@ -695,11 +695,59 @@ def run_rule_one(
     return findings
 
 
+def run_rule_two(
+    spec_items_doc: dict[str, Any],
+    rubric_items_doc: dict[str, Any],
+    trace_links_doc: dict[str, Any],
+) -> list[Finding]:
+    """Required Spec Coverage (plan v1.14 §6 Rule 2).
+
+    This rule is structural: any trace from a scored rubric covers its
+    referenced spec items regardless of ``semantic_status``. Bonus and
+    qualitative traces do not provide scored coverage.
+    """
+    scored_rubric_ids = {
+        rubric["id"]
+        for rubric in rubric_items_doc.get("rubric_items", [])
+        if rubric.get("id") and rubric.get("evaluation_role") == "scored"
+    }
+    scored_spec_ids = {
+        spec_id
+        for link in trace_links_doc.get("trace_links", [])
+        if link.get("rubric_id") in scored_rubric_ids
+        for spec_id in link.get("spec_ids", [])
+    }
+
+    findings: list[Finding] = []
+    for spec in spec_items_doc.get("spec_items", []):
+        spec_id = spec.get("id")
+        if (
+            not spec_id
+            or spec.get("requirement_level") != "must"
+            or spec_id in scored_spec_ids
+        ):
+            continue
+        findings.append(
+            Finding(
+                type="uncovered_must_spec_item",
+                severity="medium",
+                decision_status="provisional",
+                spec_id=spec_id,
+                message=(
+                    f"mandatory spec_item {spec_id!r} is not traced by any "
+                    "scored rubric_item; review whether required behavior is "
+                    "missing from scored coverage."
+                ),
+            )
+        )
+    return findings
+
+
 def run_rule_l1(
     rubric_items_doc: dict[str, Any],
     trace_links_doc: dict[str, Any],
 ) -> tuple[list[Finding], list[dict[str, Any]]]:
-    """Cross-role Double Scoring (plan v1.13 §6 Rule L1).
+    """Cross-role Double Scoring (plan v1.14 §6 Rule L1).
 
     L1 is structural: semantic statuses are exposed as review evidence but
     do not affect whether the same spec is traced from both scored and bonus
@@ -801,7 +849,7 @@ def run_rule_l5(
     rubric_items_doc: dict[str, Any],
     trace_links_doc: dict[str, Any],
 ) -> list[Finding]:
-    """Bonus Traces Only Mandatory (plan v1.13 §6 Rule L5).
+    """Bonus Traces Only Mandatory (plan v1.14 §6 Rule L5).
 
     This is a structural lint finding: a traced bonus rubric is flagged only
     when every referenced spec item is mandatory. Untraced bonus items remain
@@ -856,7 +904,7 @@ def run_rule_l6(
     rubric_items_doc: dict[str, Any],
     trace_links_doc: dict[str, Any],
 ) -> tuple[list[Finding], list[dict[str, Any]]]:
-    """Mandatory Spec Bonus-only Coverage (plan v1.13 §6 Rule L6).
+    """Mandatory Spec Bonus-only Coverage (plan v1.14 §6 Rule L6).
 
     L6 is intentionally limited to bonus-only coverage. Qualitative traces do
     not award bonus credit and remain outside this finding's review contract.

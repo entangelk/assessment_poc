@@ -1,0 +1,29 @@
+rubric_items:
+  - id: R_SCORED
+    title: "Refund handling"
+    description: "Scores the required refund behavior."
+    evaluation_role: scored
+    weight: 10
+    evidence_required: [code]
+    source_ref:
+      document_id: DOC_RUBRIC
+      start_line: 1
+      end_line: 1
+  - id: R_BONUS
+    title: "Audit log bonus"
+    description: "Treats the required cancellation audit log as bonus credit."
+    evaluation_role: bonus
+    weight: 2
+    evidence_required: [code]
+    source_ref:
+      document_id: DOC_RUBRIC
+      start_line: 2
+      end_line: 2
+  - id: R_QUAL
+    title: "Retry documentation observation"
+    description: "Observes retry documentation without assigning scored coverage."
+    evaluation_role: qualitative
+    source_ref:
+      document_id: DOC_RUBRIC
+      start_line: 3
+      end_line: 3

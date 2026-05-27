@@ -1,0 +1,25 @@
+trace_links:
+  - rubric_id: R_SCORED
+    spec_ids: [S_COVERED]
+    rationale: "The scored rubric covers refund handling."
+    evidence_quotes:
+      - spec_id: S_COVERED
+        quote: "Implement refund handling for cancelled orders."
+        verification_mode: token_sequence
+    semantic_status: pending_verification
+  - rubric_id: R_BONUS
+    spec_ids: [S_BONUS_ONLY]
+    rationale: "The audit log is represented only as bonus credit."
+    evidence_quotes:
+      - spec_id: S_BONUS_ONLY
+        quote: "Export a cancellation audit log."
+        verification_mode: token_sequence
+    semantic_status: pending_verification
+  - rubric_id: R_QUAL
+    spec_ids: [S_QUAL_ONLY]
+    rationale: "Retry documentation has qualitative observation only."
+    evidence_quotes:
+      - spec_id: S_QUAL_ONLY
+        quote: "Document retry behavior."
+        verification_mode: token_sequence
+    semantic_status: pending_verification

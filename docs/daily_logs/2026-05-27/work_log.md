@@ -429,3 +429,64 @@
 - Contract smoke: `docker compose run --rm harness --output json schema --command check` includes `review_mandatory_spec_bonus_only`.
 - L6 smoke: `check` on `fixtures/bonus_misuse` returns `(high=1, medium=4, informational=1)`; S3/RB4 produces `mandatory_spec_bonus_only_traced`, `review_mandatory_spec_bonus_only`, and the second review queue entry (`review_queue_count=2`).
 - Publication review: the owner reported that an independent AI verification of Rule L6 and the plan v1.13 boundary resolution passed and authorized committing and pushing this batch to `origin/main`.
+
+---
+
+## Phase 0 Rule 2 Implementation
+
+### Goals
+
+- Implement Rule 2 Required Spec Coverage as the next approved slice after the completed lint family.
+- Freeze the owner-recommended public output pair, `uncovered_must_spec_item` / `review_uncovered_must_spec`, in the canonical plan before shipping code that emits it.
+- Preserve the structural boundary: scored traces count as coverage regardless of `semantic_status`, while bonus-only or qualitative-only must traces do not.
+
+### Completed Work
+
+- Implemented Rule 2 and wired its CLI review action.
+  - Files changed: `src/assessment_harness/rules.py`, `src/assessment_harness/cli.py`.
+  - Key changes: added `run_rule_two(spec_items, rubric_items, trace_links)`; collected coverage only from rubrics with `evaluation_role == "scored"`; emitted medium/provisional `uncovered_must_spec_item` findings keyed by `spec_id`; exposed `review_uncovered_must_spec` in findings handling and `schema --command check`.
+  - Effect: caller agents can now detect required requirements omitted from scored assessment without incorrectly treating pending semantic review as non-coverage.
+- Added two-directional tests and a grounded end-to-end fixture.
+  - Files changed: `tests/test_rules.py`, `tests/test_fixtures.py`, `tests/test_cli_output_contract.py`, `fixtures/uncovered_must_spec/*`.
+  - Key changes: covered untraced must emission, pending-scored suppression, optional/informational suppression, bonus-only and qualitative-only non-coverage; created a source-manifest-grounded fixture that also demonstrates Rule 2 + L5 + L6 co-firing on a bonus-only must item.
+  - Effect: both under-strict and over-strict regression directions are explicit, including the qualitative gap deliberately left outside L6.
+- Updated existing lint integration expectation for the newly active upstream rule.
+  - Files changed: `tests/test_fixtures.py`.
+  - Key changes: `bonus_misuse` now expects S3/RB4 to emit Rule 2 alongside L5/L6, increasing its medium count from 4 to 5 and exposing the new action.
+  - Effect: Rule 2 does not silently alter the established shared fixture; the intended overlap is documented and asserted.
+- Promoted the canonical plan and current-state documentation.
+  - Files changed: `docs/implementation_plan_assessment_harness_poc_v1.md`, `README.md`, `HANDOFF.md`, `CHANGELOG.md`, this work log.
+  - Key changes: promoted the implementation plan to v1.14; fixed Rule 2 literals and fixture name; reconciled the former L6 “future Rule 2-family” wording with implemented Rule 2; marked Rule 3 as the next slice.
+  - Effect: emitted code, schema-discoverable CLI contract, and project handoff now agree on Rule 2 behavior and status.
+
+### Issues Found
+
+- Problem: Rule 2's condition was specified, but its final finding and next-action literals were intentionally deferred until implementation entry; the plan still mentioned the older fixture label `required_spec_unscored`.
+  Cause: the owner deferred literal locking while lint work was ahead in the sequence.
+  Resolution: adopted the recorded recommendation unchanged and locked `uncovered_must_spec_item` / `review_uncovered_must_spec` in plan v1.14 before completing the slice.
+  Outcome: Rule 2 has a stable, semantically accurate public contract centered on a spec coverage gap rather than a rubric orphan.
+- Problem: once Rule 2 is active, `bonus_misuse` S3/RB4 satisfies both the established L6 condition and Rule 2's broader missing-scored-coverage condition.
+  Cause: L6 is deliberately a high-severity special case of Rule 2 for bonus-only mandatory evaluation.
+  Resolution: updated the fixture assertion to require intentional Rule 2 + L5 + L6 co-firing rather than hiding the additional medium finding.
+  Outcome: overlapping review signals remain visible and match plan §6's relationship between Rule 2 and L6.
+
+### Decisions
+
+- The previously recorded owner recommendation is now adopted as the locked Rule 2 contract: `uncovered_must_spec_item` and `review_uncovered_must_spec`. The naming distinguishes a missing scored path for a spec from Rule 1's rubric orphan family.
+- Rule 2 remains strictly structural. It does not inspect `semantic_status`; otherwise a normal pending verifier workflow would falsely report covered mandatory requirements as absent from scoring.
+- L6 continues to be bonus-specific. Qualitative-only missing scored coverage is now surfaced by Rule 2 rather than broadening L6's payload or review queue contract.
+
+### Next Steps
+
+1. Implement Rule 3 Optionality Consistency using `policy.optionality_mismatch.weight_threshold`, with structural-only tests and `fixtures/optionality_mismatch/`.
+2. Implement `gate` after the final-review contract exists, preserving the rule that only `gate` issues external blocking verdicts.
+
+### Verification
+
+- Red-state confirmation: focused pytest initially failed during collection because `run_rule_two` was not yet defined.
+- Focused suite: `docker compose run --rm test tests/test_rules.py tests/test_cli_output_contract.py tests/test_fixtures.py -q` passed.
+- Full suite: `docker compose run --rm test -q` passed; `docker compose run --rm test --collect-only -q` reports 117 tests (13 contract, 5 fixture, 12 model, 87 rule tests).
+- Contract smoke: `docker compose run --rm harness --output json schema --command check` includes `review_uncovered_must_spec`.
+- Rule 2 smoke: `check` on grounded `fixtures/uncovered_must_spec` returns `status=provisional_findings`, `review_queue_count=1`, and `(high=1, medium=5, informational=0)`; Rule 2 findings are emitted for S_UNTRACED, S_BONUS_ONLY, and S_QUAL_ONLY only.
+- Diff hygiene: `git diff --check` passes.
+- Publication review: the owner reported that an independent AI verification of Rule 2 and the plan v1.14 contract update passed and authorized committing and pushing this batch to `origin/main`.

@@ -2,8 +2,8 @@
 
 Subcommands implemented in Phase 0:
 
-- ``check``   : run Rule 0 over the supplied compacted YAML and emit JSON
-                findings + integrity diagnostics.
+- ``check``   : run deterministic rules over the supplied compacted YAML and
+                emit JSON findings + integrity diagnostics.
 - ``schema``  : self-discovery for the stable contract; lets caller agents
                 read the current `cli_output` shape without docs.
 - ``report``  : render findings + diagnostics into a Markdown report.
@@ -31,6 +31,7 @@ from .rules import (
     run_rule_l5,
     run_rule_l6,
     run_rule_one,
+    run_rule_two,
     run_rule_zero,
     severity_counts,
 )
@@ -162,12 +163,13 @@ def _cmd_check(args: argparse.Namespace) -> CommandResult:
     # Rule 0 clean. Run subsequent provisional rules; check never emits
     # blocking verdicts (that is gate's job).
     rule_one_findings = run_rule_one(rubric_doc, trace_doc)
+    rule_two_findings = run_rule_two(spec_doc, rubric_doc, trace_doc)
     lint_findings, review_queue = run_rule_l1(rubric_doc, trace_doc)
     lint_findings.extend(run_rule_l5(spec_doc, rubric_doc, trace_doc))
     l6_findings, l6_review_queue = run_rule_l6(spec_doc, rubric_doc, trace_doc)
     lint_findings.extend(l6_findings)
     review_queue.extend(l6_review_queue)
-    provisional_findings = rule_one_findings + lint_findings
+    provisional_findings = rule_one_findings + rule_two_findings + lint_findings
     finding_counts = finding_severity_counts(provisional_findings)
     review_queue_path = (
         Path(args.review_queue_out)
@@ -234,6 +236,14 @@ def _cmd_check(args: argparse.Namespace) -> CommandResult:
                         "type": "review_mandatory_spec_bonus_only",
                         "spec_id": f.spec_id,
                         "bonus_rubric_ids": f.bonus_rubric_ids,
+                        "finding_type": f.type,
+                    }
+                )
+            elif f.type == "uncovered_must_spec_item":
+                next_actions.append(
+                    {
+                        "type": "review_uncovered_must_spec",
+                        "spec_id": f.spec_id,
                         "finding_type": f.type,
                     }
                 )
@@ -447,6 +457,7 @@ COMMAND_CONTRACTS: dict[str, dict[str, Any]] = {
             "review_double_scoring",
             "review_bonus_mandatory_only",
             "review_mandatory_spec_bonus_only",
+            "review_uncovered_must_spec",
         ],
     },
     "report": {
@@ -593,7 +604,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
     p_check = sub.add_parser(
         "check",
-        help="run Rule 0 over compacted YAML and emit findings/diagnostics JSON.",
+        help="run deterministic checks over compacted YAML and emit findings/diagnostics JSON.",
     )
     _add_output_arg(p_check, root=False)
     p_check.add_argument("--spec-items", required=True)

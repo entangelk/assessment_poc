@@ -20,6 +20,7 @@ from assessment_harness.rules import (
     run_rule_l5,
     run_rule_l6,
     run_rule_one,
+    run_rule_two,
     run_rule_zero,
     severity_counts,
 )
@@ -1309,6 +1310,62 @@ def test_l6_qualitative_trace_is_left_to_rule_two_family(
         [],
         [],
     )
+
+
+# ---------------------------------------------------------------------------
+# Rule 2 — Required Spec Coverage
+# ---------------------------------------------------------------------------
+
+
+def test_rule_two_uncovered_must_spec_emits_medium_finding() -> None:
+    """Under-strict guard: a mandatory spec with no scored trace must emit
+    `uncovered_must_spec_item` for review.
+    """
+    findings = run_rule_two(_baseline_spec(), _baseline_rubric(), {"trace_links": []})
+    matching = _findings_of_type(findings, "uncovered_must_spec_item")
+    assert [(f.spec_id, f.severity, f.decision_status) for f in matching] == [
+        ("S1", "medium", "provisional")
+    ]
+
+
+def test_rule_two_pending_scored_trace_counts_as_structural_coverage() -> None:
+    """Over-strict guard A: Rule 2 is structural; a pending scored trace
+    covers the must spec and must not inherit Rule 1's final-status filter.
+    """
+    findings = run_rule_two(_baseline_spec(), _baseline_rubric(), _baseline_traces())
+    assert _findings_of_type(findings, "uncovered_must_spec_item") == []
+
+
+def test_rule_two_ignores_uncovered_optional_and_informational_specs() -> None:
+    """Over-strict guard B: only mandatory specs are Rule 2 coverage targets."""
+    spec = {
+        "spec_items": [
+            {"id": "S_OPTIONAL", "requirement_level": "optional"},
+            {"id": "S_INFO", "requirement_level": "informational"},
+        ]
+    }
+    findings = run_rule_two(spec, _baseline_rubric(), {"trace_links": []})
+    assert findings == []
+
+
+@pytest.mark.parametrize("role", ["bonus", "qualitative"])
+def test_rule_two_non_scored_trace_does_not_cover_must_spec(role: str) -> None:
+    """Over-strict guard C: bonus or qualitative traces are not scored
+    coverage; a must spec traced only by either role remains uncovered.
+    """
+    rubric = {
+        "rubric_items": [
+            {"id": "R_NON_SCORED", "evaluation_role": role},
+        ]
+    }
+    traces = {
+        "trace_links": [
+            {"rubric_id": "R_NON_SCORED", "spec_ids": ["S1"], "evidence_quotes": []},
+        ]
+    }
+    findings = run_rule_two(_baseline_spec(), rubric, traces)
+    matching = _findings_of_type(findings, "uncovered_must_spec_item")
+    assert [f.spec_id for f in matching] == ["S1"]
 
 
 @pytest.mark.parametrize(

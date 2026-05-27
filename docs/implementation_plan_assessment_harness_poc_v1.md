@@ -1,4 +1,4 @@
-# Assessment Spec Harness PoC 구현 계획서 v1.13
+# Assessment Spec Harness PoC 구현 계획서 v1.14
 
 ## 0. 문서 목적
 
@@ -634,11 +634,13 @@ token_sequence 비교는 normalized whitespace 기준의 토큰 시퀀스 동일
 ### Rule 2. Required Spec Coverage
 
 - 조건: `requirement_level == must`이고 이를 참조하는 `scored` rubric item이 없음
-- 결과: `medium` finding
+- 결과: `uncovered_must_spec_item`, `medium`, `provisional`
+- next_action: `review_uncovered_must_spec`
 - 판정 상태: final human review 전 `provisional`
 - 차단 대상: 아니오
 - 의도: 공개 핵심 요구사항이 실제 평가에서 누락되었는지 검토
 - severity 근거: Rule 1과 정합성 결함의 무게는 같지만, "rubric에 없는 must spec"은 평가자가 의도적으로 제외했을 여지가 있어 차단까지는 무리다. 검토 권장(medium)으로 두고 실제 과제 적용 후 high 승격 여부를 §13에 따라 재검토한다.
+- coverage 경계: 구조적 검사이므로 `semantic_status`를 참조하지 않는다. `pending_verification`을 포함한 어떤 상태의 link든 `scored` rubric이 해당 must spec을 참조하면 coverage로 인정한다. `bonus` 또는 `qualitative` link만 존재하면 coverage가 아니므로 finding을 발화한다.
 
 ### Rule 3. Optionality Consistency
 
@@ -694,7 +696,7 @@ token_sequence 비교는 normalized whitespace 기준의 토큰 시퀀스 동일
 - **차단 대상**: confirmed 상태에서만 예 (Rule 1의 `orphan_scored_rubric_item`과 같은 위상).
 - **의도**: must 명세인데 본채점이 아예 없고 가산만 걸려있는 경우. Rule 2가 "must spec에 scored trace 없음"을 medium으로 잡지만, 본 룰은 한 단계 더 구체적이다 — "없을 뿐 아니라 *가산으로만* 평가되도록 설계됨".
 - **Rule 2와의 관계**: Rule 2의 특수 케이스. 동시 발화 가능. Rule 2가 medium, L6가 high — 둘 다 발화되면 reviewer는 L6 우선 처리.
-- **qualitative 경계 (Owner 확정, v1.13)**: `qualitative`는 점수화/가산 경로가 아니므로 L6의 `bonus-only` 위험에 포함하지 않는다. must spec이 qualitative만, 또는 bonus+qualitative로 trace되고 scored가 없는 경우는 L6가 발화하지 않으며, 해당 정합성 문제는 Rule 2 영역의 별도 후속 규칙으로 다룬다.
+- **qualitative 경계 (Owner 확정, v1.13; Rule 2 구현 정합화 v1.14)**: `qualitative`는 점수화/가산 경로가 아니므로 L6의 `bonus-only` 위험에 포함하지 않는다. must spec이 qualitative만, 또는 bonus+qualitative로 trace되고 scored가 없는 경우는 L6가 발화하지 않으며, Rule 2의 `uncovered_must_spec_item`이 missing scored coverage를 검토 대상으로 남긴다.
 - **안전장치** (ideation §9.1 11번):
   - Finding payload에 동봉: `spec_id` (must spec), 그 spec을 trace하는 모든 `bonus_rubric_ids[]`, 각 bonus rubric의 `title` / `description` / `text`, 각 link의 `semantic_status`, `spec_item.text` 또는 `source_ref`.
   - §5.7 `review_queue.json`에 `type: mandatory_spec_bonus_review` entry. `target: { spec_id, bonus_rubric_ids: [...] }`.
@@ -702,7 +704,7 @@ token_sequence 비교는 normalized whitespace 기준의 토큰 시퀀스 동일
   - under-strict: must spec에 trace는 있지만 모두 bonus → 발화 + payload + review_queue entry.
   - over-strict A: must spec에 scored trace가 하나라도 있음 → 미발화.
   - over-strict B: must spec에 trace 자체가 없음 → 미발화 (Rule 2 책임).
-  - over-strict C: must spec trace에 qualitative가 하나라도 있음 → 미발화 (Rule 2 계열 후속 규칙 책임).
+  - over-strict C: must spec trace에 qualitative가 하나라도 있음 → 미발화 (Rule 2 `uncovered_must_spec_item` 책임).
 - **fixture**: L1/L5 fixture와 공유. must spec 하나에 bonus rubric 하나만 trace되는 entry 추가.
 
 ### Lint 가족 공통 메모
@@ -768,7 +770,7 @@ assessment_poc/
   fixtures/
     clean_assignment/
     orphan_scored_rubric/
-    required_spec_unscored/
+    uncovered_must_spec/
     optionality_mismatch/
     reference_integrity/      # Rule 0 회귀 fixture
     real_assignment/
@@ -1004,7 +1006,7 @@ assessment-harness gate \
 - `clean_assignment`는 blocking finding 없이 통과한다.
 - `reference_integrity`는 Rule 0 high integrity diagnostic을 생성하고 단일 `check`가 exit `2`로 종료된다 (중복 ID, dangling reference, quote non-substring 각 케이스).
 - `orphan_scored_rubric`은 Rule 1 high `provisional` finding을 생성하되 final gate 이전에는 exit `1`로 차단하지 않는다.
-- `required_spec_unscored`는 Rule 2 medium finding을 생성한다.
+- `uncovered_must_spec`는 Rule 2 `uncovered_must_spec_item` medium finding을 생성한다.
 - `optionality_mismatch`는 Rule 3 high finding을 생성한다.
 - 각 규칙 테스트는 under-strict와 over-strict 정상 사례를 함께 가진다.
 
@@ -1237,6 +1239,15 @@ Phase 2/3 전 확정할 사항:
 ---
 
 ## 15. 변경 이력
+
+### v1.14 (2026-05-27)
+
+핵심 변경: **Rule 2 Required Spec Coverage 출력 계약을 잠그고 구현 슬라이스에 진입.**
+
+- **출력 계약 확정**: `requirement_level == must`이면서 scored rubric trace가 없는 spec에는 `uncovered_must_spec_item` (`medium`, `provisional`)을 발화하고, caller action은 `review_uncovered_must_spec`으로 고정한다.
+- **Owner 결정 근거 이행**: Rule 2는 rubric orphan이 아니라 spec coverage gap이므로 `_spec_item` 기반 `uncovered_*` naming family를 사용한다. 이는 HANDOFF에 기록된 owner 권고를 slice merge 전 canonical plan에 반영한 것이다.
+- **구조적 경계 명시**: Rule 2는 `semantic_status`를 보지 않는다. pending scored trace는 coverage이며, bonus-only 또는 qualitative-only must trace는 uncovered finding을 남긴다.
+- **회귀 fixture**: `fixtures/uncovered_must_spec/`는 uncovered, pending-scored-covered, bonus-only, qualitative-only, optional/informational 경계를 함께 검증한다.
 
 ### v1.13 (2026-05-27)
 
