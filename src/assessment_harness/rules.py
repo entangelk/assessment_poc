@@ -793,6 +793,61 @@ def run_rule_l1(
     return findings, review_queue
 
 
+def run_rule_l5(
+    spec_items_doc: dict[str, Any],
+    rubric_items_doc: dict[str, Any],
+    trace_links_doc: dict[str, Any],
+) -> list[Finding]:
+    """Bonus Traces Only Mandatory (plan v1.12 §6 Rule L5).
+
+    This is a structural lint finding: a traced bonus rubric is flagged only
+    when every referenced spec item is mandatory. Untraced bonus items remain
+    Rule 1's responsibility, and semantic statuses do not affect this rule.
+    """
+    spec_levels = {
+        spec["id"]: spec.get("requirement_level")
+        for spec in spec_items_doc.get("spec_items", [])
+        if spec.get("id")
+    }
+    bonus_ids = [
+        rubric["id"]
+        for rubric in rubric_items_doc.get("rubric_items", [])
+        if rubric.get("id") and rubric.get("evaluation_role") == "bonus"
+    ]
+    bonus_id_set = set(bonus_ids)
+    traced_specs_by_bonus: dict[str, list[str]] = {}
+    for link in trace_links_doc.get("trace_links", []):
+        rid = link.get("rubric_id")
+        if rid in bonus_id_set:
+            traced_specs_by_bonus.setdefault(rid, []).extend(link.get("spec_ids", []))
+
+    findings: list[Finding] = []
+    for rid in bonus_ids:
+        spec_ids = traced_specs_by_bonus.get(rid, [])
+        if not spec_ids:
+            continue
+        requirement_levels = [spec_levels.get(spec_id) for spec_id in spec_ids]
+        if not all(level == "must" for level in requirement_levels):
+            continue
+        findings.append(
+            Finding(
+                type="bonus_grades_mandatory_only",
+                severity="medium",
+                decision_status="provisional",
+                rubric_id=rid,
+                message=(
+                    f"bonus rubric_item {rid!r} traces only mandatory spec_items; "
+                    "review whether bonus credit is rewarding already-required work."
+                ),
+                evidence={
+                    "spec_ids": spec_ids,
+                    "requirement_levels": requirement_levels,
+                },
+            )
+        )
+    return findings
+
+
 def severity_counts(diagnostics: list[Diagnostic]) -> dict[str, int]:
     counts = {"informational": 0, "low": 0, "medium": 0, "high": 0, "total": 0}
     for diag in diagnostics:

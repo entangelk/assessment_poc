@@ -170,7 +170,7 @@ gate (external final decision)
   - `ai_judgement` (default): reference integrity만, 의미는 read-only verifier-agent 제안과 최종 human review로 확인
 - **semantic_verifications.yaml**: verifier-agent 복수 run의 `supported` / `rejected` / `uncertain` 제안 취합. compacted link는 수정하지 않음
 - **integrity_diagnostics.json**: Rule 0 위반 기록
-- **review_queue.json**: 기존 검토 entry 5종과 lint safeguard `double_scoring_review` / `mandatory_spec_bonus_review`. Phase 0에서는 구현된 Rule L1의 `double_scoring_review`를 `check`가 생성
+- **review_queue.json**: 기존 검토 entry 5종과 lint safeguard `double_scoring_review` / `mandatory_spec_bonus_review`. Phase 0에서는 구현된 Rule L1의 `double_scoring_review`를 `check`가 생성; Rule L5는 finding/action만 생성
 - **findings.json**: Rule 1~3 위반 (Rule 0는 별도 diagnostic)
 - **final_review/**: 최종 검토자의 accept/hold/rerun/override 기록
 - **gate output**: final review 이후 외부 호출자가 소비하는 pass/fail/pending 판정
@@ -230,7 +230,7 @@ CLI는 `--policy config/policy.yaml` 하나로 모든 정책을 받는다.
 
 | Phase | 범위 | 상태 |
 |---|---|---|
-| 0 | Deterministic validation core (Rule 0~3 + lint, 수동 fixture) | 진행 중 (Rule 0 + Rule 1 전체 분기 + Rule L1 `double_scored_spec` 완료. Rule L5/L6, Rule 2/3, `gate` 대기) |
+| 0 | Deterministic validation core (Rule 0~3 + lint, 수동 fixture) | 진행 중 (Rule 0 + Rule 1 전체 분기 + Rule L1 `double_scored_spec` + Rule L5 `bonus_grades_mandatory_only` 완료. Rule L6, Rule 2/3, `gate` 대기) |
 | 1 | 실제 과제 manual run | Phase 0 후 |
 | 2 | Candidate/verifier agent multi-run + compacting | Phase 1 후 |
 | 3 | Final human review + `gate` + caller agent 시연 | Phase 2 후 |

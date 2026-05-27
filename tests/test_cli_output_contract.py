@@ -286,6 +286,7 @@ def test_schema_command_returns_check_contract(
         "review_unconfirmed_trace_coverage",
         "review_orphan_bonus_rubric",
         "review_double_scoring",
+        "review_bonus_mandatory_only",
     }
     assert set(contract["next_actions_types"]) == expected_actions
 

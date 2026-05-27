@@ -15,7 +15,13 @@ from typing import Any
 import pytest
 
 from assessment_harness.models import Document, SourceSnapshot
-from assessment_harness.rules import run_rule_l1, run_rule_one, run_rule_zero, severity_counts
+from assessment_harness.rules import (
+    run_rule_l1,
+    run_rule_l5,
+    run_rule_one,
+    run_rule_zero,
+    severity_counts,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -1112,6 +1118,69 @@ def test_l1_different_specs_between_roles_do_not_emit() -> None:
         ]
     }
     assert run_rule_l1(_l1_rubrics(), traces) == ([], [])
+
+
+# ---------------------------------------------------------------------------
+# Rule L5 — Bonus Traces Only Mandatory
+# ---------------------------------------------------------------------------
+
+
+def _l5_specs() -> dict[str, Any]:
+    return {
+        "spec_items": [
+            {"id": "S_MUST", "text": "required", "requirement_level": "must", "source_ref": {}},
+            {
+                "id": "S_OPTIONAL",
+                "text": "optional",
+                "requirement_level": "optional",
+                "source_ref": {},
+            },
+            {
+                "id": "S_INFORMATIONAL",
+                "text": "informational",
+                "requirement_level": "informational",
+                "source_ref": {},
+            },
+        ]
+    }
+
+
+def test_l5_bonus_traced_only_to_must_specs_emits_finding() -> None:
+    """Under-strict guard: a bonus rubric whose traced specs are all `must`
+    must surface `bonus_grades_mandatory_only`, regardless of link status.
+    """
+    traces = {
+        "trace_links": [
+            {
+                "rubric_id": "RB",
+                "spec_ids": ["S_MUST"],
+                "evidence_quotes": [],
+                "semantic_status": "human_accepted",
+            }
+        ]
+    }
+    findings = run_rule_l5(_l5_specs(), _bonus_rubric(), traces)
+    assert len(findings) == 1
+    assert findings[0].type == "bonus_grades_mandatory_only"
+    assert findings[0].rubric_id == "RB"
+    assert findings[0].severity == "medium"
+    assert findings[0].decision_status == "provisional"
+
+
+@pytest.mark.parametrize("non_must_spec_id", ["S_OPTIONAL", "S_INFORMATIONAL"])
+def test_l5_bonus_with_non_must_trace_does_not_emit(non_must_spec_id: str) -> None:
+    """Over-strict guard A: an optional/informational target preserves bonus semantics."""
+    traces = {
+        "trace_links": [
+            {"rubric_id": "RB", "spec_ids": ["S_MUST", non_must_spec_id], "evidence_quotes": []}
+        ]
+    }
+    assert run_rule_l5(_l5_specs(), _bonus_rubric(), traces) == []
+
+
+def test_l5_untraced_bonus_is_left_to_rule_one() -> None:
+    """Over-strict guard B: an untraced bonus is a Rule 1 orphan, not L5."""
+    assert run_rule_l5(_l5_specs(), _bonus_rubric(), {"trace_links": []}) == []
 
 
 @pytest.mark.parametrize(

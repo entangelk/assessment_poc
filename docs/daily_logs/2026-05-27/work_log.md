@@ -327,3 +327,54 @@
 - Contract smoke: `docker compose run --rm harness --output json schema --command check` exposes `review_double_scoring`, `review_queue_path`, and `review_queue_count`.
 - L1 smoke: `check` on `fixtures/bonus_misuse` returns exit `0`, `status=provisional_findings`, two medium findings (`unconfirmed_trace_coverage`, `double_scored_spec`), and one `double_scoring_review` queue entry.
 - Publication review: the owner reported that an independent AI verification of this work passed and authorized committing and pushing the Rule L1 batch to `origin/main`.
+
+---
+
+## Phase 0 Rule L5 Implementation
+
+### Goals
+
+- Implement Rule L5 (`bonus_grades_mandatory_only`) on top of the published L1 lint foundation.
+- Lock the boundary among L1 double scoring, L5 mandatory-only bonus design, and Rule 1 untraced bonus handling in the shared fixture.
+
+### Completed Work
+
+- Implemented Rule L5 in the deterministic rule pipeline.
+  - Files changed: `src/assessment_harness/rules.py`, `src/assessment_harness/cli.py`.
+  - Key changes: added structural `run_rule_l5(spec_items, rubric_items, trace_links)`; it emits medium/provisional `bonus_grades_mandatory_only` only for traced bonus rubrics whose referenced spec items are all `must`; wired `review_bonus_mandatory_only` into `check` and schema introspection.
+  - Effect: bonus criteria that merely re-grade mandatory work are now surfaced independently of L1 overlap, without consulting semantic status.
+- Extended regression and grounded fixture coverage.
+  - Files changed: `tests/test_rules.py`, `tests/test_cli_output_contract.py`, `tests/test_fixtures.py`, `fixtures/bonus_misuse/rubric_items.yaml`, `fixtures/bonus_misuse/source/rubric.md`, `fixtures/bonus_misuse/source_manifest.yaml`.
+  - Key changes: added L5 under-strict and two over-strict tests; expanded fixture with untraced RB3; asserted RB1 L1+L5 co-firing, RB2 optional trace non-firing, and RB3 Rule 1 informational ownership.
+  - Effect: the three nearby bonus behaviors cannot silently collapse into one rule or double-count incorrectly.
+- Updated project status documents.
+  - Files changed: `README.md`, `HANDOFF.md`, `CHANGELOG.md`, `docs/daily_logs/2026-05-27/work_log.md`.
+  - Key changes: marked L5 complete, documented its no-new-queue surface, updated the next slice to L6, and recorded current test/smoke results.
+  - Effect: handoff now directs the next worker to the sole remaining v1.12 lint implementation slice.
+
+### Issues Found
+
+- Problem: iterating over bonus rubric IDs as a set would make multiple future L5 findings appear in non-deterministic order.
+  Cause: the initial minimal implementation used membership and iteration through the same set.
+  Resolution: retained a list in source rubric order for emission and used a separate set only for membership checks.
+  Outcome: CLI findings remain deterministic when more L5-triggering bonus items are introduced.
+
+### Decisions
+
+- Rule L5 adds no paired review queue entry: plan v1.12 assigns paired queue safeguards to L1 and L6, while L5 needs only the finding and `review_bonus_mandatory_only` action.
+- `fixtures/bonus_misuse` remains the shared lint fixture: RB1 intentionally co-fires L1 and L5; RB2 and RB3 make the over-strict/mutual-responsibility boundary visible without creating an additional permanent fixture.
+
+### Next Steps
+
+1. Implement Rule L6 (`mandatory_spec_bonus_only_traced`) with paired `mandatory_spec_bonus_review` output and high/provisional severity.
+2. Extend `fixtures/bonus_misuse/` with the L6 branch and its scored-trace/no-trace over-strict guards.
+3. Resume Rule 2 and Rule 3 only after L6 completes the current lint family.
+
+### Verification
+
+- Red-state confirmation: focused pytest initially failed during collection because `run_rule_l5` did not yet exist.
+- Focused suite: `docker compose run --rm test tests/test_rules.py tests/test_cli_output_contract.py tests/test_fixtures.py -q` passed.
+- Full suite: `docker compose run --rm test -q` passed (106 tests).
+- Contract smoke: `docker compose run --rm harness --output json schema --command check` includes `review_bonus_mandatory_only`.
+- L5 smoke: `check` on `fixtures/bonus_misuse` returns `(high=0, medium=3, informational=1)` with RB1 `double_scored_spec` + `bonus_grades_mandatory_only`, RB3 `orphan_bonus_rubric_item`, and one L1 queue entry.
+- Publication review: the owner reported that an independent AI verification of Rule L5 passed and authorized committing and pushing this batch to `origin/main`.

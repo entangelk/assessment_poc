@@ -29,3 +29,13 @@ rubric_items:
       document_id: DOC_RUBRIC
       start_line: 3
       end_line: 3
+  - id: RB3
+    title: "Orphan bonus experiment"
+    description: "Untraced bonus retained to distinguish Rule 1 from L5."
+    evaluation_role: bonus
+    weight: 1
+    evidence_required: [code]
+    source_ref:
+      document_id: DOC_RUBRIC
+      start_line: 4
+      end_line: 4

@@ -181,13 +181,12 @@ def test_reference_integrity_fixture_blocks_with_exit_two(
     assert diagnostics["summary"]["high"] >= len(expected)
 
 
-def test_cross_role_double_scoring_emits_l1_finding_and_review_queue(
+def test_bonus_misuse_fixture_emits_l1_l5_and_orphan_boundaries(
     fixture_dir: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Rule L1 under-strict and public-contract guard: shared S1 coverage
-    across scored R1 and bonus RB1 emits the medium lint finding and its
-    required paired review queue entry. RB2 traces only S2, which guards
-    against treating different spec IDs as double scoring.
+    """Lint boundary guard: RB1 traces must S1 and therefore co-fires L1
+    with scored R1 plus L5; RB2 traces optional S2 and fires neither; RB3
+    has no trace and remains Rule 1 `orphan_bonus_rubric_item` territory.
     """
     root = fixture_dir / "bonus_misuse"
     out = tmp_path / "findings.json"
@@ -220,10 +219,16 @@ def test_cross_role_double_scoring_emits_l1_finding_and_review_queue(
     assert code == 0
     assert envelope["review_queue_path"] == str(queue_path)
     assert envelope["review_queue_count"] == 1
-    assert envelope["provisional_medium_count"] == 2
+    assert envelope["provisional_medium_count"] == 3
+    assert envelope["provisional_informational_count"] == 1
     assert {
-        (a["type"], a.get("spec_id")) for a in envelope["next_actions"]
-    } >= {("review_double_scoring", "S1")}
+        (a["type"], a.get("spec_id"), a.get("rubric_id"))
+        for a in envelope["next_actions"]
+    } >= {
+        ("review_double_scoring", "S1", None),
+        ("review_bonus_mandatory_only", None, "RB1"),
+        ("review_orphan_bonus_rubric", None, "RB3"),
+    }
     assert validate("review_queue", queue) == []
     assert validate("findings", findings) == []
 
@@ -232,6 +237,12 @@ def test_cross_role_double_scoring_emits_l1_finding_and_review_queue(
     assert l1[0]["spec_id"] == "S1"
     assert l1[0]["scored_rubric_id"] == "R1"
     assert l1[0]["bonus_rubric_id"] == "RB1"
+    l5 = [f for f in findings["findings"] if f["type"] == "bonus_grades_mandatory_only"]
+    assert [(f["rubric_id"], f["severity"]) for f in l5] == [("RB1", "medium")]
+    orphan_bonus = [f for f in findings["findings"] if f["type"] == "orphan_bonus_rubric_item"]
+    assert [(f["rubric_id"], f["severity"]) for f in orphan_bonus] == [
+        ("RB3", "informational")
+    ]
     assert queue["review_queue"][0]["type"] == "double_scoring_review"
     assert queue["review_queue"][0]["target"] == {
         "spec_id": "S1",
