@@ -217,3 +217,43 @@
 2. 각 슬라이스는 (a) finding payload schema 확장 (`findings.schema.json`), (b) review_queue.json 갱신, (c) fixture 추가 (`fixtures/bonus_misuse/` 등), (d) two-directional 가드 테스트 추가, (e) CLI envelope `next_actions` 갱신을 동반.
 3. Rule 2/3가 lint 슬라이스보다 먼저 끝나야 할지 owner와 우선순위 협의 필요 — 현재 HANDOFF Next Tasks는 Rule 2/3 우선으로 적혀 있음.
 4. v1.12+ 승격 시 §9.2 잔여 1번(L7-DET vs L7-SEM 우선순위) 결정.
+
+---
+
+## Sequencing 결정 + Rule 2 Literal 추천 (2026-05-27 추가 결정)
+
+### Goals
+
+- 다음 슬라이스 진입 전 owner 결정 필요한 항목 두 개(트랙 순서 + Rule 2 literal)를 정리해 HANDOFF에 박는다. 미해결로 남기면 다음 worker가 헷갈리거나, 슬라이스 직전에 다시 owner 차임을 깨워야 함.
+
+### Completed Work
+
+- `HANDOFF.md`에 sequencing 결정 + Rule 2 literal 추천 박음.
+  - Files changed: `HANDOFF.md`.
+  - Key changes:
+    - Next Tasks 섹션 맨 위에 `### Sequencing Decision (Owner, 2026-05-27)` 신설. lint family를 다음 트랙으로 잠그고 그 사유(schema 인프라 선구축, 동기화)를 명시.
+    - `### Lint family ... — NEXT TRACK`으로 헤더 갱신. L1을 "heavy 슬라이스"로 표시하고 슬라이스 1.5 분할 옵션을 명시. Rule 1/L5/L6의 mutual-exclusion 시각화 의무를 fixture 항목에 박음. `drift_observations[]`는 paper spec ahead임을 다시 못박음.
+    - Rule 2 섹션의 "Output contract decision required" 항목을 owner 추천(`uncovered_must_spec_item` / `review_uncovered_must_spec`)과 실행 AI 개입 규칙(동일 컨벤션 family 내 미세 조정 가능, 가족 외 변경은 owner 재승인)으로 교체. lock point는 슬라이스 merge 시점으로 명시.
+    - fixture 이름을 `fixtures/uncovered_must_spec/`로 갱신 (literal 변경 시 실행 AI가 함께 갱신).
+  - Effect: 다음 worker가 HANDOFF만 읽고 (a) lint family를 먼저 들어가야 함, (b) Rule 2 literal은 owner 추천 + 개입 규칙 내에서 선택, (c) plan 본문 업데이트 의무가 슬라이스 직전 단계라는 것을 한 자리에서 파악 가능.
+
+### Issues Found
+
+- Problem: lint 선 작업으로 sequencing이 정해지면서, Rule 2 literal 결정의 긴급도가 떨어졌지만 **잊혀질 위험은 오히려 커짐** (Rule 2가 한 트랙 뒤로 밀려서).
+  Cause: 일정상 거리가 멀면 인지적으로 덜 부각됨. HANDOFF가 안 적어두면 Rule 2 슬라이스 진입 시점에 "왜 literal이 plan에 없지?"부터 다시 시작.
+  Resolution: Rule 2 entry에 owner 추천 + 개입 규칙을 박아둠. 실행 AI가 슬라이스 진입 시점에 owner 차임 없이도 작업 시작 가능 (단 plan 본문 업데이트는 슬라이스 일부로 의무화).
+  Outcome: literal 결정이 "사라지는 게 아니라 미뤄지는" 위험이 운영적으로 잠겼다.
+
+### Decisions
+
+- **Owner 결정 (sequencing — lint family 우선)**: Rule 2/3보다 lint family(L1 → L5 → L6)를 먼저 진입. 근거: lint가 도입하는 schema 인프라(findings payload 확장, review_queue 첫 등장 가능성, cli_output next_actions 확장)를 먼저 세우면 Rule 2/3가 그 위에 자연스럽게 동기화됨. 병렬 트랙으로 두기보다 lint를 "기존 룰 파이프라인으로 동기화하는 뼈대 작업"으로 frame.
+- **Owner 결정 (Rule 2 literal — Option C 추천 + 실행 AI 개입 여지)**: finding_type=`uncovered_must_spec_item`, next_action=`review_uncovered_must_spec`. 근거: Rule 2는 coverage-gap이지 no-trace orphan이 아니므로 Rule 1의 `orphan_*` 패턴이 의미상 안 맞음. `uncovered_*`는 Rule 1의 `_rubric_item` suffix와 대칭(`_spec_item`)이고 lint 가족의 descriptor 스타일과 안 겹침.
+- **Owner 결정 (실행 AI 개입 규칙)**: 실행 AI는 동일 컨벤션 family(`uncovered_*` / `missing_*` 스타일, `_spec_item` suffix, `review_` prefix) 내에서 미세 조정 가능. family 밖 변경(예: `_rubric_item` suffix로 전환, `double_*` descriptor로 전환)은 owner 재승인 필요. Lock point는 슬라이스 merge 시점 — 그 이전은 자유, 이후는 breaking change.
+- **Owner 결정 (literal 잠금 범위 — Option A: HANDOFF에만)**: plan v1.11 §6 Rule 2 본문은 그대로 두고 HANDOFF Rule 2 brief에만 추천 + 규칙 박음. plan 본문 갱신은 Rule 2 슬라이스 진입 직전(plan v1.12 §6)에 함께 함. 근거: lint가 한참 앞에 있어 Rule 2가 immediate next가 아니고, 지금 plan 본문에 박으면 v1.11이 spec-only를 넘는 변경이 됨(불필요한 plan revision 회피).
+- **harness scoring 영향 평가**: literal 후기 결정 자체는 채점 정확성에 영향 없음 (literal은 결과 식별자일 뿐 평가 로직에 내용으로 들어가지 않음). 5-surface 동기화(rules.py / findings.schema / cli_output.schema / contract test / plan)만 슬라이스 내에서 함께 처리되면 안전. cross-slice 회귀는 lock point(merge) 규칙으로 차단.
+
+### Next Steps
+
+1. 이번 결정까지 한 묶음으로 커밋 + 푸시.
+2. 다음 슬라이스 진입은 lint L1 (heavy 슬라이스 — schema 뼈대 도입). 실행 AI는 슬라이스 크기가 리뷰 가능 범위를 넘으면 슬라이스 1.5 분할 옵션 보유.
+3. lint family 끝나면 Rule 2 슬라이스 — plan v1.12 §6 Rule 2 본문에 literal 박는 단계가 슬라이스 시작 직후 첫 commit.
