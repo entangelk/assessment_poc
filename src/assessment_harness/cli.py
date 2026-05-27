@@ -29,6 +29,7 @@ from .rules import (
     finding_severity_counts,
     run_rule_l1,
     run_rule_l5,
+    run_rule_l6,
     run_rule_one,
     run_rule_zero,
     severity_counts,
@@ -163,6 +164,9 @@ def _cmd_check(args: argparse.Namespace) -> CommandResult:
     rule_one_findings = run_rule_one(rubric_doc, trace_doc)
     lint_findings, review_queue = run_rule_l1(rubric_doc, trace_doc)
     lint_findings.extend(run_rule_l5(spec_doc, rubric_doc, trace_doc))
+    l6_findings, l6_review_queue = run_rule_l6(spec_doc, rubric_doc, trace_doc)
+    lint_findings.extend(l6_findings)
+    review_queue.extend(l6_review_queue)
     provisional_findings = rule_one_findings + lint_findings
     finding_counts = finding_severity_counts(provisional_findings)
     review_queue_path = (
@@ -221,6 +225,15 @@ def _cmd_check(args: argparse.Namespace) -> CommandResult:
                     {
                         "type": "review_bonus_mandatory_only",
                         "rubric_id": f.rubric_id,
+                        "finding_type": f.type,
+                    }
+                )
+            elif f.type == "mandatory_spec_bonus_only_traced":
+                next_actions.append(
+                    {
+                        "type": "review_mandatory_spec_bonus_only",
+                        "spec_id": f.spec_id,
+                        "bonus_rubric_ids": f.bonus_rubric_ids,
                         "finding_type": f.type,
                     }
                 )
@@ -433,6 +446,7 @@ COMMAND_CONTRACTS: dict[str, dict[str, Any]] = {
             "review_orphan_bonus_rubric",
             "review_double_scoring",
             "review_bonus_mandatory_only",
+            "review_mandatory_spec_bonus_only",
         ],
     },
     "report": {

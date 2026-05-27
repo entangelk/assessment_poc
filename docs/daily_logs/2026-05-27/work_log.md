@@ -378,3 +378,54 @@
 - Contract smoke: `docker compose run --rm harness --output json schema --command check` includes `review_bonus_mandatory_only`.
 - L5 smoke: `check` on `fixtures/bonus_misuse` returns `(high=0, medium=3, informational=1)` with RB1 `double_scored_spec` + `bonus_grades_mandatory_only`, RB3 `orphan_bonus_rubric_item`, and one L1 queue entry.
 - Publication review: the owner reported that an independent AI verification of Rule L5 passed and authorized committing and pushing this batch to `origin/main`.
+
+---
+
+## Phase 0 Rule L6 Implementation
+
+### Goals
+
+- Implement Rule L6 (`mandatory_spec_bonus_only_traced`) with its paired `mandatory_spec_bonus_review` safeguard.
+- Resolve the L6 specification ambiguity discovered at implementation entry and preserve the chosen boundary in canonical documents and regression tests.
+
+### Completed Work
+
+- Implemented the final accepted lint-family rule.
+  - Files changed: `src/assessment_harness/rules.py`, `src/assessment_harness/cli.py`, `schemas/findings.schema.json`.
+  - Key changes: added `run_rule_l6(spec_items, rubric_items, trace_links)`; emitted high/provisional findings with `bonus_rubric_ids[]` and evidence context; generated paired `mandatory_spec_bonus_review` entries; exposed `review_mandatory_spec_bonus_only` through `check` and schema introspection.
+  - Effect: a mandatory requirement evaluated only through bonus credit now appears as a high-priority provisional review target without becoming a blocking verdict before `gate`.
+- Extended two-directional regression and grounded fixture coverage.
+  - Files changed: `tests/test_rules.py`, `tests/test_cli_output_contract.py`, `tests/test_fixtures.py`, `fixtures/bonus_misuse/*`.
+  - Key changes: added L6 under-strict finding/queue guard, scored-coverage and no-trace over-strict guards, qualitative-only and bonus+qualitative suppression guards; expanded the shared fixture with mandatory S3 traced only by bonus RB4.
+  - Effect: `bonus_misuse` now demonstrates L1/L5/L6 together while keeping Rule 1 orphan and L6 qualitative boundaries distinct.
+- Aligned the specification and project status.
+  - Files changed: `docs/implementation_plan_assessment_harness_poc_v1.md`, `docs/ideation_assessment_harness_v2.2.md`, `README.md`, `HANDOFF.md`, `CHANGELOG.md`, this work log.
+  - Key changes: promoted the canonical plan to v1.13; defined L6 as bonus-only; marked lint Rule L1/L5/L6 complete and Rule 2 as next.
+  - Effect: the emitted `bonus_rubric_ids[]`/queue contract and the prose condition no longer disagree about qualitative traces.
+
+### Issues Found
+
+- Problem: plan v1.12 and ideation v2.2 described L6 as firing for all non-scored traces (`bonus` or `qualitative`), while its finding type, payload, and review queue contract represented only bonus rubrics.
+  Cause: L6's condition had retained a broad no-scored formulation after its concrete safeguard contract was designed around bonus credit.
+  Resolution: surfaced the contradiction before implementation; the owner chose the bonus-only boundary; updated plan v1.13 and ideation; added qualitative suppression regression tests.
+  Outcome: L6 cleanly detects mandatory work assigned only to bonus credit, while qualitative/no-scored consistency remains a Rule 2-family follow-up rather than being forced into an incompatible payload.
+
+### Decisions
+
+- **Owner decision (L6 qualitative boundary)**: L6 applies only when every trace for a `must` spec targets a `bonus` rubric. The owner chose this because qualitative content is not itself scored or awarded as bonus; its treatment can be assessed separately under the Rule 2 family without distorting L6's bonus-specific contract.
+- Rule L6 preserves L1's paired safeguard pattern: its high/provisional finding is accompanied by a `mandatory_spec_bonus_review` queue item so a reviewer can distinguish intentional bonus treatment from design error before any `gate` confirmation.
+
+### Next Steps
+
+1. Independently verify the Rule L6 implementation batch and publish it after approval.
+2. Implement Rule 2 using the recorded `uncovered_must_spec_item` / `review_uncovered_must_spec` recommendation, including the qualitative/no-scored area left outside L6.
+3. Implement Rule 3 and then the `gate` promotion flow.
+
+### Verification
+
+- Red-state confirmation: focused pytest initially failed during collection because `run_rule_l6` did not yet exist.
+- Focused suite: `docker compose run --rm test tests/test_rules.py tests/test_cli_output_contract.py tests/test_fixtures.py -q` passed.
+- Full suite: `docker compose run --rm test -q` passed (111 tests: 13 contract, 4 fixture, 12 model, 82 rule tests).
+- Contract smoke: `docker compose run --rm harness --output json schema --command check` includes `review_mandatory_spec_bonus_only`.
+- L6 smoke: `check` on `fixtures/bonus_misuse` returns `(high=1, medium=4, informational=1)`; S3/RB4 produces `mandatory_spec_bonus_only_traced`, `review_mandatory_spec_bonus_only`, and the second review queue entry (`review_queue_count=2`).
+- Publication review: the owner reported that an independent AI verification of Rule L6 and the plan v1.13 boundary resolution passed and authorized committing and pushing this batch to `origin/main`.

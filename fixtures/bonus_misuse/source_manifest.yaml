@@ -4,8 +4,8 @@ documents:
   - document_id: DOC_SPEC
     role: candidate_spec
     path: source/spec.md
-    sha256: bd59251d561f84bf45c64805018ca2b0815b7e2e4d1fbe58fbd2a22e0edfa73c
+    sha256: c02fab648774e436b35774c3d977a8ed7b7e5042648cc5a863ab42cc474e34e2
   - document_id: DOC_RUBRIC
     role: evaluator_rubric
     path: source/rubric.md
-    sha256: faff3cf3d38a895b5018ac4ce92ae46abda1b65df8d05e408fda033166806acf
+    sha256: 92885be3140658d88cf166f87b784b04ccef6d1e255652b78a92727428b315f3

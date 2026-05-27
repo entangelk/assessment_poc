@@ -1,6 +1,6 @@
 # Ideation v2.2 — Rubric Lint Rules (역방향 검증 가족)
 
-> **Revised 2026-05-27** (final 잠금과 동일 날짜): §9.2 잔여 1번(L6 안전장치 구체 형태)과 잔여 3번(L8 trace_drift 처리)을 Owner가 즉시 결정해 해소. 그 결과 L6를 §7의 v1.12+ 슬라이스에서 **v1.11 슬라이스로 승격**(L1+L5+L6 한 묶음). 자세한 결정 근거는 `docs/daily_logs/2026-05-27/work_log.md`의 "Ideation v2.2 Revision" 절 참조. 본 in-place 개정으로 v2.3 별도 문서는 만들지 않는다(plan v1.10 → v1.11 버전 갱신과 짝).
+> **Revised 2026-05-27** (final 잠금과 동일 날짜): §9.2 잔여 1번(L6 안전장치 구체 형태)과 잔여 3번(L8 trace_drift 처리)을 Owner가 즉시 결정해 해소. 그 결과 L6를 §7의 v1.12+ 슬라이스에서 **v1.11 슬라이스로 승격**(L1+L5+L6 한 묶음). 구현 진입 중 Owner가 L6의 `bonus-only` 명칭/payload와 `qualitative` 포함 문구의 모순을 해소하여, L6는 bonus trace만 대상으로 확정하고 qualitative 정합성은 Rule 2 계열 후속 규칙으로 분리했다. 자세한 결정 근거는 `docs/daily_logs/2026-05-27/work_log.md`의 "Ideation v2.2 Revision" 및 "Phase 0 Rule L6 Implementation" 절 참조. 본 in-place 개정으로 v2.3 별도 문서는 만들지 않는다(plan v1.10 → v1.13 버전 갱신과 짝).
 
 ## 0. 문서 목적과 위치
 
@@ -149,11 +149,12 @@ v2.1의 invariant를 다음과 같이 확장한다.
 
 - **상태**: 채택 (Owner 확정, **v1.11 승격** — 2026-05-27 개정으로 v1.12+에서 이동).
 - **채택 경위**: 초안 §9에서 기각 검토(L3와 같은 정보 비대칭 논리 — must spec이 명세에 있으면 응시자는 그것이 must인 줄 인지)되었으나, Owner가 "must spec이 bonus로만 채점되는 케이스에 대한 안전장치가 있으면 좋겠다"고 판단해 채택 정정. 안전장치 구체 형태가 결정되면서(아래) v1.11로 승격, L1+L5와 fixture 공유 가능.
-- **조건**: `requirement_level == must`인 spec_item을 참조하는 trace가 존재하지만, 그 trace의 모든 rubric이 `evaluation_role != scored` (즉 bonus 또는 qualitative).
+- **조건**: `requirement_level == must`인 spec_item을 참조하는 trace가 존재하지만, 그 trace의 모든 rubric이 `evaluation_role == bonus`.
 - **결과**: `high`, `provisional`.
 - **Finding type**: `mandatory_spec_bonus_only_traced`.
 - **의도**: must 명세인데 본채점이 아예 없고 가산만 걸려있는 경우. Rule 2가 "must spec에 scored trace 없음"을 medium으로 잡지만, 본 룰은 한 단계 더 구체적이다 — "없을 뿐 아니라 *가산으로만* 평가되도록 설계됨". 응시자가 핵심 요구사항을 가산처럼 인식할 위험.
 - **Rule 2와의 관계**: Rule 2의 특수 케이스. 동시 발화 가능. Rule 2가 medium이라 한 단계 상위(high)로 잡는 가치가 있음.
+- **qualitative 경계 (Owner 확정, 구현 진입 시 정합화)**: qualitative는 점수화/가산 역할이 아니므로 L6 발화 조건에서 제외한다. qualitative-only 또는 bonus+qualitative trace인데 scored가 없는 must spec은 Rule 2 영역의 별도 후속 규칙으로 다룬다.
 - **안전장치 (Owner 확정)**: L1과 동일 패턴 채택. 사유: L6도 정당/부당 구별이 필요한 의미적 판단이고(예: 의도적으로 가산 영역에 둔 경우 vs 설계 실수) L1과 같은 mechanism이면 review 인터페이스도 통일됨.
   - (a) **Finding payload 확장**: `mandatory_spec_bonus_only_traced` finding은 한 payload에 `spec_id` (must spec), 그 spec을 trace하는 모든 `bonus_rubric_ids[]`, 각 bonus rubric의 `title` / `description` 또는 `text`, 각 link의 `semantic_status`, `spec_item.text` 또는 `source_ref`를 동봉.
   - (b) **Review queue 별도 entry**: `review_queue.yaml`에 `type: mandatory_spec_bonus_review` entry. semantic verifier 또는 final reviewer가 "의도적 가산 배치"로 판정하면 `human_overridden`, 부당 판정이면 finding이 confirmed로 승급(Rule 2 confirmed orphan_must_spec과는 별도 type).
@@ -161,6 +162,7 @@ v2.1의 invariant를 다음과 같이 확장한다.
   - under-strict: must spec에 trace는 있지만 모두 bonus → 발화 + payload에 모든 bonus_rubric_ids 포함 + review_queue entry 생성.
   - over-strict A: must spec에 scored trace가 하나라도 있음 → 미발화.
   - over-strict B: must spec에 trace 자체가 없음 → 미발화 (Rule 2 책임).
+  - over-strict C: must spec trace에 qualitative가 하나라도 있음 → 미발화 (Rule 2 계열 후속 규칙 책임).
 
 ---
 
@@ -270,6 +272,7 @@ lint:
 10. **정책 임계값**: `bonus_ratio_threshold = 0.25` 유지. 기업별 자유 조정 — 본 프로젝트는 기본값만 제공.
 11. **L6 안전장치 (2026-05-27 개정)**: L1과 동일 패턴 채택 — payload 확장 + review_queue `mandatory_spec_bonus_review` entry. §4 Rule L6 본문 참고.
 12. **L8 수동 발견 기록 (2026-05-27 개정)**: `final_review_record.drift_observations[]` field 신설. 자동 검출은 없고 final review의 일부로 수동 기록. plan §5.6 갱신 필요.
+13. **L6 qualitative 경계 (2026-05-27 구현 진입 시 정합화)**: L6는 모든 trace rubric이 `bonus`일 때만 발화한다. `qualitative`가 포함된 must-spec 무본채점 문제는 Rule 2 계열의 별도 후속 규칙으로 분리한다. 이유는 qualitative가 점수화/가산 역할이 아니며 기존 finding/queue payload가 명시적으로 bonus만 표현하기 때문이다.
 
 ### 9.2 잔여 결정 사항 (향후 plan 승격 시 확정)
 
@@ -285,7 +288,7 @@ lint:
 - Lint Rule family 6개 채택 (L1, L2, L4, L5, L6, L7) + 3개 기각 (L3, L8, L9) 기록 보존
 - 스키마 확장 1개 채택 (C1: `requirement_level: forbidden`)
 - 정책 파라미터 1개 신설 (`policy.lint.bonus_ratio_threshold`)
-- Plan 승격 계획표 (§7): v1.11 = L1+L5, v1.12+ = L2/L4/L6/L7+C1
+- Plan 승격 계획표 (§7, 동일 날짜 개정 반영): v1.11 = L1+L5+L6, v1.12+ = L2/L4/L7+C1
 
 ### 변경 없음
 

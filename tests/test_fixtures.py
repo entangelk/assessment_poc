@@ -181,12 +181,12 @@ def test_reference_integrity_fixture_blocks_with_exit_two(
     assert diagnostics["summary"]["high"] >= len(expected)
 
 
-def test_bonus_misuse_fixture_emits_l1_l5_and_orphan_boundaries(
+def test_bonus_misuse_fixture_emits_l1_l5_l6_and_orphan_boundaries(
     fixture_dir: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Lint boundary guard: RB1 traces must S1 and therefore co-fires L1
-    with scored R1 plus L5; RB2 traces optional S2 and fires neither; RB3
-    has no trace and remains Rule 1 `orphan_bonus_rubric_item` territory.
+    """Lint boundary guard: RB1 traces must S1 and co-fires L1 plus L5;
+    RB2 traces optional S2 and fires neither; RB3 remains a Rule 1 orphan;
+    RB4 traces must S3 without scored coverage and co-fires L5 plus L6.
     """
     root = fixture_dir / "bonus_misuse"
     out = tmp_path / "findings.json"
@@ -218,8 +218,9 @@ def test_bonus_misuse_fixture_emits_l1_l5_and_orphan_boundaries(
     queue = json.loads(queue_path.read_text(encoding="utf-8"))
     assert code == 0
     assert envelope["review_queue_path"] == str(queue_path)
-    assert envelope["review_queue_count"] == 1
-    assert envelope["provisional_medium_count"] == 3
+    assert envelope["review_queue_count"] == 2
+    assert envelope["provisional_high_count"] == 1
+    assert envelope["provisional_medium_count"] == 4
     assert envelope["provisional_informational_count"] == 1
     assert {
         (a["type"], a.get("spec_id"), a.get("rubric_id"))
@@ -228,6 +229,7 @@ def test_bonus_misuse_fixture_emits_l1_l5_and_orphan_boundaries(
         ("review_double_scoring", "S1", None),
         ("review_bonus_mandatory_only", None, "RB1"),
         ("review_orphan_bonus_rubric", None, "RB3"),
+        ("review_mandatory_spec_bonus_only", "S3", None),
     }
     assert validate("review_queue", queue) == []
     assert validate("findings", findings) == []
@@ -238,7 +240,14 @@ def test_bonus_misuse_fixture_emits_l1_l5_and_orphan_boundaries(
     assert l1[0]["scored_rubric_id"] == "R1"
     assert l1[0]["bonus_rubric_id"] == "RB1"
     l5 = [f for f in findings["findings"] if f["type"] == "bonus_grades_mandatory_only"]
-    assert [(f["rubric_id"], f["severity"]) for f in l5] == [("RB1", "medium")]
+    assert [(f["rubric_id"], f["severity"]) for f in l5] == [
+        ("RB1", "medium"),
+        ("RB4", "medium"),
+    ]
+    l6 = [f for f in findings["findings"] if f["type"] == "mandatory_spec_bonus_only_traced"]
+    assert [(f["spec_id"], f["bonus_rubric_ids"], f["severity"]) for f in l6] == [
+        ("S3", ["RB4"], "high")
+    ]
     orphan_bonus = [f for f in findings["findings"] if f["type"] == "orphan_bonus_rubric_item"]
     assert [(f["rubric_id"], f["severity"]) for f in orphan_bonus] == [
         ("RB3", "informational")
@@ -248,4 +257,9 @@ def test_bonus_misuse_fixture_emits_l1_l5_and_orphan_boundaries(
         "spec_id": "S1",
         "scored_rubric_id": "R1",
         "bonus_rubric_id": "RB1",
+    }
+    assert queue["review_queue"][1]["type"] == "mandatory_spec_bonus_review"
+    assert queue["review_queue"][1]["target"] == {
+        "spec_id": "S3",
+        "bonus_rubric_ids": ["RB4"],
     }

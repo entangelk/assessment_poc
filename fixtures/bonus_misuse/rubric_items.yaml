@@ -39,3 +39,13 @@ rubric_items:
       document_id: DOC_RUBRIC
       start_line: 4
       end_line: 4
+  - id: RB4
+    title: "Bonus cancellation audit log"
+    description: "Incorrectly treats a mandatory audit log as bonus-only work."
+    evaluation_role: bonus
+    weight: 2
+    evidence_required: [code]
+    source_ref:
+      document_id: DOC_RUBRIC
+      start_line: 5
+      end_line: 5

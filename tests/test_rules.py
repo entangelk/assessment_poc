@@ -18,6 +18,7 @@ from assessment_harness.models import Document, SourceSnapshot
 from assessment_harness.rules import (
     run_rule_l1,
     run_rule_l5,
+    run_rule_l6,
     run_rule_one,
     run_rule_zero,
     severity_counts,
@@ -1181,6 +1182,133 @@ def test_l5_bonus_with_non_must_trace_does_not_emit(non_must_spec_id: str) -> No
 def test_l5_untraced_bonus_is_left_to_rule_one() -> None:
     """Over-strict guard B: an untraced bonus is a Rule 1 orphan, not L5."""
     assert run_rule_l5(_l5_specs(), _bonus_rubric(), {"trace_links": []}) == []
+
+
+# ---------------------------------------------------------------------------
+# Rule L6 — Mandatory Spec Bonus-only Coverage
+# ---------------------------------------------------------------------------
+
+
+def _l6_rubrics() -> dict[str, Any]:
+    return {
+        "rubric_items": [
+            {
+                "id": "RS",
+                "title": "Required behavior",
+                "description": "Scores the required behavior.",
+                "evaluation_role": "scored",
+                "source_ref": {},
+            },
+            {
+                "id": "RB",
+                "title": "Bonus treatment",
+                "description": "Awards bonus for mandatory work.",
+                "evaluation_role": "bonus",
+                "source_ref": {},
+            },
+            {
+                "id": "RB_SECOND",
+                "title": "Second bonus treatment",
+                "description": "Also awards bonus for mandatory work.",
+                "evaluation_role": "bonus",
+                "source_ref": {},
+            },
+            {
+                "id": "RQ",
+                "title": "Qualitative observation",
+                "description": "Records qualitative treatment without awarding bonus.",
+                "evaluation_role": "qualitative",
+                "source_ref": {},
+            },
+        ]
+    }
+
+
+def test_l6_must_spec_traced_only_by_bonus_emits_review_queue() -> None:
+    """Under-strict guard: traced mandatory work with no scored rubric must
+    emit L6 with all bonus rubrics and its paired review queue entry.
+    """
+    traces = {
+        "trace_links": [
+            {
+                "rubric_id": "RB",
+                "spec_ids": ["S_MUST"],
+                "evidence_quotes": [],
+                "semantic_status": "human_accepted",
+                "support": {"found_in_runs": ["run-2"]},
+            },
+            {
+                "rubric_id": "RB_SECOND",
+                "spec_ids": ["S_MUST"],
+                "evidence_quotes": [],
+                "semantic_status": "pending_verification",
+                "support": {"found_in_runs": ["run-1"]},
+            },
+        ]
+    }
+    findings, queue = run_rule_l6(_l5_specs(), _l6_rubrics(), traces)
+    assert len(findings) == 1
+    finding = findings[0]
+    assert finding.type == "mandatory_spec_bonus_only_traced"
+    assert finding.spec_id == "S_MUST"
+    assert finding.bonus_rubric_ids == ["RB", "RB_SECOND"]
+    assert finding.severity == "high"
+    assert finding.decision_status == "provisional"
+    assert finding.evidence["bonus_rubrics"][0]["semantic_statuses"] == ["human_accepted"]
+    assert finding.evidence["bonus_rubrics"][1]["semantic_statuses"] == [
+        "pending_verification"
+    ]
+    assert queue == [
+        {
+            "entry_id": "rq_mandatory_spec_bonus_S_MUST",
+            "type": "mandatory_spec_bonus_review",
+            "target": {"spec_id": "S_MUST", "bonus_rubric_ids": ["RB", "RB_SECOND"]},
+            "reason": (
+                "Mandatory spec item 'S_MUST' is traced only by bonus rubrics "
+                "'RB', 'RB_SECOND'."
+            ),
+            "related_runs": ["run-1", "run-2"],
+            "status": "open",
+        }
+    ]
+
+
+def test_l6_must_spec_with_scored_trace_does_not_emit() -> None:
+    """Over-strict guard A: any scored coverage suppresses bonus-only L6."""
+    traces = {
+        "trace_links": [
+            {"rubric_id": "RS", "spec_ids": ["S_MUST"], "evidence_quotes": []},
+            {"rubric_id": "RB", "spec_ids": ["S_MUST"], "evidence_quotes": []},
+        ]
+    }
+    assert run_rule_l6(_l5_specs(), _l6_rubrics(), traces) == ([], [])
+
+
+def test_l6_untraced_must_spec_is_left_to_rule_two() -> None:
+    """Over-strict guard B: absent traces are Rule 2 territory, not L6."""
+    assert run_rule_l6(_l5_specs(), _l6_rubrics(), {"trace_links": []}) == ([], [])
+
+
+@pytest.mark.parametrize(
+    "trace_links",
+    [
+        [{"rubric_id": "RQ", "spec_ids": ["S_MUST"], "evidence_quotes": []}],
+        [
+            {"rubric_id": "RB", "spec_ids": ["S_MUST"], "evidence_quotes": []},
+            {"rubric_id": "RQ", "spec_ids": ["S_MUST"], "evidence_quotes": []},
+        ],
+    ],
+)
+def test_l6_qualitative_trace_is_left_to_rule_two_family(
+    trace_links: list[dict[str, Any]],
+) -> None:
+    """Over-strict guard C: L6 is bonus-only; qualitative involvement is
+    reserved for the separate Rule 2-family policy selected by the owner.
+    """
+    assert run_rule_l6(_l5_specs(), _l6_rubrics(), {"trace_links": trace_links}) == (
+        [],
+        [],
+    )
 
 
 @pytest.mark.parametrize(

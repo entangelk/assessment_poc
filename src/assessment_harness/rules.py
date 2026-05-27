@@ -43,6 +43,7 @@ class Finding:
     spec_id: str | None = None
     scored_rubric_id: str | None = None
     bonus_rubric_id: str | None = None
+    bonus_rubric_ids: list[str] | None = None
     trace_link_ref: dict[str, Any] | None = None
     evidence: dict[str, Any] | None = None
 
@@ -61,6 +62,8 @@ class Finding:
             data["scored_rubric_id"] = self.scored_rubric_id
         if self.bonus_rubric_id is not None:
             data["bonus_rubric_id"] = self.bonus_rubric_id
+        if self.bonus_rubric_ids is not None:
+            data["bonus_rubric_ids"] = self.bonus_rubric_ids
         if self.trace_link_ref is not None:
             data["trace_link_ref"] = self.trace_link_ref
         if self.evidence is not None:
@@ -583,7 +586,7 @@ def run_rule_one(
     rubric_items_doc: dict[str, Any],
     trace_links_doc: dict[str, Any],
 ) -> list[Finding]:
-    """Scored Rubric Coverage (plan v1.12 §6 Rule 1).
+    """Scored Rubric Coverage (plan v1.13 §6 Rule 1).
 
     Phase 0 emits three provisional branches:
 
@@ -696,7 +699,7 @@ def run_rule_l1(
     rubric_items_doc: dict[str, Any],
     trace_links_doc: dict[str, Any],
 ) -> tuple[list[Finding], list[dict[str, Any]]]:
-    """Cross-role Double Scoring (plan v1.12 §6 Rule L1).
+    """Cross-role Double Scoring (plan v1.13 §6 Rule L1).
 
     L1 is structural: semantic statuses are exposed as review evidence but
     do not affect whether the same spec is traced from both scored and bonus
@@ -798,7 +801,7 @@ def run_rule_l5(
     rubric_items_doc: dict[str, Any],
     trace_links_doc: dict[str, Any],
 ) -> list[Finding]:
-    """Bonus Traces Only Mandatory (plan v1.12 §6 Rule L5).
+    """Bonus Traces Only Mandatory (plan v1.13 §6 Rule L5).
 
     This is a structural lint finding: a traced bonus rubric is flagged only
     when every referenced spec item is mandatory. Untraced bonus items remain
@@ -846,6 +849,115 @@ def run_rule_l5(
             )
         )
     return findings
+
+
+def run_rule_l6(
+    spec_items_doc: dict[str, Any],
+    rubric_items_doc: dict[str, Any],
+    trace_links_doc: dict[str, Any],
+) -> tuple[list[Finding], list[dict[str, Any]]]:
+    """Mandatory Spec Bonus-only Coverage (plan v1.13 §6 Rule L6).
+
+    L6 is intentionally limited to bonus-only coverage. Qualitative traces do
+    not award bonus credit and remain outside this finding's review contract.
+    Semantic statuses are review evidence only and never affect emission.
+    """
+    must_specs = [
+        spec
+        for spec in spec_items_doc.get("spec_items", [])
+        if spec.get("id") and spec.get("requirement_level") == "must"
+    ]
+    rubrics = {
+        rubric["id"]: rubric
+        for rubric in rubric_items_doc.get("rubric_items", [])
+        if rubric.get("id")
+    }
+    links_by_spec: dict[str, list[dict[str, Any]]] = {}
+    for link in trace_links_doc.get("trace_links", []):
+        if link.get("rubric_id") not in rubrics:
+            continue
+        for spec_id in link.get("spec_ids", []):
+            links_by_spec.setdefault(spec_id, []).append(link)
+
+    findings: list[Finding] = []
+    review_queue: list[dict[str, Any]] = []
+    for spec in must_specs:
+        spec_id = spec["id"]
+        links = links_by_spec.get(spec_id, [])
+        if not links:
+            continue
+        if any(
+            rubrics[link["rubric_id"]].get("evaluation_role") != "bonus"
+            for link in links
+        ):
+            continue
+        bonus_rubric_ids = [
+            rubric["id"]
+            for rubric in rubric_items_doc.get("rubric_items", [])
+            if rubric.get("evaluation_role") == "bonus"
+            and any(link["rubric_id"] == rubric.get("id") for link in links)
+        ]
+        bonus_evidence = []
+        for bonus_id in bonus_rubric_ids:
+            rubric = rubrics[bonus_id]
+            rubric_links = [link for link in links if link["rubric_id"] == bonus_id]
+            bonus_evidence.append(
+                {
+                    "id": bonus_id,
+                    "title": rubric.get("title"),
+                    "description": rubric.get("description"),
+                    "text": rubric.get("text"),
+                    "semantic_statuses": [
+                        link.get("semantic_status") for link in rubric_links
+                    ],
+                }
+            )
+        quoted_bonus_ids = ", ".join(repr(bonus_id) for bonus_id in bonus_rubric_ids)
+        findings.append(
+            Finding(
+                type="mandatory_spec_bonus_only_traced",
+                severity="high",
+                decision_status="provisional",
+                spec_id=spec_id,
+                bonus_rubric_ids=bonus_rubric_ids,
+                message=(
+                    f"mandatory spec_item {spec_id!r} is traced only by bonus "
+                    f"rubric_items {quoted_bonus_ids}; review missing scored coverage."
+                ),
+                evidence={
+                    "spec_item": {
+                        "id": spec_id,
+                        "text": spec.get("text"),
+                        "source_ref": spec.get("source_ref"),
+                    },
+                    "bonus_rubrics": bonus_evidence,
+                },
+            )
+        )
+        related_runs = sorted(
+            {
+                run_id
+                for link in links
+                for run_id in link.get("support", {}).get("found_in_runs", [])
+            }
+        )
+        review_queue.append(
+            {
+                "entry_id": f"rq_mandatory_spec_bonus_{spec_id}",
+                "type": "mandatory_spec_bonus_review",
+                "target": {
+                    "spec_id": spec_id,
+                    "bonus_rubric_ids": bonus_rubric_ids,
+                },
+                "reason": (
+                    f"Mandatory spec item {spec_id!r} is traced only by bonus "
+                    f"rubrics {quoted_bonus_ids}."
+                ),
+                "related_runs": related_runs,
+                "status": "open",
+            }
+        )
+    return findings, review_queue
 
 
 def severity_counts(diagnostics: list[Diagnostic]) -> dict[str, int]:

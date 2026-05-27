@@ -23,3 +23,11 @@ trace_links:
         quote: "Provide a request timing dashboard."
         verification_mode: token_sequence
     semantic_status: pending_verification
+  - rubric_id: RB4
+    spec_ids: [S3]
+    rationale: "RB4 is the only evaluation path for a mandatory audit log."
+    evidence_quotes:
+      - spec_id: S3
+        quote: "Export a cancellation audit log."
+        verification_mode: token_sequence
+    semantic_status: pending_verification
