@@ -1,8 +1,8 @@
 """Deterministic rule engine.
 
 Phase 0 ships Rule 0 (Reference Integrity Diagnostic), Rule 1 (Scored Rubric
-Coverage), Rule 2 (Required Spec Coverage), and incremental lint-family
-slices. Rule 3 lands in a following iteration.
+Coverage), Rule 2 (Required Spec Coverage), Rule 3 (Optionality Consistency),
+and incremental lint-family slices.
 
 Each rule consumes already-schema-validated dict inputs and returns a list of
 :class:`Diagnostic` or :class:`Finding` records. Severity and decision status
@@ -586,7 +586,7 @@ def run_rule_one(
     rubric_items_doc: dict[str, Any],
     trace_links_doc: dict[str, Any],
 ) -> list[Finding]:
-    """Scored Rubric Coverage (plan v1.14 §6 Rule 1).
+    """Scored Rubric Coverage (plan v1.15 §6 Rule 1).
 
     Phase 0 emits three provisional branches:
 
@@ -700,7 +700,7 @@ def run_rule_two(
     rubric_items_doc: dict[str, Any],
     trace_links_doc: dict[str, Any],
 ) -> list[Finding]:
-    """Required Spec Coverage (plan v1.14 §6 Rule 2).
+    """Required Spec Coverage (plan v1.15 §6 Rule 2).
 
     This rule is structural: any trace from a scored rubric covers its
     referenced spec items regardless of ``semantic_status``. Bonus and
@@ -743,11 +743,76 @@ def run_rule_two(
     return findings
 
 
+def run_rule_three(
+    spec_items_doc: dict[str, Any],
+    rubric_items_doc: dict[str, Any],
+    trace_links_doc: dict[str, Any],
+    policy_doc: dict[str, Any],
+) -> list[Finding]:
+    """Optionality Consistency (plan v1.15 §6 Rule 3).
+
+    Rule 3 is structural: semantic status does not affect whether a scored
+    rubric makes optional behavior carry substantial configured weight.
+    """
+    threshold = (
+        policy_doc.get("rules", {})
+        .get("optionality_mismatch", {})
+        .get("weight_threshold")
+    )
+    if not isinstance(threshold, (int, float)):
+        return []
+
+    spec_levels = {
+        spec["id"]: spec.get("requirement_level")
+        for spec in spec_items_doc.get("spec_items", [])
+        if spec.get("id")
+    }
+    linked_specs_by_rubric: dict[str, list[str]] = {}
+    for link in trace_links_doc.get("trace_links", []):
+        rid = link.get("rubric_id")
+        if rid:
+            linked_specs_by_rubric.setdefault(rid, []).extend(link.get("spec_ids", []))
+
+    findings: list[Finding] = []
+    for rubric in rubric_items_doc.get("rubric_items", []):
+        rid = rubric.get("id")
+        if not rid or rubric.get("evaluation_role") != "scored":
+            continue
+        spec_ids = linked_specs_by_rubric.get(rid, [])
+        weight = rubric.get("weight")
+        if not spec_ids or not isinstance(weight, (int, float)) or weight < threshold:
+            continue
+        requirement_levels = [spec_levels.get(spec_id) for spec_id in spec_ids]
+        if not all(level == "optional" for level in requirement_levels):
+            continue
+        findings.append(
+            Finding(
+                type="optionality_mismatch",
+                severity="high",
+                decision_status="provisional",
+                rubric_id=rid,
+                message=(
+                    f"scored rubric_item {rid!r} traces only optional spec_items "
+                    f"but has weight {weight!r} at or above the policy threshold "
+                    f"{threshold!r}; review whether optional behavior is carrying "
+                    "core scoring weight."
+                ),
+                evidence={
+                    "spec_ids": spec_ids,
+                    "requirement_levels": requirement_levels,
+                    "weight": weight,
+                    "weight_threshold": threshold,
+                },
+            )
+        )
+    return findings
+
+
 def run_rule_l1(
     rubric_items_doc: dict[str, Any],
     trace_links_doc: dict[str, Any],
 ) -> tuple[list[Finding], list[dict[str, Any]]]:
-    """Cross-role Double Scoring (plan v1.14 §6 Rule L1).
+    """Cross-role Double Scoring (plan v1.15 §6 Rule L1).
 
     L1 is structural: semantic statuses are exposed as review evidence but
     do not affect whether the same spec is traced from both scored and bonus
@@ -849,7 +914,7 @@ def run_rule_l5(
     rubric_items_doc: dict[str, Any],
     trace_links_doc: dict[str, Any],
 ) -> list[Finding]:
-    """Bonus Traces Only Mandatory (plan v1.14 §6 Rule L5).
+    """Bonus Traces Only Mandatory (plan v1.15 §6 Rule L5).
 
     This is a structural lint finding: a traced bonus rubric is flagged only
     when every referenced spec item is mandatory. Untraced bonus items remain
@@ -904,7 +969,7 @@ def run_rule_l6(
     rubric_items_doc: dict[str, Any],
     trace_links_doc: dict[str, Any],
 ) -> tuple[list[Finding], list[dict[str, Any]]]:
-    """Mandatory Spec Bonus-only Coverage (plan v1.14 §6 Rule L6).
+    """Mandatory Spec Bonus-only Coverage (plan v1.15 §6 Rule L6).
 
     L6 is intentionally limited to bonus-only coverage. Qualitative traces do
     not award bonus credit and remain outside this finding's review contract.

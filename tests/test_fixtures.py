@@ -304,3 +304,42 @@ def test_uncovered_must_spec_fixture_locks_rule_two_structural_boundary(
         ("review_uncovered_must_spec", "S_QUAL_ONLY"),
         ("review_mandatory_spec_bonus_only", "S_BONUS_ONLY"),
     }
+
+
+def test_optionality_mismatch_fixture_locks_rule_three_policy_boundary(
+    fixture_dir: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Rule 3 fixture: optional-only scored rubrics at or above threshold
+    emit regardless of semantic status; below-threshold, mixed must/info,
+    and non-scored optional-only rubrics do not.
+    """
+    code, envelope, findings, diagnostics = _run_check(
+        fixture_dir / "optionality_mismatch", tmp_path, capsys, use_manifest=True
+    )
+    assert code == 0, f"diagnostics: {diagnostics}, findings: {findings}"
+    assert diagnostics["diagnostics"] == []
+    mismatches = [
+        f for f in findings["findings"] if f["type"] == "optionality_mismatch"
+    ]
+    assert [(f["rubric_id"], f["severity"]) for f in mismatches] == [
+        ("R_HIGH", "high"),
+        ("R_PENDING", "high"),
+    ]
+    assert {
+        "R_LOW",
+        "R_MIXED",
+        "R_INFO_MIXED",
+        "R_BONUS",
+        "R_QUAL",
+    }.isdisjoint({f["rubric_id"] for f in mismatches})
+    assert {
+        (action["type"], action.get("rubric_id"))
+        for action in envelope["next_actions"]
+    } >= {
+        ("review_optionality_mismatch", "R_HIGH"),
+        ("review_optionality_mismatch", "R_PENDING"),
+        ("review_unconfirmed_trace_coverage", "R_PENDING"),
+    }
+    assert envelope["provisional_high_count"] == 2
+    assert envelope["provisional_medium_count"] == 1
+    assert envelope["provisional_informational_count"] == 0

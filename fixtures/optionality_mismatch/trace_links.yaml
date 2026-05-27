@@ -1,0 +1,63 @@
+trace_links:
+  - rubric_id: R_HIGH
+    spec_ids: [S_OPTIONAL_HIGH]
+    rationale: "R_HIGH scores an optional dashboard at the policy threshold."
+    evidence_quotes:
+      - spec_id: S_OPTIONAL_HIGH
+        quote: "Provide a performance dashboard."
+        verification_mode: token_sequence
+    semantic_status: human_accepted
+  - rubric_id: R_LOW
+    spec_ids: [S_OPTIONAL_LOW]
+    rationale: "R_LOW scores optional export below the threshold."
+    evidence_quotes:
+      - spec_id: S_OPTIONAL_LOW
+        quote: "Provide CSV export."
+        verification_mode: token_sequence
+    semantic_status: human_accepted
+  - rubric_id: R_MIXED
+    spec_ids: [S_OPTIONAL_MIXED, S_MUST]
+    rationale: "R_MIXED includes mandatory refund behavior and is not optional-only."
+    evidence_quotes:
+      - spec_id: S_OPTIONAL_MIXED
+        quote: "Provide dashboard filters."
+        verification_mode: token_sequence
+      - spec_id: S_MUST
+        quote: "Implement refund handling."
+        verification_mode: token_sequence
+    semantic_status: human_accepted
+  - rubric_id: R_PENDING
+    spec_ids: [S_OPTIONAL_PENDING]
+    rationale: "R_PENDING proves semantic status is not a Rule 3 condition."
+    evidence_quotes:
+      - spec_id: S_OPTIONAL_PENDING
+        quote: "Provide latency charts."
+        verification_mode: token_sequence
+    semantic_status: pending_verification
+  - rubric_id: R_INFO_MIXED
+    spec_ids: [S_OPTIONAL_HIGH, S_INFO]
+    rationale: "R_INFO_MIXED includes an informational note and is not optional-only."
+    evidence_quotes:
+      - spec_id: S_OPTIONAL_HIGH
+        quote: "Provide a performance dashboard."
+        verification_mode: token_sequence
+      - spec_id: S_INFO
+        quote: "Dashboard examples are illustrative."
+        verification_mode: token_sequence
+    semantic_status: human_accepted
+  - rubric_id: R_BONUS
+    spec_ids: [S_OPTIONAL_BONUS]
+    rationale: "R_BONUS is optional-only but is not a scored rubric."
+    evidence_quotes:
+      - spec_id: S_OPTIONAL_BONUS
+        quote: "Provide a theme switcher."
+        verification_mode: token_sequence
+    semantic_status: human_accepted
+  - rubric_id: R_QUAL
+    spec_ids: [S_OPTIONAL_QUAL]
+    rationale: "R_QUAL is optional-only but is not a scored rubric."
+    evidence_quotes:
+      - spec_id: S_OPTIONAL_QUAL
+        quote: "Describe chart readability."
+        verification_mode: token_sequence
+    semantic_status: human_accepted

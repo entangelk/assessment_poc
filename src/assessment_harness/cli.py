@@ -31,6 +31,7 @@ from .rules import (
     run_rule_l5,
     run_rule_l6,
     run_rule_one,
+    run_rule_three,
     run_rule_two,
     run_rule_zero,
     severity_counts,
@@ -107,8 +108,7 @@ def _cmd_check(args: argparse.Namespace) -> CommandResult:
         return _check_invalid_input(args, exc, next_actions)
 
     try:
-        if args.policy:
-            load_policy(Path(args.policy))
+        policy_doc = load_policy(Path(args.policy)) if args.policy else load_policy(None)
     except HarnessInputError as exc:
         return _check_invalid_input(args, exc, next_actions)
 
@@ -164,12 +164,15 @@ def _cmd_check(args: argparse.Namespace) -> CommandResult:
     # blocking verdicts (that is gate's job).
     rule_one_findings = run_rule_one(rubric_doc, trace_doc)
     rule_two_findings = run_rule_two(spec_doc, rubric_doc, trace_doc)
+    rule_three_findings = run_rule_three(spec_doc, rubric_doc, trace_doc, policy_doc)
     lint_findings, review_queue = run_rule_l1(rubric_doc, trace_doc)
     lint_findings.extend(run_rule_l5(spec_doc, rubric_doc, trace_doc))
     l6_findings, l6_review_queue = run_rule_l6(spec_doc, rubric_doc, trace_doc)
     lint_findings.extend(l6_findings)
     review_queue.extend(l6_review_queue)
-    provisional_findings = rule_one_findings + rule_two_findings + lint_findings
+    provisional_findings = (
+        rule_one_findings + rule_two_findings + rule_three_findings + lint_findings
+    )
     finding_counts = finding_severity_counts(provisional_findings)
     review_queue_path = (
         Path(args.review_queue_out)
@@ -244,6 +247,14 @@ def _cmd_check(args: argparse.Namespace) -> CommandResult:
                     {
                         "type": "review_uncovered_must_spec",
                         "spec_id": f.spec_id,
+                        "finding_type": f.type,
+                    }
+                )
+            elif f.type == "optionality_mismatch":
+                next_actions.append(
+                    {
+                        "type": "review_optionality_mismatch",
+                        "rubric_id": f.rubric_id,
                         "finding_type": f.type,
                     }
                 )
@@ -458,6 +469,7 @@ COMMAND_CONTRACTS: dict[str, dict[str, Any]] = {
             "review_bonus_mandatory_only",
             "review_mandatory_spec_bonus_only",
             "review_uncovered_must_spec",
+            "review_optionality_mismatch",
         ],
     },
     "report": {

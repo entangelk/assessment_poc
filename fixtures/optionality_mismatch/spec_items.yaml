@@ -1,0 +1,81 @@
+spec_items:
+  - id: S_OPTIONAL_HIGH
+    source: spec.md
+    section: "Optional"
+    text: "Provide a performance dashboard."
+    visibility: candidate_facing
+    requirement_level: optional
+    source_ref:
+      document_id: DOC_SPEC
+      start_line: 1
+      end_line: 1
+  - id: S_OPTIONAL_LOW
+    source: spec.md
+    section: "Optional"
+    text: "Provide CSV export."
+    visibility: candidate_facing
+    requirement_level: optional
+    source_ref:
+      document_id: DOC_SPEC
+      start_line: 2
+      end_line: 2
+  - id: S_OPTIONAL_MIXED
+    source: spec.md
+    section: "Optional"
+    text: "Provide dashboard filters."
+    visibility: candidate_facing
+    requirement_level: optional
+    source_ref:
+      document_id: DOC_SPEC
+      start_line: 3
+      end_line: 3
+  - id: S_MUST
+    source: spec.md
+    section: "Requirements"
+    text: "Implement refund handling."
+    visibility: candidate_facing
+    requirement_level: must
+    source_ref:
+      document_id: DOC_SPEC
+      start_line: 4
+      end_line: 4
+  - id: S_OPTIONAL_PENDING
+    source: spec.md
+    section: "Optional"
+    text: "Provide latency charts."
+    visibility: candidate_facing
+    requirement_level: optional
+    source_ref:
+      document_id: DOC_SPEC
+      start_line: 5
+      end_line: 5
+  - id: S_INFO
+    source: spec.md
+    section: "Notes"
+    text: "Dashboard examples are illustrative."
+    visibility: candidate_facing
+    requirement_level: informational
+    source_ref:
+      document_id: DOC_SPEC
+      start_line: 6
+      end_line: 6
+  - id: S_OPTIONAL_BONUS
+    source: spec.md
+    section: "Optional"
+    text: "Provide a theme switcher."
+    visibility: candidate_facing
+    requirement_level: optional
+    source_ref:
+      document_id: DOC_SPEC
+      start_line: 7
+      end_line: 7
+  - id: S_OPTIONAL_QUAL
+    source: spec.md
+    section: "Optional"
+    text: "Describe chart readability."
+    visibility: candidate_facing
+    requirement_level: optional
+    source_ref:
+      document_id: DOC_SPEC
+      start_line: 8
+      end_line: 8

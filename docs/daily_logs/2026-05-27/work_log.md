@@ -490,3 +490,72 @@
 - Rule 2 smoke: `check` on grounded `fixtures/uncovered_must_spec` returns `status=provisional_findings`, `review_queue_count=1`, and `(high=1, medium=5, informational=0)`; Rule 2 findings are emitted for S_UNTRACED, S_BONUS_ONLY, and S_QUAL_ONLY only.
 - Diff hygiene: `git diff --check` passes.
 - Publication review: the owner reported that an independent AI verification of Rule 2 and the plan v1.14 contract update passed and authorized committing and pushing this batch to `origin/main`.
+
+---
+
+## Phase 0 Rule 3 Implementation
+
+### Goals
+
+- Implement Rule 3 Optionality Consistency as the final deterministic Rule 0-3 slice.
+- Lock the public output pair `optionality_mismatch` / `review_optionality_mismatch` before code emits it.
+- Keep Rule 3 structural and policy-driven: semantic status is irrelevant, and the configured weight threshold controls emission.
+
+### Completed Work
+
+- Locked the Rule 3 contract in the canonical plan.
+  - Files changed: `docs/implementation_plan_assessment_harness_poc_v1.md`.
+  - Key changes: promoted the plan to v1.15; specified `optionality_mismatch` (`high`, `provisional`) and `review_optionality_mismatch`; documented threshold, must-mixed, untraced, below-threshold, and semantic-status boundaries.
+  - Effect: implementation and caller-agent contract have a canonical literal pair before publication.
+- Implemented Rule 3 and CLI action exposure.
+  - Files changed: `src/assessment_harness/rules.py`, `src/assessment_harness/cli.py`.
+  - Key changes: added `run_rule_three(spec_items, rubric_items, trace_links, policy)`; retained the validated policy document in `check`; flagged scored rubrics whose non-empty trace set is entirely optional and whose weight meets `rules.optionality_mismatch.weight_threshold`; exposed `review_optionality_mismatch` through finding routing and schema introspection.
+  - Effect: optional requirements cannot silently carry major scored weight without producing a reviewable high/provisional finding.
+- Added regression tests and a grounded fixture.
+  - Files changed: `tests/test_rules.py`, `tests/test_fixtures.py`, `tests/test_cli_output_contract.py`, `fixtures/optionality_mismatch/*`.
+  - Key changes: added under-strict threshold-inclusive emission, pending semantic-status emission, and multiple-optional emission; added over-strict checks for below-threshold, must-mixed, informational-mixed, bonus/qualitative-role, and untraced rubrics; created a grounded fixture demonstrating R_HIGH/R_PENDING findings and all suppression boundaries.
+  - Effect: both false-negative and false-positive directions of Rule 3, plus its public next action, are locked.
+- Updated current-state documentation.
+  - Files changed: `README.md`, `HANDOFF.md`, `CHANGELOG.md`, this work log.
+  - Key changes: marked deterministic Rule 0-3 plus implemented lint rules complete; set `gate` as the next contracted implementation area; documented the new fixture and smoke outcome.
+  - Effect: the handoff now points to later-phase work instead of re-entering an already completed structural rule.
+- Accepted the concurrent independent-verification documentation for the same publication batch.
+  - Files changed: `AGENTS.md`, `CLAUDE.md`, `docs/verifications/2026-05-27_rule_2_implementation.md`, `docs/verifications/2026-05-27_rule_3_implementation.md`, `docs/verifications/2026-05-27_rule_3_boundary_tightening.md`.
+  - Key changes: verification guidance now requires explicit contract scope, boundary matrices, and reproducible records; the Rule 3 follow-up record supersedes the initially incorrect pass verdict after all missing boundary locks were added.
+  - Effect: the audit trail preserves the correction while future verification cannot treat uncovered negative branches as a non-blocking green suite.
+
+### Issues Found
+
+- Problem: Rule 3 behavior and threshold existed in plan v1.14, but no public finding or next-action literal had been specified.
+  Cause: earlier slices deferred Rule 3 implementation and therefore never froze its caller-facing identifier.
+  Resolution: surfaced the missing contract before implementation; the owner approved `optionality_mismatch` / `review_optionality_mismatch`; recorded it in plan v1.15 before wiring code.
+  Outcome: the code does not invent an undocumented public identifier, and the literal matches the established fixture/policy namespace.
+- Problem: `--policy` remains optional at the CLI even though Rule 3 is threshold-driven.
+  Cause: the existing Phase 0 CLI allowed checks without a policy file before Rule 3 landed.
+  Resolution: preserved that public CLI contract; Rule 3 evaluates only when the validated policy supplies `rules.optionality_mismatch.weight_threshold`, while policy-backed fixture and production calls exercise the rule.
+  Outcome: Rule 3 is enabled through the established policy surface without introducing an unrelated breaking input requirement.
+- Problem: independent review found that plan §6 used `policy.optionality_mismatch.weight_threshold` while the actual schema and code use `rules.optionality_mismatch.weight_threshold`, and did not explicitly state informational/non-scored suppression boundaries.
+  Cause: Rule 3 contract was introduced from its conceptual rule name before its structured policy path and complete negative boundary matrix were reviewed together.
+  Resolution: corrected the plan path, made `must`/`informational` mixing plus `bonus`/`qualitative` exclusion explicit, and added unit/fixture regression guards for each boundary.
+  Outcome: the canonical wording now matches the loaded policy shape and every intended emission/suppression branch is directly exercised.
+
+### Decisions
+
+- **Owner decision (Rule 3 literals)**: use `optionality_mismatch` and `review_optionality_mismatch`. Rationale: the literal already names the fixture and policy namespace and directly expresses the mismatch being reviewed.
+- **Implementation decision (Rule 3 strict optional-only boundary)**: under plan §6's existing wording (`optional` spec에만 trace된 `scored` rubric), `optional + informational` is not optional-only and must not fire; heavy optional-only `bonus` or `qualitative` rubrics are outside Rule 3 because the rule is restricted to `scored` rubric items. The owner requested that these boundary interpretations be tested exhaustively.
+- No ideation update was needed: Rule 3's product intent was already present in ideation, while the canonical implementation plan is the proper source for the concrete public output contract.
+- **Owner publication decision**: after the independent verification passed, publish the Rule 3 / plan v1.15 batch together with the concurrent `AGENTS.md` / `CLAUDE.md` verification guidance and `docs/verifications/` audit records. Rationale: the instruction correction and its audit record are part of resolving the verifier's missed boundary checks.
+
+### Next Steps
+
+1. Enter `gate`/final-review contract work as defined by the plan, or separately promote an approved post-L6 lint extension if the owner changes sequencing.
+
+### Verification
+
+- Red-state confirmation: focused pytest initially failed during collection because `run_rule_three` was not yet defined.
+- Focused suite: `docker compose run --rm test tests/test_rules.py tests/test_cli_output_contract.py tests/test_fixtures.py -q` passed.
+- Full suite: `docker compose run --rm test -q` passed; `docker compose run --rm test --collect-only -q` reports 126 tests (13 contract, 6 fixture, 12 model, 95 rule tests).
+- Contract smoke: `docker compose run --rm harness --output json schema --command check` includes `review_optionality_mismatch` (rerun with Docker permission after a sandbox socket denial).
+- Rule 3 smoke: `check` on grounded `fixtures/optionality_mismatch` returns `status=provisional_findings`, `review_queue_count=0`, and `(high=2, medium=1, informational=0)`; `optionality_mismatch` is emitted for R_HIGH and R_PENDING only, with R_LOW/R_MIXED/R_INFO_MIXED/R_BONUS/R_QUAL suppressed.
+- Review follow-up verification: corrected the canonical policy path to `rules.optionality_mismatch.weight_threshold`; explicitly covered multiple optional targets, informational mixing, bonus role, and qualitative role. Docker collection/smoke verification required a permission-approved rerun after sandbox socket access was denied.
+- Publication review: the owner reported that independent verification of the boundary-reinforced Rule 3 / plan v1.15 batch passed and authorized committing and pushing it together with the concurrent verification-record guidance and audit records.

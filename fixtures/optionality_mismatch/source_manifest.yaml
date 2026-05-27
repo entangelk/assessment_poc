@@ -1,0 +1,11 @@
+project_id: optionality_mismatch
+assessment_version: v1
+documents:
+  - document_id: DOC_SPEC
+    role: candidate_spec
+    path: source/spec.md
+    sha256: cc3ed0846592e163b4bc3fed23c99bd2421db332503545c13baeb4c2a645305a
+  - document_id: DOC_RUBRIC
+    role: evaluator_rubric
+    path: source/rubric.md
+    sha256: 44d484cb3416889b98eec9fdf393324d588db7cfeef53782ea338e69b530b14e

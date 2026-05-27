@@ -20,6 +20,7 @@ from assessment_harness.rules import (
     run_rule_l5,
     run_rule_l6,
     run_rule_one,
+    run_rule_three,
     run_rule_two,
     run_rule_zero,
     severity_counts,
@@ -1366,6 +1367,177 @@ def test_rule_two_non_scored_trace_does_not_cover_must_spec(role: str) -> None:
     findings = run_rule_two(_baseline_spec(), rubric, traces)
     matching = _findings_of_type(findings, "uncovered_must_spec_item")
     assert [f.spec_id for f in matching] == ["S1"]
+
+
+# ---------------------------------------------------------------------------
+# Rule 3 — Optionality Consistency
+# ---------------------------------------------------------------------------
+
+
+def _rule_three_policy(threshold: int = 10) -> dict[str, Any]:
+    return {"rules": {"optionality_mismatch": {"weight_threshold": threshold}}}
+
+
+def _rule_three_spec() -> dict[str, Any]:
+    return {
+        "spec_items": [
+            {"id": "S_OPTIONAL", "requirement_level": "optional"},
+            {"id": "S_MUST", "requirement_level": "must"},
+            {"id": "S_INFO", "requirement_level": "informational"},
+        ]
+    }
+
+
+def _rule_three_rubric(weight: int = 10) -> dict[str, Any]:
+    return {
+        "rubric_items": [
+            {"id": "R_SCORED", "evaluation_role": "scored", "weight": weight},
+        ]
+    }
+
+
+def test_rule_three_optional_only_scored_at_threshold_emits_high_finding() -> None:
+    """Under-strict guard: an optional-only scored rubric at the configured
+    threshold must emit `optionality_mismatch`, even with a pending link.
+    """
+    traces = {
+        "trace_links": [
+            {
+                "rubric_id": "R_SCORED",
+                "spec_ids": ["S_OPTIONAL"],
+                "evidence_quotes": [],
+                "semantic_status": "pending_verification",
+            }
+        ]
+    }
+    findings = run_rule_three(
+        _rule_three_spec(), _rule_three_rubric(), traces, _rule_three_policy()
+    )
+    assert len(findings) == 1
+    finding = findings[0]
+    assert finding.type == "optionality_mismatch"
+    assert finding.rubric_id == "R_SCORED"
+    assert finding.severity == "high"
+    assert finding.decision_status == "provisional"
+    assert finding.evidence == {
+        "spec_ids": ["S_OPTIONAL"],
+        "requirement_levels": ["optional"],
+        "weight": 10,
+        "weight_threshold": 10,
+    }
+
+
+def test_rule_three_multiple_optional_targets_still_emit() -> None:
+    """Under-strict guard variant: optional-only means every target is optional,
+    not that the rubric must have exactly one optional target.
+    """
+    spec = {
+        "spec_items": [
+            {"id": "S_OPTIONAL_A", "requirement_level": "optional"},
+            {"id": "S_OPTIONAL_B", "requirement_level": "optional"},
+        ]
+    }
+    traces = {
+        "trace_links": [
+            {
+                "rubric_id": "R_SCORED",
+                "spec_ids": ["S_OPTIONAL_A", "S_OPTIONAL_B"],
+                "evidence_quotes": [],
+            }
+        ]
+    }
+    findings = run_rule_three(spec, _rule_three_rubric(), traces, _rule_three_policy())
+    assert [(f.type, f.rubric_id) for f in findings] == [
+        ("optionality_mismatch", "R_SCORED")
+    ]
+
+
+def test_rule_three_below_threshold_does_not_emit() -> None:
+    """Over-strict guard A: optional-only scoring below policy threshold is allowed."""
+    traces = {
+        "trace_links": [
+            {"rubric_id": "R_SCORED", "spec_ids": ["S_OPTIONAL"], "evidence_quotes": []}
+        ]
+    }
+    assert (
+        run_rule_three(
+            _rule_three_spec(), _rule_three_rubric(9), traces, _rule_three_policy()
+        )
+        == []
+    )
+
+
+def test_rule_three_must_trace_suppresses_optional_only_mismatch() -> None:
+    """Over-strict guard B: a scored rubric linked to any must spec is not optional-only."""
+    traces = {
+        "trace_links": [
+            {
+                "rubric_id": "R_SCORED",
+                "spec_ids": ["S_OPTIONAL", "S_MUST"],
+                "evidence_quotes": [],
+            }
+        ]
+    }
+    assert (
+        run_rule_three(
+            _rule_three_spec(), _rule_three_rubric(20), traces, _rule_three_policy()
+        )
+        == []
+    )
+
+
+def test_rule_three_informational_trace_suppresses_optional_only_mismatch() -> None:
+    """Over-strict guard C: optional plus informational is not optional-only."""
+    traces = {
+        "trace_links": [
+            {
+                "rubric_id": "R_SCORED",
+                "spec_ids": ["S_OPTIONAL", "S_INFO"],
+                "evidence_quotes": [],
+            }
+        ]
+    }
+    assert (
+        run_rule_three(
+            _rule_three_spec(), _rule_three_rubric(20), traces, _rule_three_policy()
+        )
+        == []
+    )
+
+
+@pytest.mark.parametrize("role", ["bonus", "qualitative"])
+def test_rule_three_non_scored_optional_only_rubric_does_not_emit(role: str) -> None:
+    """Over-strict guard D: high-weight optional-only bonus/qualitative items
+    remain outside Rule 3, which is scoped to scored rubric items.
+    """
+    rubric = {
+        "rubric_items": [
+            {"id": "R_NON_SCORED", "evaluation_role": role, "weight": 20},
+        ]
+    }
+    traces = {
+        "trace_links": [
+            {
+                "rubric_id": "R_NON_SCORED",
+                "spec_ids": ["S_OPTIONAL"],
+                "evidence_quotes": [],
+            }
+        ]
+    }
+    assert run_rule_three(_rule_three_spec(), rubric, traces, _rule_three_policy()) == []
+
+
+def test_rule_three_untraced_scored_rubric_is_left_to_rule_one() -> None:
+    """Over-strict guard E: a rubric without targets is an orphan, not optional-only."""
+    assert (
+        run_rule_three(
+            _rule_three_spec(),
+            _rule_three_rubric(20),
+            {"trace_links": []},
+            _rule_three_policy(),
+        )
+        == []
+    )
 
 
 @pytest.mark.parametrize(

@@ -289,6 +289,7 @@ def test_schema_command_returns_check_contract(
         "review_bonus_mandatory_only",
         "review_mandatory_spec_bonus_only",
         "review_uncovered_must_spec",
+        "review_optionality_mismatch",
     }
     assert set(contract["next_actions_types"]) == expected_actions
 

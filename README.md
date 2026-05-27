@@ -230,7 +230,7 @@ CLI는 `--policy config/policy.yaml` 하나로 모든 정책을 받는다.
 
 | Phase | 범위 | 상태 |
 |---|---|---|
-| 0 | Deterministic validation core (Rule 0~3 + lint, 수동 fixture) | 진행 중 (Rule 0~2 + lint Rule L1/L5/L6 완료. Rule 3, `gate` 대기) |
+| 0 | Deterministic validation core (Rule 0~3 + lint, 수동 fixture) | 완료 (Rule 0~3 + lint Rule L1/L5/L6 구현 및 fixture 회귀 완료) |
 | 1 | 실제 과제 manual run | Phase 0 후 |
 | 2 | Candidate/verifier agent multi-run + compacting | Phase 1 후 |
 | 3 | Final human review + `gate` + caller agent 시연 | Phase 2 후 |
@@ -243,7 +243,7 @@ CLI는 `--policy config/policy.yaml` 하나로 모든 정책을 받는다.
 
 | 문서 | 역할 |
 |---|---|
-| [docs/implementation_plan_assessment_harness_poc_v1.md](docs/implementation_plan_assessment_harness_poc_v1.md) | **구현 명세 (1순위 SoT)** — 현재 v1.14 |
+| [docs/implementation_plan_assessment_harness_poc_v1.md](docs/implementation_plan_assessment_harness_poc_v1.md) | **구현 명세 (1순위 SoT)** — 현재 v1.15 |
 | [docs/ideation_assessment_harness_v2.2.md](docs/ideation_assessment_harness_v2.2.md) | Rubric Lint Rules 가족 (2순위, 2026-05-27 final + in-place 개정) |
 | [docs/ideation_assessment_harness_v2.1.md](docs/ideation_assessment_harness_v2.1.md) | 제품 목적과 장기 방향 (3순위) |
 | [docs/ideation_assessment_harness_v2.md](docs/ideation_assessment_harness_v2.md) | historical reference |

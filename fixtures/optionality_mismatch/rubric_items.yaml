@@ -1,0 +1,71 @@
+rubric_items:
+  - id: R_HIGH
+    title: "Performance dashboard"
+    description: "Assigns a major scored weight to an optional dashboard."
+    evaluation_role: scored
+    weight: 10
+    evidence_required: [code]
+    source_ref:
+      document_id: DOC_RUBRIC
+      start_line: 1
+      end_line: 1
+  - id: R_LOW
+    title: "CSV export"
+    description: "Assigns a small score to an optional export."
+    evaluation_role: scored
+    weight: 9
+    evidence_required: [code]
+    source_ref:
+      document_id: DOC_RUBRIC
+      start_line: 2
+      end_line: 2
+  - id: R_MIXED
+    title: "Refund workflow with filters"
+    description: "Scores mandatory behavior with an optional filter."
+    evaluation_role: scored
+    weight: 15
+    evidence_required: [code]
+    source_ref:
+      document_id: DOC_RUBRIC
+      start_line: 3
+      end_line: 3
+  - id: R_PENDING
+    title: "Latency charts"
+    description: "Assigns scored weight to optional charts before semantic review."
+    evaluation_role: scored
+    weight: 12
+    evidence_required: [code]
+    source_ref:
+      document_id: DOC_RUBRIC
+      start_line: 4
+      end_line: 4
+  - id: R_INFO_MIXED
+    title: "Dashboard examples"
+    description: "Scores optional dashboard output alongside informational examples."
+    evaluation_role: scored
+    weight: 20
+    evidence_required: [code]
+    source_ref:
+      document_id: DOC_RUBRIC
+      start_line: 5
+      end_line: 5
+  - id: R_BONUS
+    title: "Theme switcher bonus"
+    description: "Awards high bonus weight to an optional customization."
+    evaluation_role: bonus
+    weight: 20
+    evidence_required: [code]
+    source_ref:
+      document_id: DOC_RUBRIC
+      start_line: 6
+      end_line: 6
+  - id: R_QUAL
+    title: "Chart readability observation"
+    description: "Qualitatively observes an optional chart property."
+    evaluation_role: qualitative
+    weight: 20
+    evidence_required: [code]
+    source_ref:
+      document_id: DOC_RUBRIC
+      start_line: 7
+      end_line: 7

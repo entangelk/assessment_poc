@@ -1,4 +1,4 @@
-# Assessment Spec Harness PoC 구현 계획서 v1.14
+# Assessment Spec Harness PoC 구현 계획서 v1.15
 
 ## 0. 문서 목적
 
@@ -644,11 +644,13 @@ token_sequence 비교는 normalized whitespace 기준의 토큰 시퀀스 동일
 
 ### Rule 3. Optionality Consistency
 
-- 조건: `requirement_level == optional`인 spec에만 trace된 `scored` rubric item의 `weight >= policy.optionality_mismatch.weight_threshold`
-- 결과: `high` finding
+- 조건: `requirement_level == optional`인 spec에만 trace된 `scored` rubric item의 `weight >= rules.optionality_mismatch.weight_threshold`
+- 결과: `optionality_mismatch`, `high`, `provisional`
+- next_action: `review_optionality_mismatch`
 - 판정 상태: final human review 전 `provisional`; `gate`의 confirmed finding에서만 차단
 - 차단 대상: final confirmed 상태에서만 예
 - 의도: 선택 항목이 실질적인 핵심 평가축으로 작동하는 경우 탐지
+- coverage 경계: 구조적 검사이므로 `semantic_status`를 참조하지 않는다. `scored` rubric의 trace 대상에 `must` 또는 `informational` spec이 하나라도 섞이면 optional-only가 아니므로 발화하지 않는다. `bonus` / `qualitative` rubric은 weight와 무관하게 Rule 3 대상이 아니다. trace가 없거나 weight가 threshold 미만인 scored rubric도 발화하지 않는다.
 
 초기 임계값 `10`은 `policy.yaml`의 PoC 기본값이다. 실제 사례를 적용한 뒤 configurable policy 또는 상대 가중치 기준으로 바꿀지 결정한다.
 
@@ -1104,7 +1106,7 @@ assessment-harness gate \
 | Rule 0 | 중복 ID, dangling reference, quote non-substring의 diagnostic/exit `2` 처리를 놓치면 실패 | 정상 substring 및 유효한 reference를 invalid로 잡으면 실패 |
 | Rule 1 | scored orphan이 provisional/confirmed lifecycle에서 누락되면 실패 | pending semantic link를 final coverage로 처리하거나 human-accepted trace를 orphan으로 잡으면 실패 |
 | Rule 2 | must spec 미평가를 놓치면 실패 | optional/informational 미평가를 finding으로 잡으면 실패 |
-| Rule 3 | optional 고가중치 항목을 놓치면 실패 | 임계값 미만 또는 must 연결 항목을 mismatch로 잡으면 실패 |
+| Rule 3 | optional-only 고가중치 항목(복수 optional 포함)을 놓치면 실패 | 임계값 미만, must/informational 혼합, non-scored 또는 미추적 항목을 mismatch로 잡으면 실패 |
 
 ### 10.2 Agent Runner 계약 테스트
 
@@ -1239,6 +1241,15 @@ Phase 2/3 전 확정할 사항:
 ---
 
 ## 15. 변경 이력
+
+### v1.15 (2026-05-27)
+
+핵심 변경: **Rule 3 Optionality Consistency 출력 계약을 잠그고 구현 슬라이스에 진입.**
+
+- **출력 계약 확정**: optional spec에만 trace된 scored rubric의 weight가 `rules.optionality_mismatch.weight_threshold` 이상이면 `optionality_mismatch` (`high`, `provisional`)을 발화하고, caller action은 `review_optionality_mismatch`로 고정한다.
+- **Owner 결정 근거 이행**: finding literal은 기존 fixture와 policy namespace인 `optionality_mismatch`를 그대로 사용해 구성·검증·출력의 용어를 일치시킨다.
+- **구조적 경계 명시**: Rule 3은 `semantic_status`를 보지 않으며, must/informational이 섞인 trace, bonus/qualitative rubric, 미추적 scored rubric, threshold 미만 weight는 발화 대상이 아니다.
+- **회귀 fixture**: `fixtures/optionality_mismatch/`는 high optional-only, threshold 미만, must/informational 혼합, non-scored role, pending-status 경계를 검증한다.
 
 ### v1.14 (2026-05-27)
 
