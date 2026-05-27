@@ -1,4 +1,4 @@
-# Assessment Spec Harness PoC 구현 계획서 v1.10
+# Assessment Spec Harness PoC 구현 계획서 v1.11
 
 ## 0. 문서 목적
 
@@ -468,7 +468,25 @@ decisions:
     target_key: { entry_id: "rq_42" }
     action: rerun_requested
     note: "Identity_basis collapsed two distinct requirements."
+drift_observations:
+  - rubric_id: "R9"
+    linked_spec_ids: ["S8"]
+    observed_drift_summary: "Rubric scores microservice boundary design, but S8 only requires a REST API. Trace_link is structurally valid but criterion is outside the spec."
+    severity: medium
+    recommended_action: revise_rubric
 ```
+
+`drift_observations[]`는 ideation v2.2 §5 Rule L8 수동 발견 기록 채널이다. 자동 검출(Rule L8)은 비용 대비 가치 부족으로 PoC 비범위지만, trace_link가 schema를 통과한 채로 실제 채점 기준이 spec 본문과 어긋나는 케이스를 final reviewer가 발견했을 때 audit log로 보존한다.
+
+각 observation의 field:
+
+- `rubric_id` (필수): drift가 발견된 rubric.
+- `linked_spec_ids` (필수): 해당 rubric이 trace_link로 가리키는 spec_id 목록.
+- `observed_drift_summary` (필수): 자유 텍스트. 어떤 평가축이 어느 spec 본문과 어긋나는지 reviewer가 한 문장 이상으로 기록.
+- `severity` (필수): `informational` / `medium` / `high`. final reviewer 판단.
+- `recommended_action` (필수): `revise_rubric` / `revise_spec` / `accept_with_note`. revise_rubric은 다음 라운드에서 rubric을 spec과 정합되게 다듬을 것, revise_spec은 spec에 누락된 평가축을 추가할 것, accept_with_note는 의도된 drift임을 인정하고 라운드는 진행할 것.
+
+본 field는 자동 finding을 발생시키지 않으므로 `check`/`gate` 결과 코드와 무관하다. 다음 라운드 운영 입력으로만 사용된다.
 
 review action enum:
 
@@ -533,6 +551,8 @@ entry `type` enum:
 - `identity_collision`: compacting 중 동일성 판단이 애매한 variants
 - `low_support`: 단일 run에서만 발견된 entry (자동 배제 없음 — 사람이 keep/hold/rerun 결정)
 - `semantic_disclosure`: 장기 목표 영역(PoC 자동 검출 비범위)으로 사람이 봐야 할 항목
+- `double_scoring_review` (v1.11 신설): Rule L1 발화에 짝지어지는 review queue entry. `target`은 `{ spec_id, scored_rubric_id, bonus_rubric_id }`. semantic verifier 또는 final reviewer가 "정당한 심화"인지 판단해 `human_overridden` 또는 confirmed로 처리.
+- `mandatory_spec_bonus_review` (v1.11 신설): Rule L6 발화에 짝지어지는 review queue entry. `target`은 `{ spec_id, bonus_rubric_ids: [...] }`. 의도적 가산 배치인지 설계 실수인지 판단.
 
 `status`: `open | held | rerun_pending | resolved`.
 
@@ -610,8 +630,68 @@ token_sequence 비교는 normalized whitespace 기준의 토큰 시퀀스 동일
 
 초기 임계값 `10`은 `policy.yaml`의 PoC 기본값이다. 실제 사례를 적용한 뒤 configurable policy 또는 상대 가중치 기준으로 바꿀지 결정한다.
 
+### Rule L1. Cross-role Double Scoring (v1.11 신설, lint 가족)
+
+- **출처**: ideation v2.2 §4 Rule L1.
+- **조건**: 동일 `spec_id`가 `evaluation_role == scored` rubric의 `trace_links`와 `evaluation_role == bonus` rubric의 `trace_links` 양쪽에서 참조됨.
+- **결과**: `double_scored_spec`, `medium`, `provisional`.
+- **판정 상태**: final human review 전 `provisional`. semantic verifier 또는 final review가 `human_overridden`으로 정당성 판정 가능. `gate`가 confirmed로 승급할 수 있음(승급 시에도 `double_scored_spec` 유지, status만 `confirmed`).
+- **차단 대상**: 아니오. medium provisional은 check 단계에서 차단하지 않음.
+- **의도**: 같은 명세가 본채점과 가산 양쪽에서 점수화되어 실질 가중치가 부풀려지는 것을 검출. ideation v2.2 §1.4의 "창의 영역의 명세 잠식" 가장 직접적 형태.
+- **심화 확인 장치** (ideation §9.1 8번 / 11번과 정합):
+  - Finding payload에 다음 field 동봉: `scored_rubric_id`, `bonus_rubric_id`, `spec_id`, 양쪽 rubric의 `title` / `description` / `text`, 양쪽 link의 `semantic_status`. 리뷰어가 한 화면에서 정당/부당 구별 가능해야 함.
+  - 동시에 §5.7 `review_queue.json`에 `type: double_scoring_review` entry 생성. `target: { spec_id, scored_rubric_id, bonus_rubric_id }`.
+- **two-directional regression 가드** (§10.1):
+  - under-strict: 같은 spec_id가 scored+bonus 양쪽 trace → 발화 + payload에 양쪽 rubric_id + review_queue entry 생성.
+  - over-strict A: spec_id가 scored에만 trace → 미발화.
+  - over-strict B: 다른 spec_id끼리 (한쪽은 scored, 다른쪽은 bonus) → 미발화.
+- **fixture**: `fixtures/cross_role_double_scoring/` 신설 (또는 L5/L6와 통합한 `fixtures/bonus_misuse/`). 동일 spec_id가 scored R1과 bonus R2 양쪽에 trace된 시나리오 + over-strict 가드용 사례.
+
+### Rule L5. Bonus Traces Only Mandatory (v1.11 신설, lint 가족)
+
+- **출처**: ideation v2.2 §4 Rule L5.
+- **조건**: `evaluation_role == bonus`인 rubric_item의 **모든** trace 대상 spec_item의 `requirement_level == must`.
+- **결과**: `bonus_grades_mandatory_only`, `medium`, `provisional`.
+- **판정 상태**: final review 전 `provisional`. semantic verifier/final review가 `human_overridden`으로 통과시키지 않으면 `gate`가 confirmed로 승급.
+- **차단 대상**: 아니오.
+- **의도**: 가산이 "명세를 넘어선 행동"을 보상해야 하는데 모든 trace가 must로만 향한다면 가산의 정체성이 무너진다. ideation v2.1 §2의 조치 (3)("bonus/qualitative note로 격하") 거울.
+- **L1과의 차이** (§6 Rule L1 vs L5):
+  - L1: 같은 spec_id가 scored와 bonus 양쪽 — 직접적 double-counting.
+  - L5: bonus가 must spec만 본다 — scored와 겹치지 않더라도 bonus 의미 잘못 설계.
+- **two-directional regression 가드**:
+  - under-strict: bonus의 모든 trace가 must spec → 발화.
+  - over-strict A: bonus의 trace에 optional/informational spec이 하나라도 있음 → 미발화.
+  - over-strict B: trace가 아예 없는 bonus → 미발화 (Rule 1의 `orphan_bonus_rubric_item` 책임).
+- **fixture**: L1 fixture와 공유 가능. bonus rubric이 must spec만 trace하는 entry 추가.
+
+### Rule L6. Mandatory Spec Bonus-only Coverage (v1.11 신설, lint 가족)
+
+- **출처**: ideation v2.2 §4 Rule L6.
+- **조건**: `requirement_level == must`인 spec_item을 참조하는 trace가 존재하지만, 그 trace의 모든 rubric의 `evaluation_role != scored` (즉 bonus 또는 qualitative).
+- **결과**: `mandatory_spec_bonus_only_traced`, `high`, `provisional`.
+- **판정 상태**: final review 전 `provisional`. `human_overridden`이 없으면 `gate`가 confirmed로 승급.
+- **차단 대상**: confirmed 상태에서만 예 (Rule 1의 `orphan_scored_rubric_item`과 같은 위상).
+- **의도**: must 명세인데 본채점이 아예 없고 가산만 걸려있는 경우. Rule 2가 "must spec에 scored trace 없음"을 medium으로 잡지만, 본 룰은 한 단계 더 구체적이다 — "없을 뿐 아니라 *가산으로만* 평가되도록 설계됨".
+- **Rule 2와의 관계**: Rule 2의 특수 케이스. 동시 발화 가능. Rule 2가 medium, L6가 high — 둘 다 발화되면 reviewer는 L6 우선 처리.
+- **안전장치** (ideation §9.1 11번):
+  - Finding payload에 동봉: `spec_id` (must spec), 그 spec을 trace하는 모든 `bonus_rubric_ids[]`, 각 bonus rubric의 `title` / `description` / `text`, 각 link의 `semantic_status`, `spec_item.text` 또는 `source_ref`.
+  - §5.7 `review_queue.json`에 `type: mandatory_spec_bonus_review` entry. `target: { spec_id, bonus_rubric_ids: [...] }`.
+- **two-directional regression 가드**:
+  - under-strict: must spec에 trace는 있지만 모두 bonus → 발화 + payload + review_queue entry.
+  - over-strict A: must spec에 scored trace가 하나라도 있음 → 미발화.
+  - over-strict B: must spec에 trace 자체가 없음 → 미발화 (Rule 2 책임).
+- **fixture**: L1/L5 fixture와 공유. must spec 하나에 bonus rubric 하나만 trace되는 entry 추가.
+
+### Lint 가족 공통 메모
+
+- Rule L1/L5/L6는 모두 Rule 0가 high 진단을 내지 않은 입력에서만 평가한다 (Rule 1의 선행 조건과 동일).
+- Rule L1/L5/L6는 `semantic_status`를 조건으로 사용하지 않는다 — 구조적 패턴만 검사. ideation v2.2 §3 분류상 L-DET.
+- `check`는 lint finding을 medium/high `provisional`로만 emit한다. `blocking_count` 산정에는 포함하지 않는다 (Rule 1과 동일 정책 — `check`는 차단 verdict 발행 안 함).
+- `next_actions`에는 `review_double_scoring` / `review_bonus_mandatory_only` / `review_mandatory_spec_bonus_only` 각 finding당 한 entry 추가. 명명은 §8.1과 §8.1.1 정책 따름.
+
 ### 후속 규칙
 
+- L2 (Bonus Weight Encroachment), L4 (Duplicate Trace Link), L7 + C1 (Forbidden-clause Violation + `requirement_level: forbidden` 스키마 확장): ideation v2.2 §7 표의 v1.12+ 항목. plan 추가 시점에 본 절에서 별도 Rule 항목으로 승격.
 - Time Budget Consistency: effort 산정 방식이 정의된 뒤 추가
 - Rubric Version Lock: locked baseline, round state, approval log 계약이 정의된 뒤 추가
 - Disclosure Readiness: scoring evidence와 feedback 범위가 정의된 뒤 추가
@@ -1128,6 +1208,18 @@ Phase 2/3 전 확정할 사항:
 ---
 
 ## 15. 변경 이력
+
+### v1.11 (2026-05-27)
+
+핵심 변경: **ideation v2.2 (Rubric Lint Rules)의 v1.11 승격분을 §6 / §5.6 / §5.7에 반영. 코드 변경 없음 (spec-only).**
+
+- **§6 신규 항목 3개**: Rule L1 (`double_scored_spec`, medium/provisional), Rule L5 (`bonus_grades_mandatory_only`, medium/provisional), Rule L6 (`mandatory_spec_bonus_only_traced`, high/provisional) — 모두 lint 가족(L-DET). ideation v2.2 §4 본문과 정합하며 Rule 1과 같은 슬라이스 패턴(under/over-strict 가드, fixture 공유)으로 구현 진입.
+- **§6 "Lint 가족 공통 메모" 신설**: Rule 0 선행 의존, `semantic_status` 비참조(L-DET), `check`의 `blocking_count` 미가산, `next_actions` 명명을 한 자리에 정리.
+- **§5.6 `drift_observations[]` field 신설**: ideation v2.2 §5 Rule L8 자동 검출 기각의 짝. trace_link는 통과했지만 채점 기준이 spec과 어긋난 경우 final reviewer가 수동 기록. `rubric_id` / `linked_spec_ids` / `observed_drift_summary` / `severity` / `recommended_action` 5개 field. `check`/`gate` 결과 코드와 무관.
+- **§5.7 `review_queue` entry type 2개 신설**: `double_scoring_review` (Rule L1 짝), `mandatory_spec_bonus_review` (Rule L6 짝). 각 finding의 심화 확인 장치로 자동 생성됨. 기존 5개 type과 같은 schema/lifecycle 따름.
+- **승격 범위 결정 근거**: ideation v2.2 §7 표(2026-05-27 개정). 초안에서 L1+L5만 v1.11 후보였으나 L6 안전장치 구체 형태가 L1과 동일 패턴(payload + review_queue entry)으로 결정되면서 mechanism 일관성 + fixture 공유 이득이 분리 비용을 넘어 L6도 v1.11에 포함.
+- **구현 영향**: rules.py / cli.py / schemas는 본 plan 갱신 시점에 변경 없음. plan v1.11이 잠긴 뒤 별도 슬라이스 (L1 → L5 → L6)로 진입. 각 슬라이스는 finding payload schema 확장, review_queue.json 갱신, fixture 추가, two-directional 가드 테스트를 동반.
+- **Owner 결정 근거 (보존)**: lint 가족 명명 `Rule L*`, finding type literal은 ideation §3/§4 그대로(`double_scored_spec` 등 가독성 최우선), L1 심화 확인 장치는 payload+review_queue 양쪽, L6 안전장치도 L1과 동일 mechanism, L8은 자동 검출 비범위지만 수동 기록은 `drift_observations[]`로 audit 보존.
 
 ### v1.10 (2026-05-26)
 

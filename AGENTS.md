@@ -81,6 +81,13 @@ A regression test should fail in *both* directions, not just one.
 - **Over-strict guard**: if an over-correction breaks a normal case (e.g. someone applies `+1` where the original cancelation was intentional), the test must also fail.
 - State both directions in the test docstring or assertion names so future readers (and future-you) can see what's being locked.
 
+### Minimum Verification by Artifact Type
+
+- **Documentation-only changes**: verify affected links, references, stated versions, and precedence claims where applicable; run repository-supported diff or formatting checks.
+- **Code changes**: when behavior changes, add or update regression tests first; run focused tests for the changed behavior, then the relevant broader suite before completion.
+- **Public interfaces or structured contracts**: when changing CLI output, APIs, configuration formats, schemas, generated metadata, or similar contracts, verify the behavioral tests and any affected examples, validation artifacts, introspection output, or contract files that exist in the project.
+- If a named verification surface does not exist in the current project, state that clearly and use the closest available verification rather than adding unrequested infrastructure.
+
 ---
 
 **These guidelines are working if:** fewer unnecessary changes in diffs, fewer rewrites due to overcomplication, and clarifying questions come before implementation rather than after mistakes.
@@ -105,6 +112,13 @@ A regression test should fail in *both* directions, not just one.
 - Include reasoning: why this approach was chosen
 - State the outcome: what effect the change had
 - Write immediately after completing work, while details are fresh
+
+### User Decisions and Rationale
+- When a user's preference, decision, constraint, or rationale affects requirements, scope, architecture, design, behavior, or implementation direction, summarize that decision in `docs/daily_logs/YYYY-MM-DD/work_log.md`.
+- Preserve the user's intent, the selected direction, and relevant tradeoffs so later workers can understand why the project took that direction. Do not transcribe the conversation.
+- When a user decision directly drives a major design or feature change recorded in `CHANGELOG.md`, include a concise note about that decision and rationale in the changelog entry.
+- Do not record conversational decision history in `HANDOFF.md`; keep it focused on current actionable development state.
+- If a later request conflicts with a recorded user decision, rationale, or established design direction, identify the conflict and ask the user which direction is now canonical before implementing the conflicting change.
 
 ### HANDOFF.md
 - Purpose: current-state snapshot for the next worker, not a changelog or running diary
