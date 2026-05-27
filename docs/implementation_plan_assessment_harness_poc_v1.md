@@ -1,4 +1,4 @@
-# Assessment Spec Harness PoC 구현 계획서 v1.11
+# Assessment Spec Harness PoC 구현 계획서 v1.12
 
 ## 0. 문서 목적
 
@@ -15,11 +15,12 @@
 본 PoC 구현 중 문서가 충돌할 경우 다음 순서로 해석한다.
 
 1. 본 구현 계획서: 구현 범위, 단계, 입력/출력 계약, 완료 기준
-2. `docs/ideation_assessment_harness_v2.1.md`: 제품 목적과 장기 방향
-3. `docs/ideation_assessment_harness_v2.md`: historical reference
-4. `docs/ideation_assessment_harness_v1.md`: historical ideation reference
+2. `docs/ideation_assessment_harness_v2.2.md`: lint 가족과 최신 ideation 결정
+3. `docs/ideation_assessment_harness_v2.1.md`: 제품 목적과 장기 방향
+4. `docs/ideation_assessment_harness_v2.md`: historical reference
+5. `docs/ideation_assessment_harness_v1.md`: historical ideation reference
 
-본 계획서가 `v2.1`의 핵심 목적과 충돌하는 경우에는 임의 구현하지 않고 결정을 다시 기록한다.
+본 계획서가 `v2.2` 또는 `v2.1`의 핵심 목적과 충돌하는 경우에는 임의 구현하지 않고 결정을 다시 기록한다.
 
 ## 2. PoC 목표
 
@@ -78,7 +79,10 @@
 
 - agent runner 실행 및 framework별 prompt/tool orchestration
 - agent runner 모듈 (Phase 2에서 추가)
-- `review_queue.json` 파일 생성 (Phase 2부터; Phase 0에는 데이터 계약만 정의)
+- 일반 compacting/verifier `review_queue.json` 파일 생성 (Phase 2부터). 단, Phase 0
+  `check`에서 발화하는 deterministic lint safeguard entry (`double_scoring_review`,
+  `mandatory_spec_bonus_review`)는 Rule L1/L6 finding과 분리할 수 없으므로 예외적으로
+  `review_queue.json`에 생성한다 (§5.7, §6 Rule L1/L6).
 - Time Budget Consistency
 - Rubric Version Lock
 - Disclosure/feedback 생성
@@ -134,7 +138,7 @@ agent runner (framework-agnostic protocol)
                                                     external gate decision
 ```
 
-`review_queue.json`은 다음을 통합 기록한다: 무결성 실패로 제외된 후보, compacting 시 identity 충돌이 명확하지 않은 variants, deterministic rule로 판정할 수 없는 모호성, 사람이 반드시 봐야 할 최종 검토 대상. 이는 `findings.json`과 분리한다. Phase 0에는 schema/계약만 정의하고 실제 파일 생성은 Phase 2부터 수행한다.
+`review_queue.json`은 다음을 통합 기록한다: 무결성 실패로 제외된 후보, compacting 시 identity 충돌이 명확하지 않은 variants, deterministic rule로 판정할 수 없는 모호성, 사람이 반드시 봐야 할 최종 검토 대상. 이는 `findings.json`과 분리한다. 일반 compacting/verifier queue 파일 생성은 Phase 2부터 수행한다. 다만 Phase 0의 deterministic lint finding이 직접 요구하는 safeguard entry (`double_scoring_review`, `mandatory_spec_bonus_review`)는 finding과 함께 검토 가능해야 하므로 `check`가 예외적으로 파일에 기록한다.
 
 `compacting`은 분류가 아니다. 자동 채택은 발생하지 않으며, 모든 candidate(invalid run에서 제외된 것 제외)는 사람이 검토해야 할 entry로 남는다. 동일한 entity로 합쳐진 경우 `support`(어느 run에서 발견되었는지), `identity_basis`(동일성 판단 기준), `variants`(약간 다른 표현들)를 보존하여 compacting 자체의 타당성도 review 대상이 된다.
 
@@ -312,7 +316,7 @@ trace_links:
 - `rationale`: trace의 제안 사유. PoC에서는 설명 자료이며 단독으로 신뢰하지 않는다. 복수 run에서 다른 rationale이 나오면 `variants`에 보존한다.
 - `evidence_quotes`: 각 `spec_id`에 대응하는 spec 원문 발췌와 `verification_mode`. 모든 `spec_ids` 원소에 대응되어야 한다.
   - `verification_mode: token_sequence`: Rule 0가 strict substring 매칭으로 잔존·누락 정량 검증. 미리 삽입된 마커 검증에 사용 (예: "디버깅 섹션이 사라졌는지", "잘못된 코드가 잔존하는지" 같은 정량 확인 가능한 명시적 항목).
-  - `verification_mode: ai_judgement` (PoC default): Rule 0는 reference integrity만 검증(spec_id 유효, quote 비어있지 않음). substring 매칭은 skip하고 `review_queue`에 `type: ai_judgement_pending` entry로 보내 semantic verifier-agent의 read-only 복수 검증과 최종 사람 검토를 거친다. 신규 구현·기능처럼 substring으로 검증 불가한 영역.
+  - `verification_mode: ai_judgement` (PoC default): Rule 0는 reference integrity만 검증(spec_id 유효, quote 비어있지 않음). substring 매칭은 skip한다. Phase 0에서는 link를 pending 상태로 보존하고, Phase 2의 verifier/queue 구현부터 `review_queue`에 `type: ai_judgement_pending` entry로 보내 semantic verifier-agent의 read-only 복수 검증과 최종 사람 검토를 거친다. 신규 구현·기능처럼 substring으로 검증 불가한 영역.
 - `support`: compacting 산물. `total_valid_runs`는 invalid run을 제외한 전체 분모, `found_in_runs`는 이 link를 제안한 run ID 목록.
 - `identity_basis`: 동일성 판단 알고리즘 식별자. 사람이 review에서 이 알고리즘이 적절했는지 평가할 수 있어야 한다 (예: `rubric_id+sorted(spec_ids)` vs `rubric_id+sorted(spec_ids)+normalized_rationale`).
 - `variants`: 동일성으로 판정되었으나 표현이 약간 다른 원본들 (예: rationale 문장이 미세하게 다름). 빈 배열이면 모든 발견이 동일.
@@ -554,6 +558,22 @@ entry `type` enum:
 - `double_scoring_review` (v1.11 신설): Rule L1 발화에 짝지어지는 review queue entry. `target`은 `{ spec_id, scored_rubric_id, bonus_rubric_id }`. semantic verifier 또는 final reviewer가 "정당한 심화"인지 판단해 `human_overridden` 또는 confirmed로 처리.
 - `mandatory_spec_bonus_review` (v1.11 신설): Rule L6 발화에 짝지어지는 review queue entry. `target`은 `{ spec_id, bonus_rubric_ids: [...] }`. 의도적 가산 배치인지 설계 실수인지 판단.
 
+Phase 0 `check`의 lint safeguard 출력 계약 (v1.12 정합화):
+
+- Rule 0가 통과한 Phase 0 `check`는 lint safeguard queue artifact를 기록한다.
+  Rule L1/L6 finding이 발화하면 짝지어진 queue entry를 반드시 포함하고,
+  발화하지 않으면 stale review 대상이 남지 않도록 빈 queue를 기록한다.
+- `check --review-queue-out <path>`가 주어지면 해당 경로에 기록하고, 생략하면
+  `--out`과 같은 디렉터리의 `review_queue.json`에 기록한다.
+- Rule 0가 통과한 CLI envelope는 informational `review_queue_path`와
+  `review_queue_count`를 제공한다.
+- 이 예외는 lint finding의 안전장치에만 적용한다. compacting, verifier,
+  `ai_judgement_pending`, identity/low-support queue 생성은 여전히 Phase 2 범위다.
+- Phase 0 구현의 `--review-queue-out`은 lint safeguard queue의 단독 출력이다.
+  Phase 2에서 compact/verifier queue가 구현되면 기존 entry를 보존하면서 lint entry를
+  합치는 composition 계약을 먼저 구현해야 하며, 그 전에는 upstream queue 파일 경로를
+  이 출력 인자에 연결해 덮어쓰지 않는다.
+
 `status`: `open | held | rerun_pending | resolved`.
 
 - `accept`, `override`: `resolved`
@@ -590,7 +610,7 @@ entry `type` enum:
     ```
 - verification_mode별 처리:
   - `token_sequence`: source snapshot의 anchor text와 evidence quote에 strict 비교를 적용한다. 비교는 normalized whitespace 기준의 토큰 시퀀스 동일성을 사용한다.
-  - `ai_judgement` (PoC default): substring 매칭 skip. 해당 evidence는 `review_queue`에 `type: ai_judgement_pending` entry로 추가되어 semantic verifier-agent와 최종 사람 검토 대상이 된다. Rule 0의 input error 판정 대상이 아니다.
+  - `ai_judgement` (PoC default): substring 매칭 skip. Phase 0 `check`에서는 pending 상태로 남고 Rule 0 input error 판정 대상이 아니다. `review_queue`의 `type: ai_judgement_pending` entry 생성과 semantic verifier-agent/최종 사람 검토 연결은 Phase 2 구현 범위다.
 - 실행 지속 불가 여부: 예, 구조/참조 무결성 위반은 exit `2` input error다. 이는 `gate`의 외부 assessment blocking verdict가 아니다. 단, `ai_judgement` evidence의 의미 미확인은 input error가 아니다.
 - 의도: 손으로 작성했거나 agent가 제안한 구조화 입력의 참조 무결성을 검사한다. semantic disclosure 판정은 PoC 비범위이며 review_queue를 통해 사람이 본다.
 
@@ -641,6 +661,7 @@ token_sequence 비교는 normalized whitespace 기준의 토큰 시퀀스 동일
 - **심화 확인 장치** (ideation §9.1 8번 / 11번과 정합):
   - Finding payload에 다음 field 동봉: `scored_rubric_id`, `bonus_rubric_id`, `spec_id`, 양쪽 rubric의 `title` / `description` / `text`, 양쪽 link의 `semantic_status`. 리뷰어가 한 화면에서 정당/부당 구별 가능해야 함.
   - 동시에 §5.7 `review_queue.json`에 `type: double_scoring_review` entry 생성. `target: { spec_id, scored_rubric_id, bonus_rubric_id }`.
+  - Phase 0 `check`는 §5.7 v1.12 예외 계약에 따라 이 entry를 즉시 파일로 기록한다.
 - **two-directional regression 가드** (§10.1):
   - under-strict: 같은 spec_id가 scored+bonus 양쪽 trace → 발화 + payload에 양쪽 rubric_id + review_queue entry 생성.
   - over-strict A: spec_id가 scored에만 trace → 미발화.
@@ -800,7 +821,8 @@ assessment-harness check \
   --source-manifest fixtures/orphan_scored_rubric/source_manifest.yaml \
   --policy fixtures/orphan_scored_rubric/policy.yaml \
   --out findings.json \
-  --diagnostics-out integrity_diagnostics.json
+  --diagnostics-out integrity_diagnostics.json \
+  --review-queue-out review_queue.json
 
 assessment-harness report \
   --findings findings.json \
@@ -809,6 +831,11 @@ assessment-harness report \
 ```
 
 `--source-manifest`는 Phase 0의 필수 인자다 (§5.0 / §5.1 / §11). 생략하면 `check`는 `status=invalid_input`, exit `2`, 진단 코드 `source_manifest_required`, next_action `provide_source_manifest`를 반환한다. argparse 단계에서 거부하지 않고 구조화된 envelope을 stdout에 출력하므로 caller agent는 인자 누락도 정상 흐름의 결과로 복구 가능하다.
+
+Rule L1/L6 lint safeguard entry가 발화할 수 있는 입력에서 `--review-queue-out`을
+지정하면 queue 경로를 명시할 수 있다. 생략하면 Rule 0가 통과한 `check`는
+`--out`과 같은 디렉터리의 `review_queue.json`을 생성한다. lint finding이
+없을 때에도 빈 queue를 기록해 이전 실행의 stale review 항목이 재사용되지 않게 한다.
 
 Phase 0에서 `--semantic-verifications`가 생략된 경우 `token_sequence` evidence만 결정적으로 검사하며, `ai_judgement` trace link는 `pending_verification`으로 취급한다. Phase 2 이후 agent-assisted 흐름에서는 `verify` 산출물을 `check`/`report`/`review`에 명시적으로 전달한다.
 
@@ -1208,6 +1235,16 @@ Phase 2/3 전 확정할 사항:
 ---
 
 ## 15. 변경 이력
+
+### v1.12 (2026-05-27)
+
+핵심 변경: **Phase 0 lint safeguard queue 예외를 명시하고 Rule L1 구현 계약을 닫음.**
+
+- **정본 정합화**: v1.11의 "review_queue 파일 생성은 Phase 2부터" 문구와 Rule L1/L6의 paired queue entry 생성 요구 충돌을 해소했다. 일반 compacting/verifier queue는 여전히 Phase 2 범위이나, deterministic lint safeguard entry는 Phase 0 `check`가 finding과 함께 기록한다.
+- **CLI 계약**: `check --review-queue-out <path>`를 lint safeguard artifact의 명시 경로로 추가했다. 생략 시 `--out` 옆 `review_queue.json`으로 기록하며, Rule 0 clean 실행은 finding이 없더라도 빈 queue를 덮어써 stale 항목을 방지한다. envelope는 informational `review_queue_path` / `review_queue_count`를 제공한다.
+- **Phase 2 composition 경계**: 현 Phase 0 출력은 lint safeguard 전용이다. compact/verifier queue와의 단일 파일 통합은 해당 단계 구현 시 기존 entry 보존/갱신 정책과 함께 추가하며, 그 전에 공유 경로로 덮어쓰지 않는다.
+- **문서 우선순위 정정**: §1에 이미 채택된 `ideation_assessment_harness_v2.2.md`를 v2.1 앞의 ideation 정본으로 명시해 HANDOFF와 plan 내부 참조를 일치시켰다.
+- **Owner 결정 근거**: L1/L6는 finding만 남기고 안전장치 queue를 잃으면 reviewer가 정당한 심화인지 판정할 경로가 사라진다. owner는 L1 구현 진행 시 이 paired queue를 Phase 0 예외로 두는 방향을 승인했다.
 
 ### v1.11 (2026-05-27)
 

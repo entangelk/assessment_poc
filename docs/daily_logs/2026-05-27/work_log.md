@@ -257,3 +257,73 @@
 1. 이번 결정까지 한 묶음으로 커밋 + 푸시.
 2. 다음 슬라이스 진입은 lint L1 (heavy 슬라이스 — schema 뼈대 도입). 실행 AI는 슬라이스 크기가 리뷰 가능 범위를 넘으면 슬라이스 1.5 분할 옵션 보유.
 3. lint family 끝나면 Rule 2 슬라이스 — plan v1.12 §6 Rule 2 본문에 literal 박는 단계가 슬라이스 시작 직후 첫 commit.
+
+---
+
+## Phase 0 Rule L1 Implementation + Review Queue Contract Resolution
+
+### Goals
+
+- Resolve the canonical-plan contradiction about when paired lint review queue entries are persisted.
+- Implement Rule L1 (`double_scored_spec`) with its required human-review context and public CLI contract.
+- Preserve the L1 boundary with under-strict and over-strict regressions and a grounded shared lint fixture.
+
+### Completed Work
+
+- Updated `docs/implementation_plan_assessment_harness_poc_v1.md` from v1.11 to v1.12.
+  - Files changed: `docs/implementation_plan_assessment_harness_poc_v1.md`.
+  - Key changes: clarified that general compacting/verifier queues remain Phase 2 scope while deterministic lint safeguard queue artifacts are a Phase 0 `check` exception; specified `--review-queue-out`, default sibling `review_queue.json`, envelope queue fields, and empty-queue overwrite behavior; inserted v2.2 in the documented ideation precedence order.
+  - Effect: Rule L1/L6's required review mechanism no longer conflicts with the Phase 0 scope boundary.
+- Implemented Rule L1 and queue artifact output.
+  - Files changed: `src/assessment_harness/rules.py`, `src/assessment_harness/cli.py`, `src/assessment_harness/schemas.py`, `schemas/findings.schema.json`, `schemas/review_queue.schema.json`.
+  - Key changes: added structural `run_rule_l1`; emitted `double_scored_spec` with scored/bonus rubric IDs and paired context including semantic statuses as evidence only; generated `double_scoring_review`; added `review_double_scoring`, `review_queue_path`, and `review_queue_count`; created the review queue schema and registered it.
+  - Effect: `check` now detects same-spec scored/bonus overlap without consulting semantic status, and retains the human-review safeguard required by the plan.
+- Added regression coverage and a grounded shared lint fixture.
+  - Files changed: `tests/test_rules.py`, `tests/test_cli_output_contract.py`, `tests/test_fixtures.py`, `fixtures/bonus_misuse/*`.
+  - Key changes: added L1 under-strict guard and two non-overlap over-strict guards; locked the public schema contract and default queue artifact path; introduced `bonus_misuse` with an L1 overlap plus a different-spec bonus control.
+  - Effect: future L5/L6 slices can extend one grounded lint scenario while L1's structural boundary and output contract stay protected.
+- Updated user/operator state documents.
+  - Files changed: `README.md`, `HANDOFF.md`, `CHANGELOG.md`.
+  - Key changes: documented Rule L1, Phase 0 lint queue behavior, plan v1.12, new schema/fixture, next slice L5, and the owner rationale for the contract decision.
+  - Effect: documentation now describes the implemented surface rather than the pre-L1 state.
+
+### Issues Found
+
+- Problem: plan v1.11 stated that `review_queue.json` files are generated only from Phase 2, while Rule L1/L6 mandated paired queue entries when findings fire.
+  Cause: lint safeguards were promoted into the plan after the original Phase 0/Phase 2 artifact boundary had already been written.
+  Resolution: surfaced the contradiction before coding; after owner approval, revised the canonical plan to v1.12 and made deterministic lint queue artifacts an explicit Phase 0 exception.
+  Outcome: implementation can preserve required reviewer context without implicitly overriding the specification.
+- Problem: writing a queue file only when L1 fires would leave stale entries if the same output directory is reused after the assessment is corrected.
+  Cause: findings and diagnostics are regenerated per run, but a conditional queue artifact would not be cleared on a subsequent clean lint pass.
+  Resolution: on each Rule 0 clean `check`, write the lint review queue artifact, using an empty queue when no lint safeguard entry fires.
+  Outcome: queue files reflect the current successful parse/run rather than earlier findings.
+- Problem: the future workflow already describes a compact/verifier `review_queue`, while the new Phase 0 lint output writer would overwrite a shared target path rather than compose with upstream entries.
+  Cause: Phase 2 queue generation and composition are still unimplemented; L1 is the first implemented producer.
+  Resolution: kept `--review-queue-out` explicitly scoped to the Phase 0 lint-safeguard artifact and recorded Phase 2 merge/update behavior as required follow-through before a unified queue path is wired.
+  Outcome: the current slice remains minimal and correct without silently defining destructive future composition semantics.
+- Problem: adjacent Rule 0 prose still described `ai_judgement_pending` queue insertion as immediate even though Phase 0 has never emitted verifier queue entries.
+  Cause: the same pre-lint Phase 0/Phase 2 boundary ambiguity appeared in the semantic-verification description.
+  Resolution: qualified both plan locations and HANDOFF: Phase 0 retains pending links; Phase 2 introduces `ai_judgement_pending` entries and verifier routing.
+  Outcome: lint safeguard queue output is no longer mistaken for unimplemented semantic-verifier queue output.
+
+### Decisions
+
+- **Owner decision (Phase 0 lint queue exception)**: proceed with Rule L1 by persisting paired lint review entries during Phase 0 `check`, despite the earlier general rule placing review queue generation in Phase 2. Rationale: an L1/L6 finding without its paired human-review context would defeat the documented safeguard mechanism.
+- **Implementation boundary**: the exception covers deterministic lint safeguard entries only. `ai_judgement_pending`, compacting identity collisions, low-support handling, and verifier-generated queue behavior remain Phase 2 work.
+- **Stale-state prevention**: Rule 0 clean executions emit a queue artifact even when empty; this is a small public-contract extension justified by deterministic rerun correctness.
+- **Composition boundary**: the Phase 0 L1 artifact is not yet the future unified compact/verifier/lint queue; Phase 2 must preserve existing upstream entries when that pipeline is implemented.
+
+### Next Steps
+
+1. Implement Rule L5 (`bonus_grades_mandatory_only`) using the existing L1 rule/CLI/schema path and extending `fixtures/bonus_misuse/`.
+2. Implement Rule L6 (`mandatory_spec_bonus_only_traced`) using the paired `mandatory_spec_bonus_review` entry already represented in `review_queue.schema.json`.
+3. Resume Rule 2/3 after the lint family lands; amend the then-current plan with the final Rule 2 output literal before code emits it.
+
+### Verification
+
+- Red-state confirmation: `docker compose run --rm test tests/test_rules.py tests/test_cli_output_contract.py tests/test_fixtures.py -q` initially failed during collection because `run_rule_l1` did not yet exist.
+- Focused suite: `docker compose run --rm test tests/test_rules.py tests/test_cli_output_contract.py tests/test_fixtures.py -q` passed after implementation.
+- Full suite: `docker compose run --rm test -q` passed (102 tests).
+- Contract smoke: `docker compose run --rm harness --output json schema --command check` exposes `review_double_scoring`, `review_queue_path`, and `review_queue_count`.
+- L1 smoke: `check` on `fixtures/bonus_misuse` returns exit `0`, `status=provisional_findings`, two medium findings (`unconfirmed_trace_coverage`, `double_scored_spec`), and one `double_scoring_review` queue entry.
+- Publication review: the owner reported that an independent AI verification of this work passed and authorized committing and pushing the Rule L1 batch to `origin/main`.

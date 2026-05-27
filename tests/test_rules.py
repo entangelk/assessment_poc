@@ -15,7 +15,7 @@ from typing import Any
 import pytest
 
 from assessment_harness.models import Document, SourceSnapshot
-from assessment_harness.rules import run_rule_one, run_rule_zero, severity_counts
+from assessment_harness.rules import run_rule_l1, run_rule_one, run_rule_zero, severity_counts
 
 
 # ---------------------------------------------------------------------------
@@ -1028,6 +1028,90 @@ def test_three_rubrics_three_branches_coexist() -> None:
         ("R_SCORED_PENDING", "unconfirmed_trace_coverage", "medium"),
         ("R_BONUS_NO_LINK", "orphan_bonus_rubric_item", "informational"),
     }
+
+
+# ---------------------------------------------------------------------------
+# Rule L1 — Cross-role Double Scoring
+# ---------------------------------------------------------------------------
+
+
+def _l1_rubrics() -> dict[str, Any]:
+    return {
+        "rubric_items": [
+            {
+                "id": "RS",
+                "title": "Required behavior",
+                "description": "Scores the required behavior.",
+                "evaluation_role": "scored",
+                "source_ref": {"document_id": "DOC_RUBRIC", "start_line": 1, "end_line": 1},
+            },
+            {
+                "id": "RB",
+                "title": "Bonus repeat",
+                "description": "Awards bonus for the same behavior.",
+                "evaluation_role": "bonus",
+                "source_ref": {"document_id": "DOC_RUBRIC", "start_line": 2, "end_line": 2},
+            },
+        ]
+    }
+
+
+def test_l1_same_spec_traced_by_scored_and_bonus_emits_review_pair() -> None:
+    """Under-strict guard: one spec traced by both roles must emit the L1
+    finding with paired rubric context and a `double_scoring_review` entry.
+    """
+    traces = {
+        "trace_links": [
+            {"rubric_id": "RS", "spec_ids": ["S1"], "evidence_quotes": [], "semantic_status": "human_accepted"},
+            {"rubric_id": "RB", "spec_ids": ["S1"], "evidence_quotes": [], "semantic_status": "human_overridden"},
+        ]
+    }
+    findings, queue = run_rule_l1(_l1_rubrics(), traces)
+    assert len(findings) == 1
+    finding = findings[0]
+    assert finding.type == "double_scored_spec"
+    assert finding.severity == "medium"
+    assert finding.decision_status == "provisional"
+    assert finding.spec_id == "S1"
+    assert finding.scored_rubric_id == "RS"
+    assert finding.bonus_rubric_id == "RB"
+    assert finding.evidence["scored_rubric"]["semantic_statuses"] == ["human_accepted"]
+    assert finding.evidence["bonus_rubric"]["semantic_statuses"] == ["human_overridden"]
+    assert queue == [
+        {
+            "entry_id": "rq_double_scoring_S1_RS_RB",
+            "type": "double_scoring_review",
+            "target": {
+                "spec_id": "S1",
+                "scored_rubric_id": "RS",
+                "bonus_rubric_id": "RB",
+            },
+            "reason": "Spec item 'S1' is traced by both scored rubric 'RS' and bonus rubric 'RB'.",
+            "related_runs": [],
+            "status": "open",
+        }
+    ]
+
+
+def test_l1_scored_only_trace_does_not_emit() -> None:
+    """Over-strict guard A: scored-only coverage is not cross-role scoring."""
+    traces = {
+        "trace_links": [
+            {"rubric_id": "RS", "spec_ids": ["S1"], "evidence_quotes": []},
+        ]
+    }
+    assert run_rule_l1(_l1_rubrics(), traces) == ([], [])
+
+
+def test_l1_different_specs_between_roles_do_not_emit() -> None:
+    """Over-strict guard B: role overlap requires the same spec_id."""
+    traces = {
+        "trace_links": [
+            {"rubric_id": "RS", "spec_ids": ["S1"], "evidence_quotes": []},
+            {"rubric_id": "RB", "spec_ids": ["S2"], "evidence_quotes": []},
+        ]
+    }
+    assert run_rule_l1(_l1_rubrics(), traces) == ([], [])
 
 
 @pytest.mark.parametrize(

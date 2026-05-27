@@ -68,6 +68,7 @@ def test_check_clean_fixture_returns_success(
     assert envelope["status"] == "provisional_findings"
     assert envelope["exit_code"] == 0
     assert envelope["command"] == "check"
+    assert envelope["review_queue_count"] == 0
     # next_actions carries one review_unconfirmed_trace_coverage per scored
     # rubric (R1, R2). R3 is bonus, R4 is qualitative, neither in scope yet.
     assert all(
@@ -284,6 +285,7 @@ def test_schema_command_returns_check_contract(
         "review_orphan_rubric",
         "review_unconfirmed_trace_coverage",
         "review_orphan_bonus_rubric",
+        "review_double_scoring",
     }
     assert set(contract["next_actions_types"]) == expected_actions
 
@@ -297,6 +299,8 @@ def test_schema_command_returns_check_contract(
         "provisional_high_count",
         "provisional_medium_count",
         "provisional_informational_count",
+        "review_queue_path",
+        "review_queue_count",
         "input_error",
     }
     assert set(contract["informational"]) == expected_informational

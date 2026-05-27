@@ -27,6 +27,7 @@ from .models import HarnessInputError, load_source_snapshot, load_validated, loa
 from .report import render_markdown
 from .rules import (
     finding_severity_counts,
+    run_rule_l1,
     run_rule_one,
     run_rule_zero,
     severity_counts,
@@ -159,8 +160,23 @@ def _cmd_check(args: argparse.Namespace) -> CommandResult:
     # Rule 0 clean. Run subsequent provisional rules; check never emits
     # blocking verdicts (that is gate's job).
     rule_one_findings = run_rule_one(rubric_doc, trace_doc)
-    provisional_findings = rule_one_findings
+    lint_findings, review_queue = run_rule_l1(rubric_doc, trace_doc)
+    provisional_findings = rule_one_findings + lint_findings
     finding_counts = finding_severity_counts(provisional_findings)
+    review_queue_path = (
+        Path(args.review_queue_out)
+        if args.review_queue_out
+        else Path(args.out).with_name("review_queue.json")
+    )
+    queue_payload = {
+        "review_queue": review_queue,
+        "generated_at": _now_iso(),
+    }
+    _write_json(review_queue_path, queue_payload)
+    envelope_fields = {
+        "review_queue_path": str(review_queue_path),
+        "review_queue_count": len(review_queue),
+    }
 
     if provisional_findings:
         for f in provisional_findings:
@@ -188,6 +204,16 @@ def _cmd_check(args: argparse.Namespace) -> CommandResult:
                         "finding_type": f.type,
                     }
                 )
+            elif f.type == "double_scored_spec":
+                next_actions.append(
+                    {
+                        "type": "review_double_scoring",
+                        "spec_id": f.spec_id,
+                        "scored_rubric_id": f.scored_rubric_id,
+                        "bonus_rubric_id": f.bonus_rubric_id,
+                        "finding_type": f.type,
+                    }
+                )
         findings_payload = {
             "status": "provisional_findings",
             "findings": [f.to_dict() for f in provisional_findings],
@@ -207,6 +233,7 @@ def _cmd_check(args: argparse.Namespace) -> CommandResult:
             provisional_high_count=finding_counts["high"],
             provisional_medium_count=finding_counts["medium"],
             provisional_informational_count=finding_counts["informational"],
+            **envelope_fields,
         )
         _write_json(Path(args.out), findings_payload)
         _write_json(Path(args.diagnostics_out), diagnostics_payload)
@@ -228,6 +255,7 @@ def _cmd_check(args: argparse.Namespace) -> CommandResult:
         diagnostics_path=str(args.diagnostics_out),
         blocking_count=0,
         high_integrity_count=0,
+        **envelope_fields,
     )
     _write_json(Path(args.out), findings_payload)
     _write_json(Path(args.diagnostics_out), diagnostics_payload)
@@ -372,6 +400,8 @@ COMMAND_CONTRACTS: dict[str, dict[str, Any]] = {
             "provisional_high_count",
             "provisional_medium_count",
             "provisional_informational_count",
+            "review_queue_path",
+            "review_queue_count",
             "input_error",
         ],
         "exit_codes": {
@@ -391,6 +421,7 @@ COMMAND_CONTRACTS: dict[str, dict[str, Any]] = {
             "review_orphan_rubric",
             "review_unconfirmed_trace_coverage",
             "review_orphan_bonus_rubric",
+            "review_double_scoring",
         ],
     },
     "report": {
@@ -558,6 +589,14 @@ def _build_parser() -> argparse.ArgumentParser:
         "--diagnostics-out",
         required=True,
         help="integrity_diagnostics.json output path",
+    )
+    p_check.add_argument(
+        "--review-queue-out",
+        default=None,
+        help=(
+            "review_queue.json output path for deterministic lint safeguards; "
+            "defaults to review_queue.json beside --out when such entries exist"
+        ),
     )
 
     p_schema = sub.add_parser(

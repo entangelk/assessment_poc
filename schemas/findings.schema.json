@@ -40,6 +40,8 @@
         },
         "rubric_id": { "type": "string" },
         "spec_id": { "type": "string" },
+        "scored_rubric_id": { "type": "string" },
+        "bonus_rubric_id": { "type": "string" },
         "trace_link_ref": {
           "type": "object",
           "properties": {

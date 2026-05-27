@@ -25,6 +25,7 @@ SCHEMA_FILES: dict[str, str] = {
     "findings": "findings.schema.json",
     "integrity_diagnostics": "integrity_diagnostics.schema.json",
     "cli_output": "cli_output.schema.json",
+    "review_queue": "review_queue.schema.json",
 }
 
 

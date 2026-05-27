@@ -44,7 +44,8 @@ assessment-harness check \
   --source-manifest fixtures/clean_assignment/source_manifest.yaml \
   --policy config/policy.yaml \
   --out findings.json \
-  --diagnostics-out integrity_diagnostics.json
+  --diagnostics-out integrity_diagnostics.json \
+  --review-queue-out review_queue.json
 
 assessment-harness report \
   --findings findings.json \
@@ -55,6 +56,13 @@ assessment-harness report \
 `--source-manifest`는 Phase 0 `check`의 필수 인자다 (plan §5.0 / §5.1 / §11). 누락하면 `status=invalid_input`, exit `2`, 진단 `source_manifest_required`, next_action `provide_source_manifest`가 반환된다.
 
 Phase 0에서 semantic verification 입력이 없으면 `ai_judgement` link는 의미 확인 대기 상태로 남는다. Agent 실행 흐름에서는 아래 `verify` 산출물을 후속 명령에 전달한다.
+
+Rule L1/L6 lint safeguard는 Phase 0 `check`에서도 `review_queue.json`에 기록된다.
+`--review-queue-out`을 생략하면 `--out` 옆에 생성되며, Rule 0 clean 실행에서
+finding이 없으면 빈 queue로 갱신되어 이전 검토 항목이 남지 않는다.
+현재 Phase 0 출력은 lint safeguard 전용이다. 아직 미구현인 `compact` /
+`verify`의 통합 queue와 병합하는 동작은 Phase 2에서 추가되므로, 그 전에는
+기존 통합 queue 경로를 `--review-queue-out`으로 덮어쓰지 않는다.
 
 ### 3. 에이전트 실행 포함 전체 흐름 (Phase 2/3)
 
@@ -162,7 +170,7 @@ gate (external final decision)
   - `ai_judgement` (default): reference integrity만, 의미는 read-only verifier-agent 제안과 최종 human review로 확인
 - **semantic_verifications.yaml**: verifier-agent 복수 run의 `supported` / `rejected` / `uncertain` 제안 취합. compacted link는 수정하지 않음
 - **integrity_diagnostics.json**: Rule 0 위반 기록
-- **review_queue.json**: `invalid_run` / `ai_judgement_pending` / `identity_collision` / `low_support` / `semantic_disclosure` 5종 entry
+- **review_queue.json**: 기존 검토 entry 5종과 lint safeguard `double_scoring_review` / `mandatory_spec_bonus_review`. Phase 0에서는 구현된 Rule L1의 `double_scoring_review`를 `check`가 생성
 - **findings.json**: Rule 1~3 위반 (Rule 0는 별도 diagnostic)
 - **final_review/**: 최종 검토자의 accept/hold/rerun/override 기록
 - **gate output**: final review 이후 외부 호출자가 소비하는 pass/fail/pending 판정
@@ -222,7 +230,7 @@ CLI는 `--policy config/policy.yaml` 하나로 모든 정책을 받는다.
 
 | Phase | 범위 | 상태 |
 |---|---|---|
-| 0 | Deterministic validation core (Rule 0~3, 수동 fixture) | 진행 중 (Rule 0 + Rule 1 전체 분기 (`possible_orphan_scored_rubric_item`, `unconfirmed_trace_coverage`, `orphan_bonus_rubric_item`) 완료. Rule 2, Rule 3, `gate` 대기) |
+| 0 | Deterministic validation core (Rule 0~3 + lint, 수동 fixture) | 진행 중 (Rule 0 + Rule 1 전체 분기 + Rule L1 `double_scored_spec` 완료. Rule L5/L6, Rule 2/3, `gate` 대기) |
 | 1 | 실제 과제 manual run | Phase 0 후 |
 | 2 | Candidate/verifier agent multi-run + compacting | Phase 1 후 |
 | 3 | Final human review + `gate` + caller agent 시연 | Phase 2 후 |
@@ -235,7 +243,7 @@ CLI는 `--policy config/policy.yaml` 하나로 모든 정책을 받는다.
 
 | 문서 | 역할 |
 |---|---|
-| [docs/implementation_plan_assessment_harness_poc_v1.md](docs/implementation_plan_assessment_harness_poc_v1.md) | **구현 명세 (1순위 SoT)** — 현재 v1.11 |
+| [docs/implementation_plan_assessment_harness_poc_v1.md](docs/implementation_plan_assessment_harness_poc_v1.md) | **구현 명세 (1순위 SoT)** — 현재 v1.12 |
 | [docs/ideation_assessment_harness_v2.2.md](docs/ideation_assessment_harness_v2.2.md) | Rubric Lint Rules 가족 (2순위, 2026-05-27 final + in-place 개정) |
 | [docs/ideation_assessment_harness_v2.1.md](docs/ideation_assessment_harness_v2.1.md) | 제품 목적과 장기 방향 (3순위) |
 | [docs/ideation_assessment_harness_v2.md](docs/ideation_assessment_harness_v2.md) | historical reference |

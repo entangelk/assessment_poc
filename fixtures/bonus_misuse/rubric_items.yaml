@@ -1,0 +1,31 @@
+rubric_items:
+  - id: R1
+    title: "Required refund handling"
+    description: "Scores the documented refund behavior."
+    evaluation_role: scored
+    weight: 10
+    evidence_required: [code]
+    source_ref:
+      document_id: DOC_RUBRIC
+      start_line: 1
+      end_line: 1
+  - id: RB1
+    title: "Bonus for polished refund handling"
+    description: "Rewards polish on the same documented refund behavior."
+    evaluation_role: bonus
+    weight: 2
+    evidence_required: [code]
+    source_ref:
+      document_id: DOC_RUBRIC
+      start_line: 2
+      end_line: 2
+  - id: RB2
+    title: "Bonus request dashboard"
+    description: "Rewards the distinct optional dashboard."
+    evaluation_role: bonus
+    weight: 1
+    evidence_required: [code]
+    source_ref:
+      document_id: DOC_RUBRIC
+      start_line: 3
+      end_line: 3

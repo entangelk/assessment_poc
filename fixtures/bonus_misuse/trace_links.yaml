@@ -1,0 +1,25 @@
+trace_links:
+  - rubric_id: R1
+    spec_ids: [S1]
+    rationale: "R1 scores the stated refund requirement."
+    evidence_quotes:
+      - spec_id: S1
+        quote: "Implement refund handling for cancelled orders."
+        verification_mode: token_sequence
+    semantic_status: pending_verification
+  - rubric_id: RB1
+    spec_ids: [S1]
+    rationale: "RB1 applies bonus credit to the same refund requirement."
+    evidence_quotes:
+      - spec_id: S1
+        quote: "Implement refund handling for cancelled orders."
+        verification_mode: token_sequence
+    semantic_status: pending_verification
+  - rubric_id: RB2
+    spec_ids: [S2]
+    rationale: "RB2 applies only to the separate optional dashboard."
+    evidence_quotes:
+      - spec_id: S2
+        quote: "Provide a request timing dashboard."
+        verification_mode: token_sequence
+    semantic_status: pending_verification

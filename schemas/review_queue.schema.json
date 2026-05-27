@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://assessment-harness/review_queue.schema.json",
+  "title": "Review Queue",
+  "description": "Human-review work items. Phase 0 writes deterministic lint safeguard entries; later phases add compacting and verifier entries.",
+  "type": "object",
+  "required": ["review_queue"],
+  "properties": {
+    "review_queue": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/entry" }
+    },
+    "generated_at": { "type": "string" }
+  },
+  "additionalProperties": true,
+  "$defs": {
+    "entry": {
+      "type": "object",
+      "required": ["entry_id", "type", "target", "reason", "related_runs", "status"],
+      "properties": {
+        "entry_id": { "type": "string", "minLength": 1 },
+        "type": {
+          "type": "string",
+          "enum": [
+            "invalid_run",
+            "ai_judgement_pending",
+            "identity_collision",
+            "low_support",
+            "semantic_disclosure",
+            "double_scoring_review",
+            "mandatory_spec_bonus_review"
+          ]
+        },
+        "target": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "reason": { "type": "string", "minLength": 1 },
+        "related_runs": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "status": {
+          "type": "string",
+          "enum": ["open", "held", "rerun_pending", "resolved"]
+        }
+      },
+      "additionalProperties": true
+    }
+  }
+}

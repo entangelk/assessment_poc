@@ -1,8 +1,8 @@
 """Deterministic rule engine.
 
-Phase 0 ships Rule 0 (Reference Integrity Diagnostic) plus a first slice of
-Rule 1 (Scored Rubric Coverage). Remaining Rule 1 branches (unconfirmed
-coverage, bonus informational) and Rules 2-3 land in following iterations.
+Phase 0 ships Rule 0 (Reference Integrity Diagnostic), Rule 1 (Scored Rubric
+Coverage), and incremental lint-family slices. Rules 2-3 land in following
+iterations.
 
 Each rule consumes already-schema-validated dict inputs and returns a list of
 :class:`Diagnostic` or :class:`Finding` records. Severity and decision status
@@ -41,6 +41,8 @@ class Finding:
     message: str
     rubric_id: str | None = None
     spec_id: str | None = None
+    scored_rubric_id: str | None = None
+    bonus_rubric_id: str | None = None
     trace_link_ref: dict[str, Any] | None = None
     evidence: dict[str, Any] | None = None
 
@@ -55,6 +57,10 @@ class Finding:
             data["rubric_id"] = self.rubric_id
         if self.spec_id is not None:
             data["spec_id"] = self.spec_id
+        if self.scored_rubric_id is not None:
+            data["scored_rubric_id"] = self.scored_rubric_id
+        if self.bonus_rubric_id is not None:
+            data["bonus_rubric_id"] = self.bonus_rubric_id
         if self.trace_link_ref is not None:
             data["trace_link_ref"] = self.trace_link_ref
         if self.evidence is not None:
@@ -577,7 +583,7 @@ def run_rule_one(
     rubric_items_doc: dict[str, Any],
     trace_links_doc: dict[str, Any],
 ) -> list[Finding]:
-    """Scored Rubric Coverage (plan v1.10 §6 Rule 1).
+    """Scored Rubric Coverage (plan v1.12 §6 Rule 1).
 
     Phase 0 emits three provisional branches:
 
@@ -684,6 +690,107 @@ def run_rule_one(
         )
 
     return findings
+
+
+def run_rule_l1(
+    rubric_items_doc: dict[str, Any],
+    trace_links_doc: dict[str, Any],
+) -> tuple[list[Finding], list[dict[str, Any]]]:
+    """Cross-role Double Scoring (plan v1.12 §6 Rule L1).
+
+    L1 is structural: semantic statuses are exposed as review evidence but
+    do not affect whether the same spec is traced from both scored and bonus
+    rubric items.
+    """
+    rubrics = {
+        rubric["id"]: rubric
+        for rubric in rubric_items_doc.get("rubric_items", [])
+        if rubric.get("id")
+    }
+    traced_by_spec: dict[str, dict[str, dict[str, list[dict[str, Any]]]]] = {}
+    for link in trace_links_doc.get("trace_links", []):
+        rubric = rubrics.get(link.get("rubric_id"))
+        if rubric is None:
+            continue
+        role = rubric.get("evaluation_role")
+        if role not in {"scored", "bonus"}:
+            continue
+        for spec_id in link.get("spec_ids", []):
+            traced_by_spec.setdefault(spec_id, {}).setdefault(role, {}).setdefault(
+                rubric["id"], []
+            ).append(link)
+
+    findings: list[Finding] = []
+    review_queue: list[dict[str, Any]] = []
+    for spec_id, by_role in traced_by_spec.items():
+        scored_links = by_role.get("scored", {})
+        bonus_links = by_role.get("bonus", {})
+        for scored_id, scored_for_pair in scored_links.items():
+            for bonus_id, bonus_for_pair in bonus_links.items():
+                scored_rubric = rubrics[scored_id]
+                bonus_rubric = rubrics[bonus_id]
+                findings.append(
+                    Finding(
+                        type="double_scored_spec",
+                        severity="medium",
+                        decision_status="provisional",
+                        spec_id=spec_id,
+                        scored_rubric_id=scored_id,
+                        bonus_rubric_id=bonus_id,
+                        message=(
+                            f"spec_item {spec_id!r} is traced by scored rubric_item "
+                            f"{scored_id!r} and bonus rubric_item {bonus_id!r}; "
+                            "review possible double scoring."
+                        ),
+                        evidence={
+                            "scored_rubric": {
+                                "id": scored_id,
+                                "title": scored_rubric.get("title"),
+                                "description": scored_rubric.get("description"),
+                                "text": scored_rubric.get("text"),
+                                "semantic_statuses": [
+                                    link.get("semantic_status")
+                                    for link in scored_for_pair
+                                ],
+                            },
+                            "bonus_rubric": {
+                                "id": bonus_id,
+                                "title": bonus_rubric.get("title"),
+                                "description": bonus_rubric.get("description"),
+                                "text": bonus_rubric.get("text"),
+                                "semantic_statuses": [
+                                    link.get("semantic_status")
+                                    for link in bonus_for_pair
+                                ],
+                            },
+                        },
+                    )
+                )
+                related_runs = sorted(
+                    {
+                        run_id
+                        for link in scored_for_pair + bonus_for_pair
+                        for run_id in link.get("support", {}).get("found_in_runs", [])
+                    }
+                )
+                review_queue.append(
+                    {
+                        "entry_id": f"rq_double_scoring_{spec_id}_{scored_id}_{bonus_id}",
+                        "type": "double_scoring_review",
+                        "target": {
+                            "spec_id": spec_id,
+                            "scored_rubric_id": scored_id,
+                            "bonus_rubric_id": bonus_id,
+                        },
+                        "reason": (
+                            f"Spec item {spec_id!r} is traced by both scored rubric "
+                            f"{scored_id!r} and bonus rubric {bonus_id!r}."
+                        ),
+                        "related_runs": related_runs,
+                        "status": "open",
+                    }
+                )
+    return findings, review_queue
 
 
 def severity_counts(diagnostics: list[Diagnostic]) -> dict[str, int]:

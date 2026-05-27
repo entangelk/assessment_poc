@@ -14,6 +14,7 @@ from pathlib import Path
 import pytest
 
 from assessment_harness.cli import main
+from assessment_harness.schemas import validate
 
 
 def _run_check(
@@ -99,6 +100,8 @@ def test_clean_assignment_yields_pre_review_unconfirmed_trace_coverage(
     assert envelope["provisional_high_count"] == 0
     assert envelope["provisional_medium_count"] == 2
     assert envelope["provisional_informational_count"] == 0
+    assert envelope["review_queue_count"] == 0
+    assert Path(envelope["review_queue_path"]).exists()
 
 
 def test_orphan_scored_rubric_fixture_emits_all_three_rule_one_branches(
@@ -176,3 +179,62 @@ def test_reference_integrity_fixture_blocks_with_exit_two(
     missing = expected - codes
     assert not missing, f"missing diagnostic codes: {missing}"
     assert diagnostics["summary"]["high"] >= len(expected)
+
+
+def test_cross_role_double_scoring_emits_l1_finding_and_review_queue(
+    fixture_dir: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Rule L1 under-strict and public-contract guard: shared S1 coverage
+    across scored R1 and bonus RB1 emits the medium lint finding and its
+    required paired review queue entry. RB2 traces only S2, which guards
+    against treating different spec IDs as double scoring.
+    """
+    root = fixture_dir / "bonus_misuse"
+    out = tmp_path / "findings.json"
+    diag = tmp_path / "integrity_diagnostics.json"
+    queue_path = tmp_path / "review_queue.json"
+    code = main(
+        [
+            "--output",
+            "json",
+            "check",
+            "--spec-items",
+            str(root / "spec_items.yaml"),
+            "--rubric-items",
+            str(root / "rubric_items.yaml"),
+            "--trace-links",
+            str(root / "trace_links.yaml"),
+            "--source-manifest",
+            str(root / "source_manifest.yaml"),
+            "--policy",
+            str(root / "policy.yaml"),
+            "--out",
+            str(out),
+            "--diagnostics-out",
+            str(diag),
+        ]
+    )
+    envelope = json.loads(capsys.readouterr().out)
+    findings = json.loads(out.read_text(encoding="utf-8"))
+    queue = json.loads(queue_path.read_text(encoding="utf-8"))
+    assert code == 0
+    assert envelope["review_queue_path"] == str(queue_path)
+    assert envelope["review_queue_count"] == 1
+    assert envelope["provisional_medium_count"] == 2
+    assert {
+        (a["type"], a.get("spec_id")) for a in envelope["next_actions"]
+    } >= {("review_double_scoring", "S1")}
+    assert validate("review_queue", queue) == []
+    assert validate("findings", findings) == []
+
+    l1 = [f for f in findings["findings"] if f["type"] == "double_scored_spec"]
+    assert len(l1) == 1
+    assert l1[0]["spec_id"] == "S1"
+    assert l1[0]["scored_rubric_id"] == "R1"
+    assert l1[0]["bonus_rubric_id"] == "RB1"
+    assert queue["review_queue"][0]["type"] == "double_scoring_review"
+    assert queue["review_queue"][0]["target"] == {
+        "spec_id": "S1",
+        "scored_rubric_id": "R1",
+        "bonus_rubric_id": "RB1",
+    }

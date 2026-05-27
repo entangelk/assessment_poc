@@ -2,12 +2,12 @@
 
 ## Current Status
 
-- Implementation plan is at v1.11 (`docs/implementation_plan_assessment_harness_poc_v1.md`) and is the canonical implementation source of truth, ahead of `docs/ideation_assessment_harness_v2.2.md` (revised in-place 2026-05-27, supersedes v2.1).
+- Implementation plan is at v1.12 (`docs/implementation_plan_assessment_harness_poc_v1.md`) and is the canonical implementation source of truth, ahead of `docs/ideation_assessment_harness_v2.2.md` (revised in-place 2026-05-27, supersedes v2.1).
 - **Rule 0 is live**: source snapshot grounding, evidence completeness/reference-integrity checks, mandatory `--source-manifest`, and structured invalid-input recovery are implemented.
-- **Rule 1 is feature-complete** (plan v1.11 §6): `possible_orphan_scored_rubric_item`, `unconfirmed_trace_coverage`, and `orphan_bonus_rubric_item` are all implemented. The CLI exposes their review actions and provisional severity counts; slice 3.1 locks the public envelope/schema contract, including the bonus-only `(high=0, medium=0, informational=1)` boundary.
-- **Pending implementation**: Rule 2, Rule 3, and `gate`. Rule 2/3 remain structural rules and must not inherit Rule 1's `semantic_status` coverage boundary.
-- **Lint Rule family added to spec (plan v1.11, 2026-05-27)**: §6 of plan v1.11 now specs Rule L1 (`double_scored_spec`, medium), L5 (`bonus_grades_mandatory_only`, medium), L6 (`mandatory_spec_bonus_only_traced`, high) — all L-DET, all spec-only. Code not yet written. §5.6 adds `drift_observations[]` to Final Review Record (manual channel for Rule L8 territory). §5.7 adds `double_scoring_review` and `mandatory_spec_bonus_review` review_queue entry types. Source: ideation v2.2.
-- Package surface: `check` / `schema` / `report` subcommands, eight JSON Schemas, three fully-grounded fixtures (`clean_assignment`, `reference_integrity`, `orphan_scored_rubric` with R3 bonus untraced), and 98 passing tests. Docker is the canonical dev environment.
+- **Rule 1 is feature-complete** (plan v1.12 §6): `possible_orphan_scored_rubric_item`, `unconfirmed_trace_coverage`, and `orphan_bonus_rubric_item` are all implemented. The CLI exposes their review actions and provisional severity counts; slice 3.1 locks the public envelope/schema contract, including the bonus-only `(high=0, medium=0, informational=1)` boundary.
+- **Rule L1 is implemented** (plan v1.12 §6): `double_scored_spec` is emitted as medium/provisional when the same spec is traced by scored and bonus rubrics. The finding includes paired rubric context, and `check` writes paired `double_scoring_review` entries through the new `review_queue` contract.
+- **Pending implementation**: Rule L5, Rule L6, Rule 2, Rule 3, and `gate`. Rule 2/3 remain structural rules and must not inherit Rule 1's `semantic_status` coverage boundary.
+- Package surface: `check` / `schema` / `report` subcommands, nine JSON Schemas, four fully-grounded fixtures (`clean_assignment`, `reference_integrity`, `orphan_scored_rubric`, `bonus_misuse`), and 102 passing tests. Docker is the canonical dev environment.
 - The PoC is an **agent-level harness**: the 1st-class caller is an AI agent (Claude Code / Codex / Gemini), not a human. Humans participate only as final reviewers.
 - The final workflow is `extract --runs N -> compact -> verify --runs N -> check -> report -> review -> gate`. Compacting is a **union-based audit operation**: every valid candidate is preserved with `support` / `identity_basis` / `variants`.
 
@@ -34,14 +34,14 @@ docker compose run --rm harness --output json check \
 
 ## Active Decisions (Adopted)
 
-- **Canonical specification**: v1.11 implementation plan first, then `v2.2` ideation (revised in-place 2026-05-27). v2.1 and earlier ideation versions are historical; v2.2 supersedes v2.1 in any overlapping area without area limits.
-- **Rule 1 finding type naming convention** (plan v1.11 §6): no-trace findings follow `{prefix_}orphan_{role}_rubric_item`. `possible_` prefix marks scored items because `gate` may promote them to confirmed; bonus / qualitative have no symmetric promotion path so prefix is omitted. Any future Rule 1 extension applies the same convention without re-deciding the literal.
-- **`--source-manifest` is a required `check` input** (plan v1.11 §5.0 / §5.1 / §11): Phase 0 mandates immutable source snapshot grounding. Missing manifest → `status=invalid_input` / exit `2` / diagnostic `source_manifest_required` / next_action `provide_source_manifest`. argparse keeps the flag declared as `default=None` so caller agents always receive the structured envelope on stdout instead of argparse's usage text on stderr.
-- **Rule 1 final-coverage boundary** (plan v1.11 §6 Rule 1, §5.3.1): the only `semantic_status` values that count as final coverage for Rule 1 are `human_accepted` and `human_overridden`. Everything else — pre-review (`pending_verification`, `agent_*`) and post-review non-coverage (`human_rejected`, `rerun_requested`) — surfaces as `unconfirmed_trace_coverage` (medium / provisional) in `check`. `gate` is the only stage that may promote persistent non-coverage into a confirmed `orphan_scored_rubric_item`. **This boundary applies to Rule 1 and `gate` only.** Rule 2 and Rule 3 do not consult `semantic_status` (they use the structural conditions in plan §6 Rule 2 / Rule 3). Lint family (Rule L1/L5/L6) also does not consult `semantic_status` — L-DET, structural only.
-- **Lint family naming convention** (plan v1.11 §6, ideation v2.2 §3): family prefix `Rule L*`; finding types follow ideation candidates verbatim (`double_scored_spec`, `bonus_grades_mandatory_only`, `mandatory_spec_bonus_only_traced`) — readability over uniformity with Rule 1's `{prefix}_{role}_rubric_item` pattern. Owner-confirmed.
-- **Lint safeguard mechanism** (plan v1.11 §6 Rule L1 / L6): medium/high lint findings carry both extended payload (full context for human review) AND a paired `review_queue` entry (`double_scoring_review` for L1, `mandatory_spec_bonus_review` for L6). Single mechanism reused across L1 and L6 — adding either rule first creates the schema/code path, the other reuses it.
+- **Canonical specification**: v1.12 implementation plan first, then `v2.2` ideation (revised in-place 2026-05-27). v2.1 and earlier ideation versions are historical; v2.2 supersedes v2.1 in any overlapping area without area limits.
+- **Rule 1 finding type naming convention** (plan v1.12 §6): no-trace findings follow `{prefix_}orphan_{role}_rubric_item`. `possible_` prefix marks scored items because `gate` may promote them to confirmed; bonus / qualitative have no symmetric promotion path so prefix is omitted. Any future Rule 1 extension applies the same convention without re-deciding the literal.
+- **`--source-manifest` is a required `check` input** (plan v1.12 §5.0 / §5.1 / §11): Phase 0 mandates immutable source snapshot grounding. Missing manifest → `status=invalid_input` / exit `2` / diagnostic `source_manifest_required` / next_action `provide_source_manifest`. argparse keeps the flag declared as `default=None` so caller agents always receive the structured envelope on stdout instead of argparse's usage text on stderr.
+- **Rule 1 final-coverage boundary** (plan v1.12 §6 Rule 1, §5.3.1): the only `semantic_status` values that count as final coverage for Rule 1 are `human_accepted` and `human_overridden`. Everything else — pre-review (`pending_verification`, `agent_*`) and post-review non-coverage (`human_rejected`, `rerun_requested`) — surfaces as `unconfirmed_trace_coverage` (medium / provisional) in `check`. `gate` is the only stage that may promote persistent non-coverage into a confirmed `orphan_scored_rubric_item`. **This boundary applies to Rule 1 and `gate` only.** Rule 2 and Rule 3 do not consult `semantic_status` (they use the structural conditions in plan §6 Rule 2 / Rule 3). Lint family (Rule L1/L5/L6) also does not consult `semantic_status` — L-DET, structural only.
+- **Lint family naming convention** (plan v1.12 §6, ideation v2.2 §3): family prefix `Rule L*`; finding types follow ideation candidates verbatim (`double_scored_spec`, `bonus_grades_mandatory_only`, `mandatory_spec_bonus_only_traced`) — readability over uniformity with Rule 1's `{prefix}_{role}_rubric_item` pattern. Owner-confirmed.
+- **Lint safeguard mechanism** (plan v1.12 §5.7 / §6 Rule L1 / L6): medium/high lint findings carry both extended payload and a paired `review_queue` entry. Owner resolved the Phase 0/Phase 2 wording conflict by allowing deterministic lint safeguard queue artifacts in Phase 0 `check`; Rule 0 clean runs write an empty queue when no entry fires to avoid stale review state. L1 implements `double_scoring_review`; L6 will reuse the path for `mandatory_spec_bonus_review`.
 - **`clean_assignment` is an automation-only baseline**: trace links stay on `pending_verification` so the fixture matches the state a real agent run produces. The canonical pre-review outcome is therefore `status=provisional_findings` with N medium `unconfirmed_trace_coverage` findings, not `status=success`. Reaching `success` requires final-review evidence, which Phase 3 will supply.
-- **Rule 0 evidence verification**: per-entry `verification_mode`. `token_sequence` for opt-in strict substring matching of pre-inserted quantitative markers; `ai_judgement` is the PoC default and routes semantic checks through `review_queue` and the verifier-agent stage.
+- **Rule 0 evidence verification**: per-entry `verification_mode`. `token_sequence` performs opt-in strict substring matching of pre-inserted quantitative markers; `ai_judgement` is the PoC default. Phase 0 keeps `ai_judgement` links pending; Phase 2 will route them through `ai_judgement_pending` queue entries and the verifier-agent stage.
 - **CLI output stability**: four-field stable core (`status`, `exit_code`, `command`, `next_actions`) plus informational fields with a `schema --command <name>` self-discovery command.
 - **Policy unification**: `config/policy.yaml` is the single policy file with `rules`, `compacting`, `runs`, and `verification` sections.
 - **Compacting model**: union of every valid candidate with `support` / `identity_basis` / `variants` preserved. No quorum, no automatic acceptance, no automatic exclusion.
@@ -76,24 +76,25 @@ docker compose run --rm harness --output json check \
 - Tool side-effect policy: read-only tools only, vs propose-tools that write directly to candidate files, vs runner that collects and emits in one batch.
 - Raw trace retention / redaction / access policy (especially for non-public rubric content).
 - Override usage scope: typo/omission only, or allow semantic overrides (semantic overrides should normally trigger `rerun_requested`).
+- Review queue composition at Phase 2: Phase 0 `--review-queue-out` currently writes the lint-safeguard artifact. When `compact`/`verify` queue generation lands, add merge/update behavior that retains upstream queue entries before routing all review work through one file.
 
 ## Next Tasks
 
 ### Sequencing Decision (Owner, 2026-05-27)
 
-**Lint family (Rule L1 → L5 → L6) goes first; Rule 2/3 follows once the lint scaffolding is in place.**
+**Lint family continues with Rule L5 → L6; Rule L1 is complete. Rule 2/3 follows once lint is in place.**
 
-Rationale: lint family introduces new schema surface (finding payload extensions for L1/L6, two new `review_queue` entry types, new `next_actions` literals, possibly `review_queue.schema.json` first appearance) that Rule 2/3 will then reuse. Building the scaffolding inside the lint slices avoids Rule 2/3 having to invent contract surface that lint would have introduced anyway. This is framed as *synchronization* — lint folds into the existing rule pipeline rather than running parallel to it.
+Rationale: Rule L1 has now introduced the lint schema/output foundation (`review_queue.schema.json`, payload IDs, queue envelope fields, first lint action). L5/L6 should extend that path before Rule 2/3 resumes, keeping lint synchronized with the existing rule pipeline rather than splitting into a parallel contract.
 
 After the lint family lands, Rule 2 / Rule 3 / `gate` (Phase 3) resume in the order their sections below describe. The "Rule 2 finding type literal and CLI next_action literal" decision (see Rule 2 section) is deferred until Rule 2 slice entry, not now.
 
-### Publication Boundary (2026-05-26)
+### Publication Boundary (2026-05-27)
 
-Slice 3.1 completed at `fbe1a78`; `fa71c7e` then added session-handoff notes. During independent review, the owner authorized publishing the verified batch. This section supersedes the earlier "push deferred / seven commits ahead" snapshot, which was already stale once the handoff-note commit existed.
+Rule L1 plus the plan v1.12 contract resolution has passed the owner's independent AI verification, and the owner authorized publishing this batch to `origin/main`. `.serena/` remains local onboarding metadata and is not part of the published implementation batch.
 
-### Rule 2 — Required Spec Coverage (next slice, expected smallest unit)
+### Rule 2 — Required Spec Coverage (after lint family, expected smallest unit)
 
-- **Spec source**: plan v1.11 §6 Rule 2 (`docs/implementation_plan_assessment_harness_poc_v1.md`).
+- **Spec source**: plan v1.12 §6 Rule 2 (`docs/implementation_plan_assessment_harness_poc_v1.md`).
 - **Condition**: a `spec_item` with `requirement_level == "must"` that no `scored` rubric_item traces to.
 - **Trace direction**: walk `trace_links`, collect every `spec_id` referenced from any link whose `rubric_id` resolves to a rubric with `evaluation_role == "scored"`. Then for each `must` spec, check whether its `id` is in that set. If not → finding.
 - **Output contract — Owner recommendation (2026-05-27)**:
@@ -102,8 +103,8 @@ Slice 3.1 completed at `fbe1a78`; `fa71c7e` then added session-handoff notes. Du
   - Rationale: Rule 2 is a coverage-gap finding, not a no-trace orphan, so the Rule 1 `orphan_*` family is semantically wrong. `uncovered_*` parallels Rule 1's `_rubric_item` suffix (here `_spec_item`) and stays distinct from the lint family's descriptor-style names (`double_scored_spec`, etc.).
   - **Implementer-AI intervention rule**: the executing AI may refine the exact wording within the same convention family (`uncovered_*` / `missing_*` style, with `_spec_item` suffix and `review_` prefix for next_action). Stepping outside that family (e.g. switching to a `_rubric_item` suffix or to a `double_*` descriptor) requires owner re-confirmation.
   - **Lock point**: literal is frozen at the merge of the slice that introduces Rule 2. Pre-merge adjustments are free, post-merge changes are breaking and require a deprecation path.
-  - **Plan body update is part of the Rule 2 slice**: amend plan v1.12 §6 Rule 2 to list the final literal pair (and this rule) before merging. Do not ship code that emits a finding type whose literal isn't in the canonical plan.
-- **CRITICAL — structural only**: do NOT consult `semantic_status`. The Rule 1 final-coverage boundary does NOT transfer to Rule 2. Plan v1.11 §6 scope clause (carried unchanged from v1.10) explicitly excludes this. If you find yourself filtering trace_links by `human_accepted` here, stop and re-read §6 Rule 2.
+  - **Plan body update is part of the Rule 2 slice**: amend the then-current plan §6 Rule 2 to list the final literal pair before merging. Do not ship code that emits a finding type whose literal isn't in the canonical plan.
+- **CRITICAL — structural only**: do NOT consult `semantic_status`. The Rule 1 final-coverage boundary does NOT transfer to Rule 2. Plan v1.12 §6 scope clause explicitly excludes this. If you find yourself filtering trace_links by `human_accepted` here, stop and re-read §6 Rule 2.
 - **Fixture**: build `fixtures/uncovered_must_spec/` per plan §7 (rename mirrors the owner-recommended literal; the executing AI may rename if the literal changes within the convention family). Should contain a `must` spec that no `scored` rubric traces to. Optionally include another `must` spec WITH coverage (to verify over-strict). Same source/manifest layout as `orphan_scored_rubric`.
 - **Two-directional guards required** (plan §10.1, CLAUDE.md §4):
   - Under-strict: must spec without scored trace → finding emitted.
@@ -127,18 +128,19 @@ Slice 3.1 completed at `fbe1a78`; `fa71c7e` then added session-handoff notes. Du
 - Implement after `final_review.schema.json` (Phase 3 entry point). `gate` is the only stage that may promote persistent `unconfirmed_trace_coverage` (medium / provisional) into `orphan_scored_rubric_item` (high / confirmed). Same promotion path applies to lint-family `provisional` → `confirmed` (Rule L1/L5 medium → confirmed, Rule L6 high → confirmed).
 - Real-assignment permissions and Phase 2 runner/retention parameters resolve here too.
 
-### Lint family (Rule L1 → L5 → L6) — plan v1.11 §6 — **NEXT TRACK**
+### Lint family (Rule L5 → L6) — plan v1.12 §6 — **NEXT TRACK**
 
-- **Spec status**: complete in plan v1.11 §6 (each rule has condition / result / safeguard / regression guards). Code not started.
+- **Spec status**: complete in plan v1.12 §6. Rule L1 is implemented; L5/L6 are not yet written.
 - **Sequencing**: this is the next track per owner decision above. Treat as scaffolding work that synchronizes lint into the existing rule pipeline.
-- **Slice order**: L1 → L5 → L6 (Rule 1 slice 1/2/3 pattern). **L1 is the heavy slice** — it introduces (a) finding payload extensions on `findings.schema.json`, (b) `review_queue` first concrete entry-type beyond plan §5.7 enum (likely first appearance of `review_queue.schema.json`), (c) new `next_actions` literal + schema-contract assertion. Consider a slice 1.5 split if L1 grows beyond reviewable size, mirroring how Rule 1 spawned slice 1.5 for `--source-manifest`.
-- **L5 is the light slice** — reuses L1's payload/review_queue mechanism, only a new finding type + condition predicate.
+- **L1 landed**: introduced `findings.schema.json` payload IDs, `review_queue.schema.json`, default/overridden `--review-queue-out` artifact handling, `review_double_scoring`, and grounded `fixtures/bonus_misuse/`.
+- **L5 is the next light slice** — reuses the L1 plumbing, adding only its finding type, condition predicate, action, and fixture/test extensions.
 - **L6 is medium** — new finding type, new `mandatory_spec_bonus_review` review_queue type, payload similar to L1 but with `bonus_rubric_ids[]` array instead of single id.
+- **Phase 2 follow-through**: do not aim `--review-queue-out` at a future compact/verifier queue until composition preserves existing non-lint entries; the current output is the Phase 0 lint-safeguard artifact.
 - **Fixture**: single shared fixture (e.g. `fixtures/bonus_misuse/`) covering all three L1/L5/L6 branches plus over-strict guards, mirroring how `orphan_scored_rubric` covers Rule 1's three branches. **Critical**: fixture and tests must visualize the mutual-exclusion / co-firing boundary between Rule 1 `orphan_bonus_rubric_item`, Rule L5 `bonus_grades_mandatory_only`, and Rule L6 `mandatory_spec_bonus_only_traced` — all three touch bonus rubrics on different conditions and reviewers must not confuse them.
 - **CLI envelope**: each lint finding type adds a `next_actions` literal (`review_double_scoring`, `review_bonus_mandatory_only`, `review_mandatory_spec_bonus_only`) and may add severity counts as needed. Schema-contract test (`schema --command check`) must be extended in lockstep — see "Test-surface lessons" below.
-- **`drift_observations[]` (plan v1.11 §5.6) is paper spec ahead**: spec-defined for Rule L8 manual-discovery channel but `final_review.schema.json` doesn't exist (Phase 3 work). Implementation lands when `gate`/final_review lands, not in lint slices. Do NOT implement during lint work; do NOT delete the spec either — it documents L8 owner decision.
+- **`drift_observations[]` (plan v1.12 §5.6) is paper spec ahead**: spec-defined for Rule L8 manual-discovery channel but `final_review.schema.json` doesn't exist (Phase 3 work). Implementation lands when `gate`/final_review lands, not in lint slices. Do NOT implement during lint work; do NOT delete the spec either — it documents L8 owner decision.
 
-### v1.12+ lint extensions (post-v1.11, owner decision required before entry)
+### Post-L6 lint extensions (owner decision required before entry)
 
 - Rule L2 (`bonus_weight_encroachment`, policy threshold), Rule L4 (`duplicate_trace_link`, lint-independent — NOT absorbed into Rule 0 per owner), Rule L7 + C1 (`forbidden_clause_rewarded` + `requirement_level: forbidden` schema extension). All specced in ideation v2.2 §4-§6 but not in plan §6 yet.
 - Sole remaining ideation §9.2 open decision: L7-DET vs L7-SEM priority (resolved at L7 plan-promotion time).
@@ -149,8 +151,10 @@ When adding any new envelope field, next_action type, or schema-contract entry, 
 
 ## Verification
 
-- 98 collected tests pass independently re-run during post-slice-3.1 review (`docker compose run --rm test`). Slice 3.1 correctly adds envelope-shape assertions to all three fixture E2E tests, full-set assertions on the `schema --command check` contract, and a bonus-only boundary E2E that locks `(high=0, medium=0, informational=1)`.
-- Smoke runs independently repeated during the same review:
+- 102 tests pass after Rule L1 implementation (`docker compose run --rm test -q`); focused rule/contract/fixture suite also passes (`docker compose run --rm test tests/test_rules.py tests/test_cli_output_contract.py tests/test_fixtures.py -q`).
+- `schema --command check --output json` exposes `review_double_scoring` plus informational `review_queue_path` and `review_queue_count`.
+- Smoke runs for the current state:
+  - `check` on grounded `fixtures/bonus_misuse`: exit `0`, `status=provisional_findings`; `unconfirmed_trace_coverage` on R1 and `double_scored_spec` on S1/R1/RB1; `review_queue_count=1`, paired action `review_double_scoring`; `(high=0, medium=2, informational=0)`.
   - `check` on grounded `fixtures/orphan_scored_rubric` with manifest: exit `0`, `status=provisional_findings`, all three Rule 1 branches visible — `unconfirmed_trace_coverage` on R1 (medium), `possible_orphan_scored_rubric_item` on R2 (high), `orphan_bonus_rubric_item` on R3 (informational). `provisional_high_count=1`, `provisional_medium_count=1`, `provisional_informational_count=1`.
   - `check` on grounded `fixtures/clean_assignment` with manifest: exit `0`, `status=provisional_findings`, two `unconfirmed_trace_coverage` findings on R1 and R2.
   - `check` on grounded `fixtures/reference_integrity` with manifest: exit `2`, `status=invalid_input`, all eight Rule 0 violation codes present (`high_integrity_count=9` because `evidence_quote_missing_for_spec_id` fires twice; pre-existing duplicate, not a regression).
@@ -169,14 +173,15 @@ When adding any new envelope field, next_action type, or schema-contract entry, 
   - `rules.py`: Rule 0 reference-integrity engine and Rule 1 (`possible_orphan_scored_rubric_item` + `unconfirmed_trace_coverage` + `orphan_bonus_rubric_item`; all three branches live). `HUMAN_ACCEPTED_SEMANTIC_STATUSES` module constant locks the Rule-1-only final-coverage boundary. Rules 2-3 to follow.
   - `schemas.py`: schema loader with `ASSESSMENT_HARNESS_SCHEMA_DIR` env override.
   - `report.py`: Markdown renderer.
-- `schemas/`: eight JSON Schemas (source_manifest, spec_items, rubric_items, trace_links, policy, findings, integrity_diagnostics, cli_output).
+- `schemas/`: nine JSON Schemas, including `review_queue.schema.json` introduced with Rule L1.
 - `config/policy.yaml`: default policy.
 - `fixtures/clean_assignment/`: passing fixture with source manifest, sha256, spec.md, rubric.md.
 - `fixtures/reference_integrity/`: grounded failing fixture covering all eight current Rule 0 diagnostic codes; carries its own `source/spec.md`, `source/rubric.md`, and `source_manifest.yaml`.
 - `fixtures/orphan_scored_rubric/`: grounded Rule 1 end-to-end fixture exercising all three branches: R1 (scored, traced with pending_verification) → unconfirmed_trace_coverage, R2 (scored, untraced) → possible_orphan_scored_rubric_item, R3 (bonus, untraced) → orphan_bonus_rubric_item. Same `source/` + manifest layout.
+- `fixtures/bonus_misuse/`: grounded lint fixture; currently exercises Rule L1 with S1 traced by scored R1 and bonus RB1, plus RB2/S2 non-overlap guard. Extend this fixture for L5/L6.
 - `tests/`: `test_rules.py`, `test_cli_output_contract.py`, `test_fixtures.py`, `test_models.py`, `conftest.py`.
-- `docs/implementation_plan_assessment_harness_poc_v1.md`: implementation source of truth (v1.11).
-- `docs/ideation_assessment_harness_v2.2.md`: latest ideation (final 2026-05-27, in-place revised same day). Adds Rubric Lint Rules family — 6 accepted (L1, L2, L4, L5, L6, L7), 3 rejected. Source for plan v1.11's §6 lint additions.
+- `docs/implementation_plan_assessment_harness_poc_v1.md`: implementation source of truth (v1.12).
+- `docs/ideation_assessment_harness_v2.2.md`: latest ideation (final 2026-05-27, in-place revised same day). Adds Rubric Lint Rules family — 6 accepted (L1, L2, L4, L5, L6, L7), 3 rejected. Source for plan v1.12's §6 lint family.
 - `docs/ideation_assessment_harness_v2.1.md`: latest ideation, second in precedence.
 - `docs/ideation_assessment_harness_v2.md`, `docs/ideation_assessment_harness_v1.md`: historical references.
 - `docs/daily_logs/2026-05-25/work_log.md`: full record of planning iterations (v1.0 → v1.7) and Phase 0 iteration 1 / 1.5.

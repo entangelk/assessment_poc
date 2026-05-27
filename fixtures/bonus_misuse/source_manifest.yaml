@@ -1,0 +1,11 @@
+project_id: bonus_misuse
+assessment_version: v1
+documents:
+  - document_id: DOC_SPEC
+    role: candidate_spec
+    path: source/spec.md
+    sha256: bd59251d561f84bf45c64805018ca2b0815b7e2e4d1fbe58fbd2a22e0edfa73c
+  - document_id: DOC_RUBRIC
+    role: evaluator_rubric
+    path: source/rubric.md
+    sha256: cb51d5b2e3f58a905e2cd2576a9589a2fc17651eda03d0f7dd6fd94866927513
