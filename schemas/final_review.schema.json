@@ -1,0 +1,94 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://assessment-harness/final_review.schema.json",
+  "title": "Final Review Record",
+  "description": "Human final-review decisions consumed by `gate`.",
+  "type": "object",
+  "required": ["review_id", "reviewer", "reviewed_at", "inputs", "decisions"],
+  "properties": {
+    "review_id": { "type": "string", "minLength": 1 },
+    "reviewer": { "type": "string", "minLength": 1 },
+    "reviewed_at": { "type": "string", "minLength": 1 },
+    "inputs": {
+      "type": "object",
+      "required": ["findings_path"],
+      "properties": {
+        "compacted_dir": { "type": "string" },
+        "findings_path": { "type": "string", "minLength": 1 },
+        "diagnostics_path": { "type": "string" },
+        "review_queue_path": { "type": "string" },
+        "report_path": { "type": "string" }
+      },
+      "additionalProperties": true
+    },
+    "decisions": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/decision" }
+    },
+    "drift_observations": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/drift_observation" }
+    }
+  },
+  "additionalProperties": true,
+  "$defs": {
+    "decision": {
+      "type": "object",
+      "required": ["target_type", "target_key", "action"],
+      "properties": {
+        "target_type": {
+          "type": "string",
+          "enum": [
+            "trace_link",
+            "spec_item",
+            "rubric_item",
+            "review_queue_entry",
+            "finding"
+          ]
+        },
+        "target_key": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": true
+        },
+        "action": {
+          "type": "string",
+          "enum": ["accept", "hold", "rerun_requested", "override"]
+        },
+        "note": { "type": "string" },
+        "override_payload": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": true
+    },
+    "drift_observation": {
+      "type": "object",
+      "required": [
+        "rubric_id",
+        "linked_spec_ids",
+        "observed_drift_summary",
+        "severity",
+        "recommended_action"
+      ],
+      "properties": {
+        "rubric_id": { "type": "string", "minLength": 1 },
+        "linked_spec_ids": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "observed_drift_summary": { "type": "string", "minLength": 1 },
+        "severity": {
+          "type": "string",
+          "enum": ["informational", "medium", "high"]
+        },
+        "recommended_action": {
+          "type": "string",
+          "enum": ["revise_rubric", "revise_spec", "accept_with_note"]
+        }
+      },
+      "additionalProperties": true
+    }
+  }
+}

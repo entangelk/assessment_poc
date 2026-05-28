@@ -64,6 +64,17 @@ finding이 없으면 빈 queue로 갱신되어 이전 검토 항목이 남지 �
 `verify`의 통합 queue와 병합하는 동작은 Phase 2에서 추가되므로, 그 전에는
 기존 통합 queue 경로를 `--review-queue-out`으로 덮어쓰지 않는다.
 
+최종 검토가 `final_review.yaml`에 기록된 뒤에는 `gate`가 외부 판정을 낸다.
+final review의 finding decision은 `type` + 생성 식별자(`rubric_id`,
+`spec_id`, paired rubric IDs)만으로 finding을 가리키며, `message`나
+`evidence` payload를 복사하지 않는다.
+
+```bash
+assessment-harness gate \
+  --final-review final_review.yaml \
+  --output json
+```
+
 ### 3. 에이전트 실행 포함 전체 흐름 (Phase 2/3)
 
 ```bash
@@ -122,7 +133,6 @@ assessment-harness review \
 # 최종 review 이후 외부 판정
 assessment-harness gate \
   --final-review work/final_review/review.yaml \
-  --policy config/policy.yaml \
   --output json
 ```
 
@@ -172,8 +182,8 @@ gate (external final decision)
 - **integrity_diagnostics.json**: Rule 0 위반 기록
 - **review_queue.json**: 기존 검토 entry 5종과 lint safeguard `double_scoring_review` / `mandatory_spec_bonus_review`. Phase 0에서는 Rule L1/L6가 각각 paired queue entry를 생성하며, Rule L5는 finding/action만 생성
 - **findings.json**: Rule 1~3 위반 (Rule 0는 별도 diagnostic)
-- **final_review/**: 최종 검토자의 accept/hold/rerun/override 기록
-- **gate output**: final review 이후 외부 호출자가 소비하는 pass/fail/pending 판정
+- **final_review/**: 최종 검토자의 accept/hold/rerun/override 기록. Finding decision은 최소 `target_key`로 `findings.json` 항목을 닫음
+- **gate output**: final review 이후 외부 호출자가 소비하는 pass/fail/pending 판정. confirmed blocking finding이 있을 때만 exit `1`
 
 ---
 
@@ -243,7 +253,7 @@ CLI는 `--policy config/policy.yaml` 하나로 모든 정책을 받는다.
 
 | 문서 | 역할 |
 |---|---|
-| [docs/implementation_plan_assessment_harness_poc_v1.md](docs/implementation_plan_assessment_harness_poc_v1.md) | **구현 명세 (1순위 SoT)** — 현재 v1.15 |
+| [docs/implementation_plan_assessment_harness_poc_v1.md](docs/implementation_plan_assessment_harness_poc_v1.md) | **구현 명세 (1순위 SoT)** — 현재 v1.17 |
 | [docs/ideation_assessment_harness_v2.2.md](docs/ideation_assessment_harness_v2.2.md) | Rubric Lint Rules 가족 (2순위, 2026-05-27 final + in-place 개정) |
 | [docs/ideation_assessment_harness_v2.1.md](docs/ideation_assessment_harness_v2.1.md) | 제품 목적과 장기 방향 (3순위) |
 | [docs/ideation_assessment_harness_v2.md](docs/ideation_assessment_harness_v2.md) | historical reference |

@@ -310,6 +310,28 @@ def test_schema_command_returns_check_contract(
     assert set(contract["informational"]) == expected_informational
 
 
+def test_schema_command_returns_gate_contract(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    code, envelope, _ = _run_main(
+        ["--output", "json", "schema", "--command", "gate"], capsys
+    )
+    _assert_envelope(envelope)
+    assert code == 0
+    contract = envelope["contract"]
+    assert contract["command"] == "gate"
+    assert contract["stable_core"] == STABLE_CORE_FIELDS
+    assert contract["exit_codes"]["1"] == (
+        "confirmed blocking finding exists after final review."
+    )
+    assert set(contract["next_actions_types"]) == {
+        "complete_final_review",
+        "fix_final_review",
+        "revise_assessment",
+    }
+    assert "blocking_findings" in contract["informational"]
+
+
 def test_schema_command_rejects_unknown_command(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -319,6 +341,579 @@ def test_schema_command_rejects_unknown_command(
     _assert_envelope(envelope)
     assert code == 2
     assert envelope["status"] == "invalid_input"
+
+
+def _write_findings(path: Path, findings: list[dict]) -> None:
+    path.write_text(
+        json.dumps(
+            {
+                "status": "provisional_findings" if findings else "success",
+                "findings": findings,
+                "blocking_count": 0,
+                "generated_at": "2026-05-28T00:00:00Z",
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+
+def _finding(
+    finding_type: str,
+    *,
+    severity: str = "medium",
+    rubric_id: str | None = None,
+    spec_id: str | None = None,
+    scored_rubric_id: str | None = None,
+    bonus_rubric_id: str | None = None,
+) -> dict:
+    finding = {
+        "type": finding_type,
+        "severity": severity,
+        "decision_status": "provisional",
+        "message": f"test finding {finding_type}",
+    }
+    if rubric_id is not None:
+        finding["rubric_id"] = rubric_id
+    if spec_id is not None:
+        finding["spec_id"] = spec_id
+    if scored_rubric_id is not None:
+        finding["scored_rubric_id"] = scored_rubric_id
+    if bonus_rubric_id is not None:
+        finding["bonus_rubric_id"] = bonus_rubric_id
+    return finding
+
+
+def _write_final_review(
+    path: Path, findings_path: Path, decisions: list[dict]
+) -> None:
+    path.write_text(
+        yaml.safe_dump(
+            {
+                "review_id": "review_test",
+                "reviewer": "tester",
+                "reviewed_at": "2026-05-28T00:00:00Z",
+                "inputs": {"findings_path": str(findings_path)},
+                "decisions": decisions,
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+
+
+def _decision(
+    target_key: dict,
+    *,
+    action: str = "accept",
+) -> dict:
+    return {
+        "target_type": "finding",
+        "target_key": target_key,
+        "action": action,
+    }
+
+
+def _run_gate_with(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    *,
+    findings: list[dict],
+    decisions: list[dict],
+) -> tuple[int, dict]:
+    findings_path = tmp_path / "findings.json"
+    review_path = tmp_path / "final_review.yaml"
+    _write_findings(findings_path, findings)
+    _write_final_review(review_path, findings_path, decisions)
+    code, envelope, _ = _run_main(
+        ["--output", "json", "gate", "--final-review", str(review_path)], capsys
+    )
+    _assert_envelope(envelope)
+    return code, envelope
+
+
+def test_gate_missing_finding_decision_returns_pending_review(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    findings_path = tmp_path / "findings.json"
+    review_path = tmp_path / "final_review.yaml"
+    _write_findings(
+        findings_path,
+        [
+            {
+                "type": "optionality_mismatch",
+                "severity": "high",
+                "decision_status": "provisional",
+                "rubric_id": "R_HIGH",
+                "message": "review optional-only scoring",
+            }
+        ],
+    )
+    _write_final_review(review_path, findings_path, decisions=[])
+
+    code, envelope, _ = _run_main(
+        ["--output", "json", "gate", "--final-review", str(review_path)], capsys
+    )
+    _assert_envelope(envelope)
+    assert code == 0
+    assert envelope["status"] == "pending_review"
+    assert envelope["pending_decision_count"] == 1
+    assert envelope["blocking_count"] == 0
+    assert envelope["next_actions"] == [
+        {"type": "complete_final_review", "pending_decision_count": 1}
+    ]
+
+
+def test_gate_accept_promotes_rule_one_to_confirmed_blocking_finding(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Under-strict guard: the final-review key for a finding carries only
+    generated identifiers (`type`, `rubric_id`). It must not need message,
+    evidence, title, text, or other payload copies to promote Rule 1 to a
+    confirmed blocking orphan.
+    """
+    findings_path = tmp_path / "findings.json"
+    review_path = tmp_path / "final_review.yaml"
+    _write_findings(
+        findings_path,
+        [
+            {
+                "type": "unconfirmed_trace_coverage",
+                "severity": "medium",
+                "decision_status": "provisional",
+                "rubric_id": "R1",
+                "message": "coverage not final",
+                "evidence": {"semantic_statuses": ["human_rejected"]},
+            }
+        ],
+    )
+    _write_final_review(
+        review_path,
+        findings_path,
+        decisions=[
+            {
+                "target_type": "finding",
+                "target_key": {"type": "unconfirmed_trace_coverage", "rubric_id": "R1"},
+                "action": "accept",
+                "note": "Confirmed no final coverage.",
+            }
+        ],
+    )
+
+    code, envelope, _ = _run_main(
+        ["--output", "json", "gate", "--final-review", str(review_path)], capsys
+    )
+    _assert_envelope(envelope)
+    assert code == 1
+    assert envelope["status"] == "fail"
+    assert envelope["blocking_count"] == 1
+    assert envelope["blocking_findings"][0]["type"] == "orphan_scored_rubric_item"
+    assert envelope["blocking_findings"][0]["severity"] == "high"
+    assert envelope["blocking_findings"][0]["decision_status"] == "confirmed"
+
+
+def test_gate_override_dismisses_blocking_finding(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Over-strict guard: a reviewed override must close the finding without
+    producing a blocking verdict.
+    """
+    findings_path = tmp_path / "findings.json"
+    review_path = tmp_path / "final_review.yaml"
+    _write_findings(
+        findings_path,
+        [
+            {
+                "type": "optionality_mismatch",
+                "severity": "high",
+                "decision_status": "provisional",
+                "rubric_id": "R_HIGH",
+                "message": "optional-only scoring",
+            }
+        ],
+    )
+    _write_final_review(
+        review_path,
+        findings_path,
+        decisions=[
+            {
+                "target_type": "finding",
+                "target_key": {"type": "optionality_mismatch", "rubric_id": "R_HIGH"},
+                "action": "override",
+                "note": "Rubric was intentionally optional in this round.",
+            }
+        ],
+    )
+
+    code, envelope, _ = _run_main(
+        ["--output", "json", "gate", "--final-review", str(review_path)], capsys
+    )
+    _assert_envelope(envelope)
+    assert code == 0
+    assert envelope["status"] == "success"
+    assert envelope["blocking_count"] == 0
+    assert envelope["confirmed_finding_count"] == 0
+    assert envelope["dismissed_finding_count"] == 1
+
+
+def test_gate_accepts_nonblocking_confirmed_finding_without_exit_one(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    findings_path = tmp_path / "findings.json"
+    review_path = tmp_path / "final_review.yaml"
+    _write_findings(
+        findings_path,
+        [
+            {
+                "type": "uncovered_must_spec_item",
+                "severity": "medium",
+                "decision_status": "provisional",
+                "spec_id": "S_MISSING",
+                "message": "must spec lacks scored coverage",
+            }
+        ],
+    )
+    _write_final_review(
+        review_path,
+        findings_path,
+        decisions=[
+            {
+                "target_type": "finding",
+                "target_key": {
+                    "type": "uncovered_must_spec_item",
+                    "spec_id": "S_MISSING",
+                },
+                "action": "accept",
+            }
+        ],
+    )
+
+    code, envelope, _ = _run_main(
+        ["--output", "json", "gate", "--final-review", str(review_path)], capsys
+    )
+    _assert_envelope(envelope)
+    assert code == 0
+    assert envelope["status"] == "success"
+    assert envelope["confirmed_finding_count"] == 1
+    assert envelope["blocking_count"] == 0
+
+
+@pytest.mark.parametrize(
+    ("finding", "target_key"),
+    [
+        (
+            _finding(
+                "optionality_mismatch",
+                severity="high",
+                rubric_id="R_OPTIONAL",
+            ),
+            {"type": "optionality_mismatch", "rubric_id": "R_OPTIONAL"},
+        ),
+        (
+            _finding(
+                "mandatory_spec_bonus_only_traced",
+                severity="high",
+                spec_id="S_BONUS_ONLY",
+            ),
+            {
+                "type": "mandatory_spec_bonus_only_traced",
+                "spec_id": "S_BONUS_ONLY",
+            },
+        ),
+    ],
+)
+def test_gate_accepts_direct_blocking_findings_with_exit_one(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    finding: dict,
+    target_key: dict,
+) -> None:
+    """Under-strict guard for the direct-confirm blocking set: Rule 3 and
+    Rule L6 accepted findings must fail even though no Rule 1 promotion occurs.
+    """
+    code, envelope = _run_gate_with(
+        tmp_path,
+        capsys,
+        findings=[finding],
+        decisions=[_decision(target_key)],
+    )
+    assert code == 1
+    assert envelope["status"] == "fail"
+    assert envelope["blocking_count"] == 1
+    assert envelope["blocking_findings"][0]["type"] == finding["type"]
+
+
+@pytest.mark.parametrize(
+    ("finding", "target_key"),
+    [
+        (
+            _finding(
+                "double_scored_spec",
+                spec_id="S1",
+                scored_rubric_id="R1",
+                bonus_rubric_id="RB1",
+            ),
+            {
+                "type": "double_scored_spec",
+                "spec_id": "S1",
+                "scored_rubric_id": "R1",
+                "bonus_rubric_id": "RB1",
+            },
+        ),
+        (
+            _finding("bonus_grades_mandatory_only", rubric_id="RB1"),
+            {"type": "bonus_grades_mandatory_only", "rubric_id": "RB1"},
+        ),
+    ],
+)
+def test_gate_accepts_l1_l5_as_confirmed_nonblocking_findings(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    finding: dict,
+    target_key: dict,
+) -> None:
+    """Over-strict guard: L1/L5 may be confirmed by review, but v0 gate must
+    not treat them as external blocking verdicts.
+    """
+    code, envelope = _run_gate_with(
+        tmp_path,
+        capsys,
+        findings=[finding],
+        decisions=[_decision(target_key)],
+    )
+    assert code == 0
+    assert envelope["status"] == "success"
+    assert envelope["confirmed_finding_count"] == 1
+    assert envelope["blocking_count"] == 0
+
+
+@pytest.mark.parametrize("action", ["hold", "rerun_requested"])
+def test_gate_hold_and_rerun_requested_keep_pending_review(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], action: str
+) -> None:
+    code, envelope = _run_gate_with(
+        tmp_path,
+        capsys,
+        findings=[_finding("optionality_mismatch", severity="high", rubric_id="R1")],
+        decisions=[
+            _decision(
+                {"type": "optionality_mismatch", "rubric_id": "R1"},
+                action=action,
+            )
+        ],
+    )
+    assert code == 0
+    assert envelope["status"] == "pending_review"
+    assert envelope["pending_decision_count"] == 1
+    assert envelope["blocking_count"] == 0
+
+
+def test_gate_rejects_stale_finding_decision(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    findings_path = tmp_path / "findings.json"
+    review_path = tmp_path / "final_review.yaml"
+    _write_findings(findings_path, [])
+    _write_final_review(
+        review_path,
+        findings_path,
+        decisions=[
+            {
+                "target_type": "finding",
+                "target_key": {"type": "optionality_mismatch", "rubric_id": "R_OLD"},
+                "action": "accept",
+            }
+        ],
+    )
+
+    code, envelope, _ = _run_main(
+        ["--output", "json", "gate", "--final-review", str(review_path)], capsys
+    )
+    _assert_envelope(envelope)
+    assert code == 2
+    assert envelope["status"] == "invalid_input"
+    assert envelope["next_actions"][0]["type"] == "fix_final_review"
+
+
+def test_gate_rejects_duplicate_finding_decisions(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    code, envelope = _run_gate_with(
+        tmp_path,
+        capsys,
+        findings=[_finding("optionality_mismatch", severity="high", rubric_id="R1")],
+        decisions=[
+            _decision({"type": "optionality_mismatch", "rubric_id": "R1"}),
+            _decision({"type": "optionality_mismatch", "rubric_id": "R1"}),
+        ],
+    )
+    assert code == 2
+    assert envelope["status"] == "invalid_input"
+    assert "duplicate decisions" in envelope["input_error"]
+
+
+def test_gate_rejects_non_minimal_finding_target_key(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    findings_path = tmp_path / "findings.json"
+    review_path = tmp_path / "final_review.yaml"
+    _write_findings(
+        findings_path,
+        [
+            {
+                "type": "optionality_mismatch",
+                "severity": "high",
+                "decision_status": "provisional",
+                "rubric_id": "R_HIGH",
+                "message": "optional-only scoring",
+            }
+        ],
+    )
+    _write_final_review(
+        review_path,
+        findings_path,
+        decisions=[
+            {
+                "target_type": "finding",
+                "target_key": {
+                    "type": "optionality_mismatch",
+                    "rubric_id": "R_HIGH",
+                    "message": "copied payload should not be part of identity",
+                },
+                "action": "accept",
+            }
+        ],
+    )
+
+    code, envelope, _ = _run_main(
+        ["--output", "json", "gate", "--final-review", str(review_path)], capsys
+    )
+    _assert_envelope(envelope)
+    assert code == 2
+    assert envelope["status"] == "invalid_input"
+    assert "not minimal" in envelope["input_error"]
+
+
+def test_gate_rejects_finding_target_key_missing_required_field(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    code, envelope = _run_gate_with(
+        tmp_path,
+        capsys,
+        findings=[_finding("optionality_mismatch", severity="high", rubric_id="R1")],
+        decisions=[_decision({"type": "optionality_mismatch"})],
+    )
+    assert code == 2
+    assert envelope["status"] == "invalid_input"
+    assert "not minimal" in envelope["input_error"]
+
+
+def test_gate_rejects_unknown_finding_type_in_target_key(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    code, envelope = _run_gate_with(
+        tmp_path,
+        capsys,
+        findings=[_finding("optionality_mismatch", severity="high", rubric_id="R1")],
+        decisions=[_decision({"type": "made_up_finding", "rubric_id": "R1"})],
+    )
+    assert code == 2
+    assert envelope["status"] == "invalid_input"
+    assert "not minimal" in envelope["input_error"]
+
+
+def test_gate_rejects_invalid_final_review_schema(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    review_path = tmp_path / "final_review.yaml"
+    review_path.write_text(
+        yaml.safe_dump(
+            {
+                "review_id": "review_test",
+                "reviewer": "tester",
+                "reviewed_at": "2026-05-28T00:00:00Z",
+                "inputs": {},
+                "decisions": [],
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    code, envelope, _ = _run_main(
+        ["--output", "json", "gate", "--final-review", str(review_path)], capsys
+    )
+    _assert_envelope(envelope)
+    assert code == 2
+    assert envelope["status"] == "invalid_input"
+
+
+def test_gate_rejects_missing_referenced_findings_file(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    review_path = tmp_path / "final_review.yaml"
+    _write_final_review(review_path, tmp_path / "missing-findings.json", decisions=[])
+    code, envelope, _ = _run_main(
+        ["--output", "json", "gate", "--final-review", str(review_path)], capsys
+    )
+    _assert_envelope(envelope)
+    assert code == 2
+    assert envelope["status"] == "invalid_input"
+    assert "cannot read findings" in envelope["input_error"]
+
+
+def test_gate_rejects_invalid_findings_schema(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    findings_path = tmp_path / "findings.json"
+    review_path = tmp_path / "final_review.yaml"
+    findings_path.write_text(
+        json.dumps(
+            {
+                "status": "provisional_findings",
+                "findings": [
+                    {
+                        "type": "optionality_mismatch",
+                        "severity": "high",
+                        "decision_status": "provisional",
+                        "rubric_id": "R1",
+                    }
+                ],
+                "blocking_count": 0,
+            }
+        ),
+        encoding="utf-8",
+    )
+    _write_final_review(review_path, findings_path, decisions=[])
+    code, envelope, _ = _run_main(
+        ["--output", "json", "gate", "--final-review", str(review_path)], capsys
+    )
+    _assert_envelope(envelope)
+    assert code == 2
+    assert envelope["status"] == "invalid_input"
+    assert "schema validation failed" in envelope["input_error"]
+
+
+def test_gate_rejects_duplicate_finding_keys_in_findings_input(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    findings_path = tmp_path / "findings.json"
+    review_path = tmp_path / "final_review.yaml"
+    _write_findings(
+        findings_path,
+        [
+            _finding("optionality_mismatch", severity="high", rubric_id="R1"),
+            _finding("optionality_mismatch", severity="high", rubric_id="R1"),
+        ],
+    )
+    _write_final_review(review_path, findings_path, decisions=[])
+    code, envelope, _ = _run_main(
+        ["--output", "json", "gate", "--final-review", str(review_path)], capsys
+    )
+    _assert_envelope(envelope)
+    assert code == 2
+    assert envelope["status"] == "invalid_input"
+    assert "duplicate gate target keys" in envelope["input_error"]
 
 
 def test_report_command_writes_markdown(

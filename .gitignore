@@ -13,3 +13,7 @@ htmlcov/
 .mypy_cache/
 .ruff_cache/
 work/
+
+# AI sub files
+.claude/
+.serena/

@@ -491,6 +491,30 @@ COMMAND_CONTRACTS: dict[str, dict[str, Any]] = {
         },
         "next_actions_types": [],
     },
+    "gate": {
+        "stable_core": STABLE_CORE_FIELDS,
+        "informational": [
+            "final_review_path",
+            "findings_path",
+            "blocking_count",
+            "confirmed_finding_count",
+            "dismissed_finding_count",
+            "pending_decision_count",
+            "blocking_findings",
+            "input_error",
+        ],
+        "exit_codes": {
+            "0": "status=success or pending_review; no confirmed blocking finding.",
+            "1": "confirmed blocking finding exists after final review.",
+            "2": "final review or findings input is invalid.",
+            "3": "internal error.",
+        },
+        "next_actions_types": [
+            "complete_final_review",
+            "fix_final_review",
+            "revise_assessment",
+        ],
+    },
 }
 
 
@@ -553,6 +577,296 @@ def _cmd_report(args: argparse.Namespace) -> CommandResult:
         command="report",
         next_actions=[],
         report_path=str(out_path),
+    )
+    return CommandResult(envelope=envelope, exit_code=0)
+
+
+# ---------------------------------------------------------------------------
+# gate
+# ---------------------------------------------------------------------------
+
+
+BLOCKING_CONFIRMED_FINDING_TYPES = {
+    "orphan_scored_rubric_item",
+    "optionality_mismatch",
+    "mandatory_spec_bonus_only_traced",
+}
+
+FINDING_KEY_FIELDS: dict[str, tuple[str, ...]] = {
+    "possible_orphan_scored_rubric_item": ("type", "rubric_id"),
+    "unconfirmed_trace_coverage": ("type", "rubric_id"),
+    "orphan_bonus_rubric_item": ("type", "rubric_id"),
+    "uncovered_must_spec_item": ("type", "spec_id"),
+    "optionality_mismatch": ("type", "rubric_id"),
+    "double_scored_spec": (
+        "type",
+        "spec_id",
+        "scored_rubric_id",
+        "bonus_rubric_id",
+    ),
+    "bonus_grades_mandatory_only": ("type", "rubric_id"),
+    "mandatory_spec_bonus_only_traced": ("type", "spec_id"),
+}
+
+
+def _resolve_relative(base_file: Path, candidate: str) -> Path:
+    path = Path(candidate)
+    if path.is_absolute():
+        return path
+    return (base_file.parent / path).resolve()
+
+
+def _finding_key(finding: dict[str, Any]) -> tuple[tuple[str, Any], ...]:
+    finding_type = finding.get("type")
+    fields = FINDING_KEY_FIELDS.get(finding_type)
+    if fields is None:
+        fields = tuple(
+            field
+            for field in (
+                "type",
+                "rubric_id",
+                "spec_id",
+                "scored_rubric_id",
+                "bonus_rubric_id",
+            )
+            if field in finding
+        )
+    return tuple((field, finding.get(field)) for field in fields)
+
+
+def _decision_key(target_key: dict[str, Any]) -> tuple[tuple[str, Any], ...]:
+    finding_type = target_key.get("type")
+    fields = FINDING_KEY_FIELDS.get(finding_type)
+    if fields is None:
+        fields = tuple(sorted(target_key))
+    return tuple((field, target_key.get(field)) for field in fields)
+
+
+def _finding_decision_key_errors(target_key: dict[str, Any]) -> list[str]:
+    finding_type = target_key.get("type")
+    fields = FINDING_KEY_FIELDS.get(finding_type)
+    if fields is None:
+        return [f"unknown finding type in target_key: {finding_type!r}"]
+    required = set(fields)
+    actual = set(target_key)
+    missing = sorted(required - actual)
+    extra = sorted(actual - required)
+    errors: list[str] = []
+    if missing:
+        errors.append(f"target_key for {finding_type!r} missing fields: {missing}")
+    if extra:
+        errors.append(
+            f"target_key for {finding_type!r} has non-identity fields: {extra}"
+        )
+    return errors
+
+
+def _confirmed_finding_from(
+    finding: dict[str, Any], decision: dict[str, Any]
+) -> dict[str, Any]:
+    confirmed = dict(finding)
+    if finding.get("type") in {
+        "possible_orphan_scored_rubric_item",
+        "unconfirmed_trace_coverage",
+    }:
+        confirmed["type"] = "orphan_scored_rubric_item"
+        confirmed["severity"] = "high"
+        rubric_id = finding.get("rubric_id")
+        confirmed["message"] = (
+            f"scored rubric_item {rubric_id!r} is confirmed orphaned after "
+            "final review."
+        )
+    confirmed["decision_status"] = "confirmed"
+    confirmed["review_decision"] = {
+        "action": decision.get("action"),
+        "note": decision.get("note"),
+    }
+    return confirmed
+
+
+def _dismissed_finding_from(
+    finding: dict[str, Any], decision: dict[str, Any]
+) -> dict[str, Any]:
+    dismissed = dict(finding)
+    dismissed["decision_status"] = "dismissed"
+    dismissed["review_decision"] = {
+        "action": decision.get("action"),
+        "note": decision.get("note"),
+    }
+    if "override_payload" in decision:
+        dismissed["review_decision"]["override_payload"] = decision["override_payload"]
+    return dismissed
+
+
+def _gate_invalid_input(
+    args: argparse.Namespace, message: str, details: list[str] | None = None
+) -> CommandResult:
+    sys.stderr.write(f"[assessment-harness] {message}\n")
+    for detail in details or []:
+        sys.stderr.write(f"  - {detail}\n")
+    envelope = _build_envelope(
+        status="invalid_input",
+        exit_code=2,
+        command="gate",
+        next_actions=[{"type": "fix_final_review", "message": message}],
+        final_review_path=str(args.final_review),
+        blocking_count=0,
+        input_error=message,
+    )
+    return CommandResult(envelope=envelope, exit_code=2)
+
+
+def _cmd_gate(args: argparse.Namespace) -> CommandResult:
+    final_review_path = Path(args.final_review)
+    try:
+        review_doc = load_validated(final_review_path, "final_review")
+    except HarnessInputError as exc:
+        return _gate_invalid_input(args, str(exc), exc.errors)
+
+    findings_path = _resolve_relative(
+        final_review_path, review_doc["inputs"]["findings_path"]
+    )
+    try:
+        findings_doc = json.loads(findings_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        return _gate_invalid_input(
+            args,
+            f"cannot read findings referenced by final review: {exc}",
+        )
+    finding_errors = validate("findings", findings_doc)
+    if finding_errors:
+        return _gate_invalid_input(
+            args,
+            f"{findings_path}: schema validation failed (findings)",
+            finding_errors,
+        )
+
+    findings = findings_doc.get("findings", [])
+    finding_by_key: dict[tuple[tuple[str, Any], ...], dict[str, Any]] = {}
+    for finding in findings:
+        key = _finding_key(finding)
+        if key in finding_by_key:
+            return _gate_invalid_input(
+                args,
+                "findings.json contains duplicate gate target keys",
+                [str(dict(key))],
+            )
+        finding_by_key[key] = finding
+
+    finding_decisions = [
+        decision
+        for decision in review_doc.get("decisions", [])
+        if decision.get("target_type") == "finding"
+    ]
+    decisions_by_key: dict[tuple[tuple[str, Any], ...], dict[str, Any]] = {}
+    for decision in finding_decisions:
+        target_key = decision.get("target_key", {})
+        key_errors = _finding_decision_key_errors(target_key)
+        if key_errors:
+            return _gate_invalid_input(
+                args,
+                "final review finding decision target_key is not minimal",
+                key_errors,
+            )
+        key = _decision_key(target_key)
+        if key in decisions_by_key:
+            return _gate_invalid_input(
+                args,
+                "final review contains duplicate decisions for one finding",
+                [str(dict(key))],
+            )
+        if key not in finding_by_key:
+            return _gate_invalid_input(
+                args,
+                "final review contains a finding decision that matches no finding",
+                [str(dict(key))],
+            )
+        decisions_by_key[key] = decision
+
+    pending: list[dict[str, Any]] = []
+    confirmed: list[dict[str, Any]] = []
+    dismissed: list[dict[str, Any]] = []
+    for key, finding in finding_by_key.items():
+        decision = decisions_by_key.get(key)
+        if decision is None:
+            pending.append(
+                {
+                    "reason": "missing_final_review_decision",
+                    "target_key": dict(key),
+                }
+            )
+            continue
+        action = decision.get("action")
+        if action in {"hold", "rerun_requested"}:
+            pending.append(
+                {
+                    "reason": action,
+                    "target_key": dict(key),
+                }
+            )
+        elif action == "accept":
+            confirmed.append(_confirmed_finding_from(finding, decision))
+        elif action == "override":
+            dismissed.append(_dismissed_finding_from(finding, decision))
+
+    if pending:
+        envelope = _build_envelope(
+            status="pending_review",
+            exit_code=0,
+            command="gate",
+            next_actions=[
+                {
+                    "type": "complete_final_review",
+                    "pending_decision_count": len(pending),
+                }
+            ],
+            final_review_path=str(final_review_path),
+            findings_path=str(findings_path),
+            blocking_count=0,
+            confirmed_finding_count=len(confirmed),
+            dismissed_finding_count=len(dismissed),
+            pending_decision_count=len(pending),
+        )
+        return CommandResult(envelope=envelope, exit_code=0)
+
+    blocking_findings = [
+        finding
+        for finding in confirmed
+        if finding.get("type") in BLOCKING_CONFIRMED_FINDING_TYPES
+    ]
+    blocking_count = len(blocking_findings)
+    if blocking_count:
+        envelope = _build_envelope(
+            status="fail",
+            exit_code=1,
+            command="gate",
+            next_actions=[
+                {
+                    "type": "revise_assessment",
+                    "blocking_count": blocking_count,
+                }
+            ],
+            final_review_path=str(final_review_path),
+            findings_path=str(findings_path),
+            blocking_count=blocking_count,
+            confirmed_finding_count=len(confirmed),
+            dismissed_finding_count=len(dismissed),
+            pending_decision_count=0,
+            blocking_findings=blocking_findings,
+        )
+        return CommandResult(envelope=envelope, exit_code=1)
+
+    envelope = _build_envelope(
+        status="success",
+        exit_code=0,
+        command="gate",
+        next_actions=[],
+        final_review_path=str(final_review_path),
+        findings_path=str(findings_path),
+        blocking_count=0,
+        confirmed_finding_count=len(confirmed),
+        dismissed_finding_count=len(dismissed),
+        pending_decision_count=0,
     )
     return CommandResult(envelope=envelope, exit_code=0)
 
@@ -663,6 +977,13 @@ def _build_parser() -> argparse.ArgumentParser:
     p_report.add_argument("--diagnostics", required=True)
     p_report.add_argument("--out", required=True)
 
+    p_gate = sub.add_parser(
+        "gate",
+        help="consume final review record and emit the external pass/fail/pending verdict.",
+    )
+    _add_output_arg(p_gate, root=False)
+    p_gate.add_argument("--final-review", required=True)
+
     return parser
 
 
@@ -676,6 +997,8 @@ def main(argv: list[str] | None = None) -> int:
             result = _cmd_schema(args)
         elif args.subcommand == "report":
             result = _cmd_report(args)
+        elif args.subcommand == "gate":
+            result = _cmd_gate(args)
         else:  # pragma: no cover - argparse guards this
             parser.error(f"unknown subcommand: {args.subcommand}")
             return 3

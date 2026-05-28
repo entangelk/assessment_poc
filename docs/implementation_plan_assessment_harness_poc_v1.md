@@ -1,4 +1,4 @@
-# Assessment Spec Harness PoC 구현 계획서 v1.15
+# Assessment Spec Harness PoC 구현 계획서 v1.17
 
 ## 0. 문서 목적
 
@@ -171,7 +171,6 @@ Phase 0 규칙 회귀 테스트도 `provisional` finding의 존재와 severity�
 ```bash
 assessment-harness gate \
   --final-review work/final_review/review.yaml \
-  --policy config/policy.yaml \
   --output json
 ```
 
@@ -472,6 +471,10 @@ decisions:
     target_key: { entry_id: "rq_42" }
     action: rerun_requested
     note: "Identity_basis collapsed two distinct requirements."
+  - target_type: finding
+    target_key: { type: "optionality_mismatch", rubric_id: "R9" }
+    action: accept
+    note: "Optional-only scoring weight is confirmed as assessment-design risk."
 drift_observations:
   - rubric_id: "R9"
     linked_spec_ids: ["S8"]
@@ -491,6 +494,42 @@ drift_observations:
 - `recommended_action` (필수): `revise_rubric` / `revise_spec` / `accept_with_note`. revise_rubric은 다음 라운드에서 rubric을 spec과 정합되게 다듬을 것, revise_spec은 spec에 누락된 평가축을 추가할 것, accept_with_note는 의도된 drift임을 인정하고 라운드는 진행할 것.
 
 본 field는 자동 finding을 발생시키지 않으므로 `check`/`gate` 결과 코드와 무관하다. 다음 라운드 운영 입력으로만 사용된다.
+
+`target_type: finding`은 `check`가 생성한 provisional finding을 final review가
+닫을 때 사용한다. `target_key`는 생성 식별자만 담는 최소 key여야 하며,
+`message`, `evidence`, rubric/spec 본문, title/description 같은 설명 데이터는
+넣지 않는다. 이는 review record가 finding payload를 복사해 비대해지거나
+본문 변경에 취약해지는 것을 막기 위한 계약이다.
+
+finding별 canonical `target_key`:
+
+| finding type | required target_key fields |
+|---|---|
+| `possible_orphan_scored_rubric_item` | `type`, `rubric_id` |
+| `unconfirmed_trace_coverage` | `type`, `rubric_id` |
+| `orphan_bonus_rubric_item` | `type`, `rubric_id` |
+| `uncovered_must_spec_item` | `type`, `spec_id` |
+| `optionality_mismatch` | `type`, `rubric_id` |
+| `double_scored_spec` | `type`, `spec_id`, `scored_rubric_id`, `bonus_rubric_id` |
+| `bonus_grades_mandatory_only` | `type`, `rubric_id` |
+| `mandatory_spec_bonus_only_traced` | `type`, `spec_id` |
+
+`gate`는 final review record의 finding decision을 `findings.json`의 provisional
+finding에 위 key로 매칭한다. 매칭되지 않는 decision, 같은 finding에 대한 중복
+decision, 또는 `findings.json` 내부의 같은 canonical key 중복은 최종 판정 입력을
+신뢰할 수 없으므로 `invalid_input`/exit `2`다. 아직 decision이 없는 provisional
+finding, `hold`, `rerun_requested`는 `pending_review`/exit `0`이다.
+
+finding decision의 `accept`는 finding을 confirmed로 닫는다. 단,
+`possible_orphan_scored_rubric_item`과 `unconfirmed_trace_coverage`는 Rule 1의
+confirmed finding인 `orphan_scored_rubric_item` (`high`, `confirmed`)으로
+승급한다. `override`는 해당 finding을 `dismissed`로 닫는다. `hold`와
+`rerun_requested`는 pending 상태로 남기며 pass/fail 산정에 포함하지 않는다.
+
+`gate`의 blocking 판정 대상은 confirmed 상태의 blocking finding뿐이다:
+`orphan_scored_rubric_item`, `optionality_mismatch`,
+`mandatory_spec_bonus_only_traced`. Rule 2, L1, L5의 confirmed finding은 review
+결과로 기록되지만 현재 v0에서는 exit `1`을 만들지 않는다.
 
 review action enum:
 
@@ -975,7 +1014,6 @@ assessment-harness review \
 
 assessment-harness gate \
   --final-review work/final_review/review.yaml \
-  --policy config/policy.yaml \
   --output json
 ```
 
@@ -1241,6 +1279,23 @@ Phase 2/3 전 확정할 사항:
 ---
 
 ## 15. 변경 이력
+
+### v1.17 (2026-05-28)
+
+핵심 변경: **gate v1.16 검증의 조건부 합격 사유를 회귀와 계약으로 보강.**
+
+- **회귀 매트릭스 보강**: direct blocking confirm (`optionality_mismatch`, `mandatory_spec_bonus_only_traced`), nonblocking confirm (L1/L5), `hold`/`rerun_requested`, duplicate decision, missing key field, unknown finding type, invalid final_review schema, missing/invalid findings input, duplicate finding key를 named regression으로 잠갔다.
+- **입력 무결성 명문화**: `findings.json` 내부에서 같은 canonical gate target key가 중복되면 `invalid_input`/exit `2`로 처리한다고 §5.6에 명시했다.
+- **투기적 인자 제거**: `gate`는 정책 파일을 읽지 않으므로 `gate --policy` 인자를 제거하고 예시 명령에서도 삭제했다.
+
+### v1.16 (2026-05-28)
+
+핵심 변경: **`gate` 진입을 위해 final review가 provisional finding을 닫는 최소 매핑 계약을 확정.**
+
+- **최소 key 계약**: `target_type: finding`을 추가하고 finding type별 `target_key`를 생성 식별자만으로 제한했다. `message`, `evidence`, 원문 본문/제목/설명은 매칭 key에서 제외해 review record 비대화와 설명 payload drift를 방지한다.
+- **gate 판정 계약**: missing decision 또는 `hold`/`rerun_requested`는 `pending_review`/exit `0`, stale/중복 decision은 `invalid_input`/exit `2`, confirmed blocking finding은 `fail`/exit `1`로 확정했다.
+- **Rule 1 승급 경로**: `possible_orphan_scored_rubric_item` 또는 `unconfirmed_trace_coverage`를 reviewer가 accept하면 `gate`가 `orphan_scored_rubric_item` (`high`, `confirmed`)으로 승급한다.
+- **blocking 범위 제한**: v0에서 exit `1`을 만드는 confirmed finding은 `orphan_scored_rubric_item`, `optionality_mismatch`, `mandatory_spec_bonus_only_traced`로 한정한다. Rule 2/L1/L5 confirmed finding은 기록되지만 blocking verdict는 아니다.
 
 ### v1.15 (2026-05-27)
 

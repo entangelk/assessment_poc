@@ -12,6 +12,7 @@ import json
 from pathlib import Path
 
 import pytest
+import yaml
 
 from assessment_harness.cli import main
 from assessment_harness.schemas import validate
@@ -304,6 +305,80 @@ def test_uncovered_must_spec_fixture_locks_rule_two_structural_boundary(
         ("review_uncovered_must_spec", "S_QUAL_ONLY"),
         ("review_mandatory_spec_bonus_only", "S_BONUS_ONLY"),
     }
+
+
+def test_gate_closes_orphan_scored_fixture_with_minimal_finding_keys(
+    fixture_dir: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """End-to-end guard for plan v1.17: final review decisions identify
+    findings with minimal generated keys, not copied finding evidence. Accepting
+    the scored orphan branch promotes it to the confirmed blocking
+    `orphan_scored_rubric_item`; overriding the adjacent medium/informational
+    branches keeps them from blocking.
+    """
+    code, envelope, findings, diagnostics = _run_check(
+        fixture_dir / "orphan_scored_rubric", tmp_path, capsys, use_manifest=True
+    )
+    assert code == 0, f"diagnostics: {diagnostics}"
+    assert envelope["status"] == "provisional_findings"
+    assert {f["type"] for f in findings["findings"]} == {
+        "possible_orphan_scored_rubric_item",
+        "unconfirmed_trace_coverage",
+        "orphan_bonus_rubric_item",
+    }
+
+    review_path = tmp_path / "final_review.yaml"
+    review_path.write_text(
+        yaml.safe_dump(
+            {
+                "review_id": "review_fixture_orphan",
+                "reviewer": "fixture-reviewer",
+                "reviewed_at": "2026-05-28T00:00:00Z",
+                "inputs": {"findings_path": str(tmp_path / "findings.json")},
+                "decisions": [
+                    {
+                        "target_type": "finding",
+                        "target_key": {
+                            "type": "possible_orphan_scored_rubric_item",
+                            "rubric_id": "R2",
+                        },
+                        "action": "accept",
+                    },
+                    {
+                        "target_type": "finding",
+                        "target_key": {
+                            "type": "unconfirmed_trace_coverage",
+                            "rubric_id": "R1",
+                        },
+                        "action": "override",
+                    },
+                    {
+                        "target_type": "finding",
+                        "target_key": {
+                            "type": "orphan_bonus_rubric_item",
+                            "rubric_id": "R3",
+                        },
+                        "action": "override",
+                    },
+                ],
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+
+    gate_code = main(
+        ["--output", "json", "gate", "--final-review", str(review_path)]
+    )
+    captured = capsys.readouterr()
+    gate_envelope = json.loads(captured.out)
+    assert validate("cli_output", gate_envelope) == []
+    assert gate_code == 1
+    assert gate_envelope["status"] == "fail"
+    assert gate_envelope["blocking_count"] == 1
+    assert gate_envelope["confirmed_finding_count"] == 1
+    assert gate_envelope["dismissed_finding_count"] == 2
+    assert gate_envelope["blocking_findings"][0]["type"] == "orphan_scored_rubric_item"
 
 
 def test_optionality_mismatch_fixture_locks_rule_three_policy_boundary(
