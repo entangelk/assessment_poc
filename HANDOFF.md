@@ -12,7 +12,8 @@
 - **Rule L6 is implemented** (plan v1.19 §6): `mandatory_spec_bonus_only_traced` is emitted as high/provisional when a `must` spec is traced only by bonus rubrics; it exposes `bonus_rubric_ids[]`, `review_mandatory_spec_bonus_only`, and paired `mandatory_spec_bonus_review` queue entries.
 - **Initial `gate` is live** (plan v1.19 §5.6): final review records can close provisional findings through `target_type: finding` with minimal generated keys. `gate` returns `pending_review` for missing/held/rerun decisions, `fail`/exit `1` for confirmed blocking findings, and `success` when all findings are closed without blocking. The v1.17 follow-up locks the conditional-pass boundary matrix from independent verification.
 - **Initial `review` draft writer is live** (plan v1.19 §5.6): `review --findings ... --out-dir ... --reviewer ...` writes `review.yaml` with one minimal-key `hold` decision per finding. It accepts only `findings.status=success` or `provisional_findings`, refuses to overwrite an existing draft unless `--force` is passed, and does not auto-accept or rewrite artifacts; humans edit the draft before final `gate`.
-- **Pending implementation**: `extract`, `compact`, `verify`, trace-link override materialization, review_queue composition, and later Phase 2/3 runner workflows.
+- **AgentRunner protocol foundation is live** (plan v1.22 §7 / §9): `agent_runners/base.py` defines the framework-neutral `AgentRunner` protocol and `AgentRunResult`; `agent_runners/mock.py` deterministically replays fixture YAML for protocol contract tests only.
+- **Pending implementation**: `extract`, `compact`, `verify`, real SDK runners, framework tools, orchestrator workflows, trace-link override materialization, review_queue composition, and later Phase 2/3 runner workflows.
 - Package surface: `check` / `schema` / `report` / `review` / `gate` subcommands, twelve JSON Schemas, and six fully-grounded fixtures (`clean_assignment`, `reference_integrity`, `orphan_scored_rubric`, `bonus_misuse`, `uncovered_must_spec`, `optionality_mismatch`). Docker is the canonical dev environment.
 - The PoC is an **agent-level harness**: the 1st-class caller is an AI agent (Claude Code / Codex / Gemini), not a human. Humans participate only as final reviewers.
 - The final workflow is `extract --runs N -> compact -> verify --runs N -> check -> report -> review -> gate`. Compacting is a **union-based audit operation**: every valid candidate is preserved with `support` / `identity_basis` / `variants`.
@@ -80,11 +81,12 @@ docker compose run --rm harness --output json check \
 ## Implementation Decisions (Phase 0 iteration 1 / 1.5 / 2)
 
 - Adopted `src/` layout (`src/assessment_harness/...`); package import name unchanged from plan §7.
-- Held `agent_runners/` and `tools/` out of this iteration (Phase 2 scope per plan §3.3). No empty placeholders were created.
+- Phase 0 held `agent_runners/` and `tools/` out of scope. Phase 2 has now started with only the `AgentRunner` protocol and deterministic mock replay; framework tools and real SDK runners remain unimplemented.
 - `evidence_source_ref` is validated by span containment within the referenced `spec_item.source_ref` (same document, evidence span inside the spec span), not strict equality.
 - Schemas allow `additionalProperties: true` at entity objects so candidate-stage fields (`confidence`, `agent_run_id`, ...) added in Phase 2 do not break Phase 0 schemas.
 - `review` initial implementation deliberately writes safe `hold` drafts only. It does not collect human choices interactively, auto-accept findings, rewrite trace links, or materialize `human_override` provenance.
 - `gate` initial implementation deliberately covers finding-level final decisions only. Trace-link override materialization, review_queue composition, and semantic-verification queue handling remain later Phase 2/3 work.
+- `AgentRunner` protocol foundation deliberately stops at type boundary plus deterministic mock replay. It does not introduce SDK credentials, framework tools, orchestration, raw trace retention policy, or candidate compacting behavior.
 - Docker is the dev environment; the `harness` and `test` services in `docker-compose.yml` bind-mount source/schemas/fixtures/tests so iterations do not require a rebuild.
 - Snapshot text grounding uses whitespace-normalized **substring** matching for `spec_item.text` (allows multi-line spans) and for all quotes. Rubric items skip `text`/`description` grounding because they are evaluator-facing summaries; only `source_ref.quote` is grounded when provided.
 - `evidence_quote_missing_for_spec_id` skips spec_ids that are already dangling, so a single broken reference does not raise two diagnostics.
@@ -164,7 +166,7 @@ When a **verifier** claims branch coverage from probes, measure at the level tha
 
 ## Verification
 
-- 165 tests pass after the Phase 2 contract schema foundation (`python3 -m pytest -q`; canonical Docker suite `docker compose run --rm test -q` also passes). Collection reports 48 CLI contract, 8 fixture, 14 model, and 95 rule tests. The policy-incomplete regression is parametrized across the four shapes `_validate_check_policy` must catch (empty doc, missing `rules`, empty `rules`, threshold absent) so a refactor cannot silently let one through.
+- 167 tests pass after the AgentRunner protocol foundation (`python3 -m pytest -q`; canonical Docker suite `docker compose run --rm test -q` also passes). Collection reports 2 agent-runner contract, 48 CLI contract, 8 fixture, 14 model, and 95 rule tests. The policy-incomplete regression is parametrized across the four shapes `_validate_check_policy` must catch (empty doc, missing `rules`, empty `rules`, threshold absent) so a refactor cannot silently let one through.
 - `schema --command review --output json` exposes informational `review_path`, `decision_count`, and `input_error`.
 - `schema --command gate --output json` exposes `complete_final_review`, `fix_final_review`, `revise_assessment`, plus informational `final_review_path`, `findings_path`, `blocking_count`, `confirmed_finding_count`, `dismissed_finding_count`, `pending_decision_count`, `blocking_findings`, and `input_error`.
 - `schema --command check --output json` exposes `provide_policy`, `review_double_scoring`, `review_bonus_mandatory_only`, `review_mandatory_spec_bonus_only`, `review_uncovered_must_spec`, `review_optionality_mismatch`, plus informational `review_queue_path` and `review_queue_count`.
@@ -193,6 +195,9 @@ When a **verifier** claims branch coverage from probes, measure at the level tha
   - `rules.py`: Rule 0 reference-integrity engine; complete Rule 1, Rule 2, and Rule 3 implementations; lint Rule L1/L5/L6 implementations. `HUMAN_ACCEPTED_SEMANTIC_STATUSES` locks the Rule-1-only final-coverage boundary.
   - `schemas.py`: schema loader with `ASSESSMENT_HARNESS_SCHEMA_DIR` env override.
   - `report.py`: Markdown renderer.
+  - `agent_runners/`: framework-neutral runner boundary.
+    - `base.py`: `AgentRunner` protocol and `AgentRunResult`.
+    - `mock.py`: deterministic fixture replay runner for protocol contract tests only.
 - `schemas/`: twelve JSON Schemas, including `review_queue.schema.json` introduced with Rule L1, `final_review.schema.json` introduced with initial `gate`, and Phase 2 contract foundations `id_map.schema.json` / `semantic_verifications.schema.json`.
 - `config/policy.yaml`: default policy.
 - `fixtures/clean_assignment/`: passing fixture with source manifest, sha256, spec.md, rubric.md.
@@ -201,7 +206,7 @@ When a **verifier** claims branch coverage from probes, measure at the level tha
 - `fixtures/bonus_misuse/`: grounded lint fixture; exercises L1/L5 via S1/R1/RB1, RB2/S2 optional non-firing, RB3 untraced Rule 1 informational separation, and Rule 2/L5/L6 co-firing via bonus-only mandatory S3/RB4.
 - `fixtures/uncovered_must_spec/`: grounded Rule 2 fixture covering untraced, pending-scored-covered, bonus-only, qualitative-only, optional, and informational spec boundaries.
 - `fixtures/optionality_mismatch/`: grounded Rule 3 fixture covering optional-only high weight, policy threshold, pending-status structural emission, must/informational-mixed suppression, bonus/qualitative-role exclusion, and below-threshold suppression.
-- `tests/`: `test_rules.py`, `test_cli_output_contract.py`, `test_fixtures.py`, `test_models.py`, `conftest.py`.
+- `tests/`: `test_rules.py`, `test_cli_output_contract.py`, `test_fixtures.py`, `test_models.py`, `test_agent_runner_contract.py`, `conftest.py`.
 - `docs/implementation_plan_assessment_harness_poc_v1.md`: implementation source of truth (v1.22).
 - `docs/ideation_assessment_harness_v2.2.md`: latest ideation (final 2026-05-27, in-place revised same day). Adds Rubric Lint Rules family — 6 accepted (L1, L2, L4, L5, L6, L7), 3 rejected. Source for plan v1.19's §6 lint family.
 - `docs/ideation_assessment_harness_v2.1.md`: latest ideation, second in precedence.

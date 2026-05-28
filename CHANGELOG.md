@@ -2,6 +2,7 @@
 
 | Date | Change | Detail |
 |---|---|---|
+| 2026-05-28 | AgentRunner protocol foundation: adds framework-neutral `AgentRunner` / `AgentRunResult` and a deterministic fixture-replay mock runner with contract tests, without introducing SDK credentials, tools, orchestration, or compacting behavior. | [Work log](docs/daily_logs/2026-05-28/work_log.md) |
 | 2026-05-28 | Plan v1.22: explicitly defines trace link canonical ID lineage. Trace link internal rubric/spec IDs are dependent references remapped through item `id_map`, while the trace link entry itself is also a compacted relationship artifact and valid `id_map.entity_type`. | [Work log](docs/daily_logs/2026-05-28/work_log.md) |
 | 2026-05-28 | Phase 2 contract schema foundation: registers `id_map.schema.json` and `semantic_verifications.schema.json` so future `compact`/`verify` work can validate canonical ID lineage and read-only verifier proposals without choosing runner or identity algorithms yet. | [Work log](docs/daily_logs/2026-05-28/work_log.md) |
 | 2026-05-28 | Plan v1.21: documents that policy schema-validation failures also produce `fix_input` recovery, closing the contract gap surfaced by the v1.20 strengthening follow-up. HANDOFF gains a verifier discipline note: probes claiming branch coverage must distinguish paths by error message, not only by exit code / `next_action`. No code change. | [Work log](docs/daily_logs/2026-05-28/work_log.md) |

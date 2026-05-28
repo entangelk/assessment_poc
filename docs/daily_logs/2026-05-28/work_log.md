@@ -527,3 +527,88 @@
 - Collection check: `python3 -m pytest --collect-only -q` reports 48 CLI contract, 8 fixture, 14 model, and 95 rule tests.
 - Current-version stale-reference grep: `rg -n "현재 v1\\.21|Implementation plan is at v1\\.21|Canonical specification.*v1\\.21|implementation source of truth \\(v1\\.21\\)" README.md HANDOFF.md docs/daily_logs/2026-05-28/work_log.md` returned no current-state matches.
 - Diff hygiene: `git diff --check` passed.
+
+## AgentRunner Protocol Foundation
+
+### Goals
+
+- Start Phase 2 runner work at the smallest already-specified boundary.
+- Prove runner portability through a protocol plus deterministic mock runner without choosing SDK credentials, tool side effects, orchestration, compacting, or trace retention policy.
+
+### Completed Work
+
+- Added the framework-neutral runner boundary.
+  - Files changed: `src/assessment_harness/agent_runners/__init__.py`, `src/assessment_harness/agent_runners/base.py`.
+  - Key changes: introduced `AgentRunResult` and runtime-checkable `AgentRunner` protocol with the plan-specified `run(spec_path, rubric_path, tools, max_turns, policy)` signature.
+  - Effect: future Claude/Codex/Gemini or verifier runners can target one local protocol instead of leaking SDK-specific shapes into orchestration code.
+- Added deterministic mock fixture replay.
+  - Files changed: `src/assessment_harness/agent_runners/mock.py`.
+  - Key changes: `MockFixtureRunner` loads fixture `spec_items.yaml`, `rubric_items.yaml`, `trace_links.yaml`, plus optional `source_manifest.yaml` and `policy.yaml`; returns append-only audit/raw trace placeholders through `AgentRunResult`.
+  - Effect: protocol contract tests can run without network credentials or a real SDK.
+- Added contract tests and current-state docs.
+  - Files changed: `tests/test_agent_runner_contract.py`, `HANDOFF.md`, `CHANGELOG.md`, this work log.
+  - Key changes: tests assert the mock satisfies `AgentRunner`, replays schema-valid fixture artifacts, and returns trace metadata; HANDOFF now separates the live protocol/mock foundation from still-pending real runner/orchestrator work.
+  - Effect: the first Phase 2 runner surface is testable while the unresolved implementation decisions remain explicit.
+
+### Issues Found
+
+- Problem: Phase 2 listed a mock runner contract test as a completion criterion, but the repository had no runner protocol surface to test.
+  Cause: Phase 0 deliberately held `agent_runners/` out of scope until deterministic validation was stable.
+  Resolution: implemented only the protocol and fixture replay mock runner, leaving SDK/tool/orchestrator choices untouched.
+  Outcome: runner portability now has a concrete contract test without entering unresolved credential or tool-policy decisions.
+
+### Decisions
+
+- No new owner decision was needed for this slice: plan §7 and §9 already specify the `AgentRunner` protocol role and mock runner purpose. The mock remains test-only and is not a real assessment extraction path.
+
+### Next Steps
+
+1. Decide the remaining Phase 2 runner/tool policies before adding real SDK runners or orchestration.
+2. Implement compacting only after identity-basis behavior is ready to encode.
+
+### Verification
+
+- Focused runner contract tests: `python3 -m pytest tests/test_agent_runner_contract.py -q` passed (2 tests).
+- Syntax check: `python3 -m py_compile src/assessment_harness/agent_runners/base.py src/assessment_harness/agent_runners/mock.py src/assessment_harness/agent_runners/__init__.py` passed.
+- Full suite: `python3 -m pytest -q` passed (167 tests).
+- Canonical Docker suite: `docker compose run --rm test -q` passed.
+- Collection check: `python3 -m pytest --collect-only -q` reports 2 agent-runner contract, 48 CLI contract, 8 fixture, 14 model, and 95 rule tests.
+- Diff hygiene: `git diff --check` passed.
+
+## AgentRunner Protocol Conditional-Pass Follow-Up
+
+### Goals
+
+- Address the nonblocking verifier finding that `AgentRunResult.status` duplicated `finish_reason` without a canonical plan contract.
+- Keep the protocol foundation minimal until candidate shape, recovery behavior, and trace schema are promoted in their own slices.
+
+### Completed Work
+
+- Removed the speculative `status` field from the runner result contract.
+  - Files changed: `src/assessment_harness/agent_runners/base.py`, `src/assessment_harness/agent_runners/mock.py`, `tests/test_agent_runner_contract.py`.
+  - Key changes: `AgentRunResult` now records `run_id`, `runner_name`, `finish_reason`, artifacts, audit trace, raw trace, and optional error message; tests assert `finish_reason` only.
+  - Effect: the protocol matches plan §9's current runner completion vocabulary without inventing a second status channel.
+
+### Issues Found
+
+- Problem: `AgentRunResult.status` was not named in the plan; plan §9 names `finish_reason`, while plan §5.4's `integrity_status` belongs to candidate artifact validation rather than runner result metadata.
+  Cause: the first protocol slice overgeneralized the result shape.
+  Resolution: removed `status` instead of promoting it into the plan.
+  Outcome: no spec-silent runner status field remains.
+
+### Decisions
+
+- Candidate-shaped mock artifacts, recovery-policy simulation, and `agent_trace.schema.json` are still deferred. They need their own contract read because they affect candidate generation and trace retention surfaces, not just the protocol type boundary.
+
+### Next Steps
+
+1. Add candidate artifact schemas or fixtures before requiring mock output to match candidate shape.
+2. Add runner failure/recovery tests when `blocked_by_runner_error` and trace finish-reason behavior are implemented.
+3. Add `agent_trace.schema.json` in a separate trace-contract slice.
+
+### Verification
+
+- Focused runner contract tests: `python3 -m pytest tests/test_agent_runner_contract.py -q` passed (2 tests).
+- Full suite: `python3 -m pytest -q` passed (167 tests).
+- Status cleanup grep: `rg -n "result\\.status|status=\\\"complete\\\"|status, and" src tests HANDOFF.md` returned no matches.
+- Diff hygiene: `git diff --check` passed.
