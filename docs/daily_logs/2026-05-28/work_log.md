@@ -612,3 +612,103 @@
 - Full suite: `python3 -m pytest -q` passed (167 tests).
 - Status cleanup grep: `rg -n "result\\.status|status=\\\"complete\\\"|status, and" src tests HANDOFF.md` returned no matches.
 - Diff hygiene: `git diff --check` passed.
+
+## Audit Trace Schema Foundation
+
+### Goals
+
+- Close the smallest remaining nonblocking runner-contract gap by adding `agent_trace.schema.json`.
+- Validate audit trace events emitted by the mock runner without deciding raw trace retention/redaction or runner failure recovery behavior.
+
+### Completed Work
+
+- Added and registered the audit trace event schema.
+  - Files changed: `schemas/agent_trace.schema.json`, `src/assessment_harness/schemas.py`.
+  - Key changes: the schema validates one append-only audit JSONL event at a time; events must carry `run_id` and either a turn/role shape or a finish event shape with `finish_reason`, `turns`, and `tool_call_count`.
+  - Effect: audit trace event validation now has the same schema helper path as other contracts.
+- Locked mock audit trace validation.
+  - Files changed: `tests/test_agent_runner_contract.py`.
+  - Key changes: the mock runner contract now validates every `audit_trace` event with `agent_trace`; a missing `run_id` event is rejected.
+  - Effect: future runner changes cannot silently drop trace attribution.
+- Updated current-state docs.
+  - Files changed: `HANDOFF.md`, `CHANGELOG.md`, this work log.
+  - Key changes: schema count updated to thirteen and trace separation now states that this schema covers audit JSONL events only.
+  - Effect: raw trace retention/redaction remains explicitly deferred while audit trace shape is no longer plan-only.
+
+### Issues Found
+
+- Problem: plan §5.4.1 and §15 name `agent_trace.schema.json`, but the schema did not exist and mock audit traces were checked only by ad hoc assertions.
+  Cause: the first runner protocol slice focused on the protocol boundary, not trace contract validation.
+  Resolution: added an audit-event schema and validated mock `audit_trace` events through `validate("agent_trace", ...)`.
+  Outcome: the audit trace contract is now registered and covered by a focused regression.
+
+### Decisions
+
+- `agent_trace.schema.json` validates one JSONL event, not a whole file wrapper. This matches the append-only JSONL model in plan §5.4.1.
+- Raw trace schema, raw trace retention/redaction, failure recovery finish reasons, and candidate-to-trace cross-reference checks remain later slices.
+
+### Next Steps
+
+1. Add candidate artifact schemas before enforcing candidate `agent_run_id` cross-references against audit trace.
+2. Add runner failure/recovery trace cases when `blocked_by_runner_error` behavior is implemented.
+
+### Verification
+
+- Focused runner contract tests: `python3 -m pytest tests/test_agent_runner_contract.py -q` passed (3 tests).
+- Syntax check: `python3 -m py_compile src/assessment_harness/schemas.py` passed.
+- Full suite: `python3 -m pytest -q` passed (168 tests).
+- Canonical Docker suite: `docker compose run --rm test -q` passed.
+- Collection check: `python3 -m pytest --collect-only -q` reports 3 agent-runner contract, 48 CLI contract, 8 fixture, 14 model, and 95 rule tests.
+- Stale schema-count grep: `rg -n "twelve JSON|12 JSON|twelve schemas|12 schemas" HANDOFF.md README.md CHANGELOG.md docs/implementation_plan_assessment_harness_poc_v1.md src tests` returned no matches.
+- Diff hygiene: `git diff --check` passed.
+
+## Audit Trace Role-Payload Follow-Up
+
+### Goals
+
+- Close the conditional verification finding that `agent_trace.schema.json` allowed bare `{run_id, turn, role}` events.
+- Preserve the audit value of turn events by requiring the payload shape shown in plan §5.4.1 examples.
+
+### Completed Work
+
+- Promoted the plan to v1.23.
+  - Files changed: `docs/implementation_plan_assessment_harness_poc_v1.md`.
+  - Key changes: §5.4.1 now states role-specific payload requirements: `system` requires `content_ref`, `agent` requires `tool_call`, and `tool` requires `name` plus `result_ref`; §15 records v1.23.
+  - Effect: the audit trace schema no longer permits a payload-less turn event without canonical backing.
+- Tightened `agent_trace.schema.json`.
+  - Files changed: `schemas/agent_trace.schema.json`.
+  - Key changes: added role-based `if`/`then` requirements for `system`, `agent`, and `tool` events.
+  - Effect: bare role events are rejected while finish events remain independent.
+- Strengthened runner contract tests.
+  - Files changed: `tests/test_agent_runner_contract.py`.
+  - Key changes: added a non-empty `audit_trace` assertion to avoid vacuous `all(...)`; added a regression that rejects bare `system`/`agent`/`tool` events.
+  - Effect: future runner changes cannot silently drop all audit events or omit role payloads.
+- Updated current-state docs.
+  - Files changed: `HANDOFF.md`, `README.md`, `CHANGELOG.md`, this work log.
+  - Key changes: bumped current plan references to v1.23 and recorded the audit trace role-payload contract.
+  - Effect: the verification gap is now closed in both spec and implementation.
+
+### Issues Found
+
+- Problem: `agent_trace.schema.json` accepted bare turn events, but plan §5.4.1 examples all included a payload (`content_ref`, `tool_call`, or `name`/`result_ref`).
+  Cause: the first trace schema slice validated the broad event modes but did not encode role-specific payload requirements.
+  Resolution: owner verification identified the gap; v1.23 and the schema now require role payloads.
+  Outcome: audit trace events are attributed and meaningful enough for later consumers.
+
+### Decisions
+
+- Bare turn/role audit events are not part of the contract. If a future runner needs a different role payload, it should extend the plan and schema explicitly rather than relying on empty events.
+
+### Next Steps
+
+1. Candidate-to-trace cross-reference remains deferred until candidate schemas exist.
+2. Runner recovery trace cases remain deferred until `blocked_by_runner_error` behavior is implemented.
+
+### Verification
+
+- Focused runner contract tests: `python3 -m pytest tests/test_agent_runner_contract.py -q` passed (4 tests).
+- Full suite: `python3 -m pytest -q` passed (169 tests).
+- Canonical Docker suite: `docker compose run --rm test -q` passed.
+- Collection check: `python3 -m pytest --collect-only -q` reports 4 agent-runner contract, 48 CLI contract, 8 fixture, 14 model, and 95 rule tests.
+- Current-version stale-reference grep: `rg -n "현재 v1\\.22|Implementation plan is at v1\\.22|Canonical specification.*v1\\.22|implementation source of truth \\(v1\\.22\\)" HANDOFF.md README.md docs/daily_logs/2026-05-28/work_log.md` returned no current-state matches.
+- Diff hygiene: `git diff --check` passed.

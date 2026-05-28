@@ -2,6 +2,8 @@
 
 | Date | Change | Detail |
 |---|---|---|
+| 2026-05-28 | Plan v1.23 + audit trace role payloads: turn events now require role-specific audit payloads (`system`→`content_ref`, `agent`→`tool_call`, `tool`→`name` + `result_ref`), closing the bare `{run_id, turn, role}` permissiveness gap. | [Work log](docs/daily_logs/2026-05-28/work_log.md) |
+| 2026-05-28 | Audit trace schema foundation: registers `agent_trace.schema.json` for one append-only audit JSONL event and validates `MockFixtureRunner.audit_trace` against it. Raw trace retention/redaction and runner failure recovery remain later slices. | [Work log](docs/daily_logs/2026-05-28/work_log.md) |
 | 2026-05-28 | AgentRunner protocol foundation: adds framework-neutral `AgentRunner` / `AgentRunResult` and a deterministic fixture-replay mock runner with contract tests, without introducing SDK credentials, tools, orchestration, or compacting behavior. | [Work log](docs/daily_logs/2026-05-28/work_log.md) |
 | 2026-05-28 | Plan v1.22: explicitly defines trace link canonical ID lineage. Trace link internal rubric/spec IDs are dependent references remapped through item `id_map`, while the trace link entry itself is also a compacted relationship artifact and valid `id_map.entity_type`. | [Work log](docs/daily_logs/2026-05-28/work_log.md) |
 | 2026-05-28 | Phase 2 contract schema foundation: registers `id_map.schema.json` and `semantic_verifications.schema.json` so future `compact`/`verify` work can validate canonical ID lineage and read-only verifier proposals without choosing runner or identity algorithms yet. | [Work log](docs/daily_logs/2026-05-28/work_log.md) |

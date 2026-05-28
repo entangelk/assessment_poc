@@ -2,7 +2,7 @@
 
 ## Current Status
 
-- Implementation plan is at v1.22 (`docs/implementation_plan_assessment_harness_poc_v1.md`) and is the canonical implementation source of truth, ahead of `docs/ideation_assessment_harness_v2.2.md` (revised in-place 2026-05-27, supersedes v2.1).
+- Implementation plan is at v1.23 (`docs/implementation_plan_assessment_harness_poc_v1.md`) and is the canonical implementation source of truth, ahead of `docs/ideation_assessment_harness_v2.2.md` (revised in-place 2026-05-27, supersedes v2.1).
 - **Rule 0 is live**: source snapshot grounding, evidence completeness/reference-integrity checks, mandatory `--source-manifest`, and structured invalid-input recovery are implemented.
 - **Rule 1 is feature-complete** (plan v1.19 §6): `possible_orphan_scored_rubric_item`, `unconfirmed_trace_coverage`, and `orphan_bonus_rubric_item` are all implemented. The CLI exposes their review actions and provisional severity counts; slice 3.1 locks the public envelope/schema contract, including the bonus-only `(high=0, medium=0, informational=1)` boundary.
 - **Rule 2 is implemented** (plan v1.19 §6): `uncovered_must_spec_item` is emitted as medium/provisional when no `scored` rubric traces a `must` spec, with `review_uncovered_must_spec` exposed through `check`. It is structural only: pending scored traces cover, while bonus-only or qualitative-only traces do not.
@@ -14,7 +14,7 @@
 - **Initial `review` draft writer is live** (plan v1.19 §5.6): `review --findings ... --out-dir ... --reviewer ...` writes `review.yaml` with one minimal-key `hold` decision per finding. It accepts only `findings.status=success` or `provisional_findings`, refuses to overwrite an existing draft unless `--force` is passed, and does not auto-accept or rewrite artifacts; humans edit the draft before final `gate`.
 - **AgentRunner protocol foundation is live** (plan v1.22 §7 / §9): `agent_runners/base.py` defines the framework-neutral `AgentRunner` protocol and `AgentRunResult`; `agent_runners/mock.py` deterministically replays fixture YAML for protocol contract tests only.
 - **Pending implementation**: `extract`, `compact`, `verify`, real SDK runners, framework tools, orchestrator workflows, trace-link override materialization, review_queue composition, and later Phase 2/3 runner workflows.
-- Package surface: `check` / `schema` / `report` / `review` / `gate` subcommands, twelve JSON Schemas, and six fully-grounded fixtures (`clean_assignment`, `reference_integrity`, `orphan_scored_rubric`, `bonus_misuse`, `uncovered_must_spec`, `optionality_mismatch`). Docker is the canonical dev environment.
+- Package surface: `check` / `schema` / `report` / `review` / `gate` subcommands, thirteen JSON Schemas, and six fully-grounded fixtures (`clean_assignment`, `reference_integrity`, `orphan_scored_rubric`, `bonus_misuse`, `uncovered_must_spec`, `optionality_mismatch`). Docker is the canonical dev environment.
 - The PoC is an **agent-level harness**: the 1st-class caller is an AI agent (Claude Code / Codex / Gemini), not a human. Humans participate only as final reviewers.
 - The final workflow is `extract --runs N -> compact -> verify --runs N -> check -> report -> review -> gate`. Compacting is a **union-based audit operation**: every valid candidate is preserved with `support` / `identity_basis` / `variants`.
 
@@ -50,7 +50,7 @@ docker compose run --rm harness --output json check \
 
 ## Active Decisions (Adopted)
 
-- **Canonical specification**: v1.22 implementation plan first, then `v2.2` ideation (revised in-place 2026-05-27). v2.1 and earlier ideation versions are historical; v2.2 supersedes v2.1 in any overlapping area without area limits.
+- **Canonical specification**: v1.23 implementation plan first, then `v2.2` ideation (revised in-place 2026-05-27). v2.1 and earlier ideation versions are historical; v2.2 supersedes v2.1 in any overlapping area without area limits.
 - **Final-review finding key minimalism** (plan v1.19 §5.6): `target_type: finding` decisions use only generated identifiers in `target_key`; no `message`, `evidence`, title/description/text, or other payload copies. Stale/duplicate decision keys and duplicate canonical keys inside `findings.json` are invalid input. Missing decisions or `hold`/`rerun_requested` keep `gate` at `pending_review`.
 - **Review draft status guard** (Owner, 2026-05-28; plan v1.19 §5.6): `review` accepts only `findings.status=success` or `provisional_findings`. `invalid_input` findings docs are rejected before draft creation so Rule 0 invalid empty findings cannot accidentally become a `gate success`. `gate` remains status-agnostic and consumes explicit final review records for manual recovery/audit workflows.
 - **Review draft overwrite guard** (Owner, 2026-05-28; plan v1.19 §5.6): `review` must not overwrite existing `<out-dir>/review.yaml` by default. Intentional regeneration requires `--force`; timestamped/versioned draft management is deferred, and callers should use a distinct `--out-dir` when they want parallel draft history.
@@ -72,7 +72,8 @@ docker compose run --rm harness --output json check \
 - **Trace link ID lineage** (Owner, 2026-05-28; plan v1.22 §5.0): trace link internal `rubric_id` / `spec_ids` are dependent references remapped through spec/rubric item `id_map`, while the trace link entry itself also has canonical identity as a compacted relationship artifact. `id_map.entity_type` therefore includes `trace_link` alongside `spec_item` and `rubric_item`.
 - **Final review power**: `accept` / `hold` / `rerun_requested` / `override`. `override` is recorded as a distinct `kind: human_override` provenance entry in `sources`.
 - **Mock runner role**: `agent_runners/mock.py` is a deterministic fixture-replay runner used only for protocol contract tests; it is separate from `manual.py` which holds human-authored Phase 0/1 inputs.
-- **Trace separation**: `agent_trace.raw.jsonl` and `agent_trace.audit.jsonl` are stored separately with distinct retention/redaction expectations.
+- **Trace separation**: `agent_trace.raw.jsonl` and `agent_trace.audit.jsonl` are stored separately with distinct retention/redaction expectations. `agent_trace.schema.json` currently validates one audit JSONL event at a time; raw trace retention/redaction remains a later decision.
+- **Audit trace role payloads** (plan v1.23 §5.4.1): turn events must carry audit payload by role: `system` requires `content_ref`, `agent` requires `tool_call`, and `tool` requires `name` plus `result_ref`.
 - **Decision boundary**: `check` creates provisional findings; only `gate`, after final human review, returns an external blocking verdict.
 - **Source grounding**: Phase 0 uses immutable input snapshots, document hashes, and line/span `source_ref`; DB/RAG storage is deferred.
 - **Canonical IDs**: compacting remaps run-local IDs to canonical IDs and retains `id_map` provenance.
@@ -111,7 +112,7 @@ docker compose run --rm harness --output json check \
 
 **Rule 0-3 and lint family L1/L5/L6 are complete. Initial finding-level `review`/`gate` path is implemented.**
 
-Rationale: Rule 2 and Rule 3 completed the remaining deterministic structural checks on the established lint/output pipeline. Plan v1.22 now supplies the minimal final-review finding mapping, safe review draft generation, gate boundary matrix, draft safety guards, Phase 0 policy completeness, policy schema-validation recovery clarification, and trace link canonical ID lineage.
+Rationale: Rule 2 and Rule 3 completed the remaining deterministic structural checks on the established lint/output pipeline. Plan v1.23 now supplies the minimal final-review finding mapping, safe review draft generation, gate boundary matrix, draft safety guards, Phase 0 policy completeness, policy schema-validation recovery clarification, trace link canonical ID lineage, and audit trace role-payload requirements.
 
 ### Publication Boundary (2026-05-27)
 
@@ -166,7 +167,7 @@ When a **verifier** claims branch coverage from probes, measure at the level tha
 
 ## Verification
 
-- 167 tests pass after the AgentRunner protocol foundation (`python3 -m pytest -q`; canonical Docker suite `docker compose run --rm test -q` also passes). Collection reports 2 agent-runner contract, 48 CLI contract, 8 fixture, 14 model, and 95 rule tests. The policy-incomplete regression is parametrized across the four shapes `_validate_check_policy` must catch (empty doc, missing `rules`, empty `rules`, threshold absent) so a refactor cannot silently let one through.
+- 169 tests pass after the v1.23 audit trace role-payload slice (`python3 -m pytest -q`; canonical Docker suite `docker compose run --rm test -q` also passes). Collection reports 4 agent-runner contract, 48 CLI contract, 8 fixture, 14 model, and 95 rule tests. The policy-incomplete regression is parametrized across the four shapes `_validate_check_policy` must catch (empty doc, missing `rules`, empty `rules`, threshold absent) so a refactor cannot silently let one through.
 - `schema --command review --output json` exposes informational `review_path`, `decision_count`, and `input_error`.
 - `schema --command gate --output json` exposes `complete_final_review`, `fix_final_review`, `revise_assessment`, plus informational `final_review_path`, `findings_path`, `blocking_count`, `confirmed_finding_count`, `dismissed_finding_count`, `pending_decision_count`, `blocking_findings`, and `input_error`.
 - `schema --command check --output json` exposes `provide_policy`, `review_double_scoring`, `review_bonus_mandatory_only`, `review_mandatory_spec_bonus_only`, `review_uncovered_must_spec`, `review_optionality_mismatch`, plus informational `review_queue_path` and `review_queue_count`.
@@ -198,7 +199,7 @@ When a **verifier** claims branch coverage from probes, measure at the level tha
   - `agent_runners/`: framework-neutral runner boundary.
     - `base.py`: `AgentRunner` protocol and `AgentRunResult`.
     - `mock.py`: deterministic fixture replay runner for protocol contract tests only.
-- `schemas/`: twelve JSON Schemas, including `review_queue.schema.json` introduced with Rule L1, `final_review.schema.json` introduced with initial `gate`, and Phase 2 contract foundations `id_map.schema.json` / `semantic_verifications.schema.json`.
+- `schemas/`: thirteen JSON Schemas, including `review_queue.schema.json` introduced with Rule L1, `final_review.schema.json` introduced with initial `gate`, and Phase 2 contract foundations `id_map.schema.json` / `semantic_verifications.schema.json` / `agent_trace.schema.json`.
 - `config/policy.yaml`: default policy.
 - `fixtures/clean_assignment/`: passing fixture with source manifest, sha256, spec.md, rubric.md.
 - `fixtures/reference_integrity/`: grounded failing fixture covering all eight current Rule 0 diagnostic codes; carries its own `source/spec.md`, `source/rubric.md`, and `source_manifest.yaml`.
@@ -207,7 +208,7 @@ When a **verifier** claims branch coverage from probes, measure at the level tha
 - `fixtures/uncovered_must_spec/`: grounded Rule 2 fixture covering untraced, pending-scored-covered, bonus-only, qualitative-only, optional, and informational spec boundaries.
 - `fixtures/optionality_mismatch/`: grounded Rule 3 fixture covering optional-only high weight, policy threshold, pending-status structural emission, must/informational-mixed suppression, bonus/qualitative-role exclusion, and below-threshold suppression.
 - `tests/`: `test_rules.py`, `test_cli_output_contract.py`, `test_fixtures.py`, `test_models.py`, `test_agent_runner_contract.py`, `conftest.py`.
-- `docs/implementation_plan_assessment_harness_poc_v1.md`: implementation source of truth (v1.22).
+- `docs/implementation_plan_assessment_harness_poc_v1.md`: implementation source of truth (v1.23).
 - `docs/ideation_assessment_harness_v2.2.md`: latest ideation (final 2026-05-27, in-place revised same day). Adds Rubric Lint Rules family — 6 accepted (L1, L2, L4, L5, L6, L7), 3 rejected. Source for plan v1.19's §6 lint family.
 - `docs/ideation_assessment_harness_v2.1.md`: latest ideation, second in precedence.
 - `docs/ideation_assessment_harness_v2.md`, `docs/ideation_assessment_harness_v1.md`: historical references.

@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://assessment-harness/agent_trace.schema.json",
+  "title": "Agent Audit Trace Event",
+  "description": "One append-only JSONL audit trace event emitted by an agent runner.",
+  "type": "object",
+  "required": ["run_id"],
+  "properties": {
+    "run_id": { "type": "string", "minLength": 1 },
+    "turn": { "type": "integer", "minimum": 0 },
+    "role": {
+      "type": "string",
+      "enum": ["system", "agent", "tool"]
+    },
+    "content_ref": { "type": "string", "minLength": 1 },
+    "tool_call": {
+      "type": "object",
+      "required": ["name", "args"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "args": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": true
+    },
+    "name": { "type": "string", "minLength": 1 },
+    "result_ref": { "type": "string", "minLength": 1 },
+    "finish_reason": { "type": "string", "minLength": 1 },
+    "turns": { "type": "integer", "minimum": 0 },
+    "tool_call_count": { "type": "integer", "minimum": 0 }
+  },
+  "anyOf": [
+    { "required": ["turn", "role"] },
+    { "required": ["finish_reason", "turns", "tool_call_count"] }
+  ],
+  "allOf": [
+    {
+      "if": {
+        "properties": { "role": { "const": "system" } },
+        "required": ["role"]
+      },
+      "then": { "required": ["content_ref"] }
+    },
+    {
+      "if": {
+        "properties": { "role": { "const": "agent" } },
+        "required": ["role"]
+      },
+      "then": { "required": ["tool_call"] }
+    },
+    {
+      "if": {
+        "properties": { "role": { "const": "tool" } },
+        "required": ["role"]
+      },
+      "then": { "required": ["name", "result_ref"] }
+    }
+  ],
+  "additionalProperties": true
+}

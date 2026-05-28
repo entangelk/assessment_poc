@@ -1,4 +1,4 @@
-# Assessment Spec Harness PoC 구현 계획서 v1.22
+# Assessment Spec Harness PoC 구현 계획서 v1.23
 
 ## 0. 문서 목적
 
@@ -420,7 +420,7 @@ Candidate artifact는 assessment rule 입력이 될 수 없다. 먼저 run integ
 {"run_id":"run_2026-05-25T00:00:00Z_a1b2","finish_reason":"complete","turns":7,"tool_call_count":12}
 ```
 
-audit trace는 append-only JSONL이며, 각 candidate는 자신의 run_id로 trace 부분집합을 식별한다. 큰 tool 결과는 외부 file로 분리하고 trace에는 ref만 남긴다. raw trace 저장 계약은 Phase 2 진입 전 retention/redaction 정책과 함께 확정한다.
+audit trace는 append-only JSONL이며, 각 candidate는 자신의 run_id로 trace 부분집합을 식별한다. Turn event는 감사 가능한 payload를 반드시 포함한다. `role: system`은 `content_ref`, `role: agent`는 `tool_call`, `role: tool`은 `name`과 `result_ref`를 요구한다. 큰 tool 결과는 외부 file로 분리하고 trace에는 ref만 남긴다. raw trace 저장 계약은 Phase 2 진입 전 retention/redaction 정책과 함께 확정한다.
 
 ### 5.5 Finding
 
@@ -1318,6 +1318,15 @@ Phase 2/3 전 확정할 사항:
 ---
 
 ## 15. 변경 이력
+
+### v1.23 (2026-05-28)
+
+핵심 변경: **agent audit trace role payload 경계 명시화.**
+
+- §5.4.1에 turn event의 role별 payload 요구를 명시했다. `role: system`은
+  `content_ref`, `role: agent`는 `tool_call`, `role: tool`은 `name`과
+  `result_ref`를 요구한다. 이는 `agent_trace.schema.json`이 bare
+  `{run_id, turn, role}` 이벤트를 허용하지 않도록 하는 계약 강화다.
 
 ### v1.22 (2026-05-28)
 
