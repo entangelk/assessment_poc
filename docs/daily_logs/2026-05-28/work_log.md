@@ -126,3 +126,133 @@
 - Full suite: `python3 -m pytest -q` passed (147 tests).
 - Canonical Docker suite: `docker compose run --rm test -q` passed.
 - Collection check: `python3 -m pytest --collect-only -q` reports 33 CLI contract, 7 fixture, 12 model, and 95 rule tests.
+
+---
+
+## Initial Review Draft Writer
+
+### Goals
+
+- Continue from the accepted `gate` slice into the next workflow step: `review`.
+- Keep scope narrow and safe: generate a final-review draft, but do not make final human decisions automatically.
+- Reuse the v1.17 minimal finding-key contract so review records do not copy finding payloads.
+
+### Completed Work
+
+- Promoted the plan to v1.18.
+  - Files changed: `docs/implementation_plan_assessment_harness_poc_v1.md`.
+  - Key changes: defined Phase 0 `review` as a draft writer; required `--findings`, `--out-dir`, and `--reviewer`; documented that every generated finding decision starts as `hold`; documented that draft records gate to `pending_review` when findings exist.
+  - Effect: the review command has a canonical contract before being used as part of the workflow.
+- Implemented `assessment-harness review`.
+  - Files changed: `src/assessment_harness/cli.py`.
+  - Key changes: reads and validates `findings.json`; converts each known finding to a minimal canonical `target_key`; writes `<out-dir>/review.yaml`; records optional input paths; exposes `schema --command review`.
+  - Effect: users no longer need to hand-author the initial final review record just to begin review.
+- Added regression coverage.
+  - Files changed: `tests/test_cli_output_contract.py`, `tests/test_fixtures.py`.
+  - Key changes: locked `schema --command review`, synthetic review draft generation, empty-findings success through gate, unknown finding rejection, and an end-to-end `orphan_scored_rubric` check → review draft → gate pending path.
+  - Effect: review draft behavior is tied to both the public CLI envelope and grounded fixture outputs.
+- Updated current-state docs.
+  - Files changed: `README.md`, `HANDOFF.md`, `CHANGELOG.md`, this work log.
+  - Key changes: documented `--reviewer`, review draft semantics, and the current package surface including `review`.
+  - Effect: handoff now points to richer human decision input / trace override materialization rather than the basic review draft writer.
+
+### Issues Found
+
+- Problem: auto-generating `accept` decisions would make the tool a judge rather than a review recorder.
+  Cause: `review` sits between provisional findings and external `gate`, so the temptation is to "complete" decisions automatically.
+  Resolution: generated decisions are always `hold`; humans must edit the draft to `accept`, `override`, or `rerun_requested`.
+  Outcome: the first review slice is useful without collapsing the human-review boundary.
+- Problem: relative `findings_path` inside `review.yaml` could break when `gate` resolves paths relative to the review file.
+  Cause: `gate` deliberately resolves relative paths from the final-review file's directory.
+  Resolution: `review` writes absolute input paths.
+  Outcome: a generated review draft can be passed to `gate` from any working directory.
+
+### Decisions
+
+- `review` is a draft writer, not an interactive or automatic final-review UI.
+- `--reviewer` is required so the generated record has explicit audit metadata.
+- Unknown finding types are invalid for review draft generation because `gate` would not know a canonical minimal key for them.
+
+### Next Steps
+
+1. Run focused/full/Docker verification for the v1.18 review slice.
+2. Independently verify review draft generation before publication.
+3. Later review work can add richer human decision input or trace-link override materialization.
+
+### Verification
+
+- Focused review/gate contract suite: `python3 -m pytest tests/test_cli_output_contract.py -q` passed (37 tests).
+- Focused review/gate + fixture suite: `python3 -m pytest tests/test_cli_output_contract.py tests/test_fixtures.py -q` passed (45 tests).
+- Full suite: `python3 -m pytest -q` passed (152 tests).
+- Canonical Docker suite: `docker compose run --rm test -q` passed.
+- Collection check: `python3 -m pytest --collect-only -q` reports 37 CLI contract, 8 fixture, 12 model, and 95 rule tests.
+- Review schema smoke: `PYTHONPATH=src python3 -m assessment_harness.cli --output json schema --command review` returns `status=success` and exposes `review_path`, `decision_count`, and `input_error`.
+
+---
+
+## Review Draft Safety Guard Follow-Up
+
+### Goals
+
+- Address the independent review of the v1.18 `review` draft writer without weakening the human-review boundary.
+- Add the missing regression for known finding types with absent canonical key fields.
+- Decide and implement the safest default for invalid findings status and existing draft overwrites.
+
+### Completed Work
+
+- Promoted the plan to v1.19.
+  - Files changed: `docs/implementation_plan_assessment_harness_poc_v1.md`.
+  - Key changes: documented that `review` accepts only `findings.status=success` or `provisional_findings`; documented that `gate` remains status-agnostic; documented that existing `<out-dir>/review.yaml` is not overwritten unless `--force` is passed; recorded that timestamped/versioned draft management is deferred.
+  - Effect: the status/overwrite behavior is now a contract, not an implementation guess.
+- Hardened the `review` command.
+  - Files changed: `src/assessment_harness/cli.py`.
+  - Key changes: added a findings status guard before draft generation; added overwrite refusal with explicit `--force`; kept generated decisions at `hold` and target keys minimal.
+  - Effect: Rule 0 invalid outputs with empty findings cannot be converted into a draft that later gates as success, and human-edited drafts are not silently erased.
+- Expanded review regressions.
+  - Files changed: `tests/test_cli_output_contract.py`.
+  - Key changes: added the missing known-type/missing-key-field invalid-input regression; added status-guard regression; expanded the status guard to reject `invalid_input`, `internal_error`, and missing status inputs; added no-overwrite and force-overwrite regressions.
+  - Effect: under-strict status acceptance and accidental overwrite are now locked, while explicit regeneration remains possible.
+- Updated current-state docs.
+  - Files changed: `README.md`, `HANDOFF.md`, `CHANGELOG.md`, this work log.
+  - Key changes: documented plan v1.19, review status guard, overwrite guard, and the deferred timestamp/versioning boundary.
+  - Effect: next workers can continue with richer review/version management without rediscovering this policy.
+
+### Issues Found
+
+- Problem: the v1.18 review test matrix did not lock the known finding type + missing canonical key field branch.
+  Cause: unknown finding type was covered, but optional schema fields made the missing-key path separately reachable.
+  Resolution: added a regression using `optionality_mismatch` without `rubric_id`; `review` returns `invalid_input`/exit `2` with `missing gate key field`.
+  Outcome: the branch named in the final-review mapping contract is now protected.
+- Problem: `review` previously accepted `findings.status=invalid_input` if the file matched schema shape and had an empty findings list.
+  Cause: the first draft writer focused on findings array conversion and did not gate the producing command status.
+  Resolution: `review` now rejects any findings status except `success` and `provisional_findings`.
+  Outcome: invalid Rule 0 input cannot be laundered through an empty draft into a successful gate result.
+- Problem: the first status-guard regression only sampled `invalid_input`, so a future blocklist-style refactor could still let `internal_error` through.
+  Cause: the implementation was a whitelist, but the regression did not prove that shape.
+  Resolution: parametrized the status rejection test over `invalid_input`, `internal_error`, and status omission. The omission case is rejected by schema before the whitelist guard, while `internal_error` directly locks the whitelist behavior.
+  Outcome: changing the guard to reject only `invalid_input` now fails the CLI contract suite.
+- Problem: re-running `review` over the same output directory silently replaced `review.yaml`.
+  Cause: the initial implementation treated draft generation as reproducible output, but final review drafts may be hand-edited artifacts.
+  Resolution: default overwrite is forbidden; `--force` is required for intentional regeneration.
+  Outcome: human edits are preserved by default.
+
+### Decisions
+
+- **Owner-guided decision (2026-05-28)**: put the findings-status safety guard in `review`, not `gate`. This prevents accidental invalid-input laundering at draft creation while preserving `gate` as a consumer of explicit final-review records for manual recovery and audit workflows.
+- **Owner-guided decision (2026-05-28)**: default behavior is no overwrite for `review.yaml`. `--force` is the explicit escape hatch.
+- Timestamped/versioned draft management is useful but deferred. For now, callers that need draft history should use distinct `--out-dir` values; adding automatic version files belongs in a separate policy slice.
+
+### Next Steps
+
+1. Ask for independent re-verification before publication.
+2. Later review work can add richer human decision input and a deliberate draft-versioning policy.
+
+### Verification
+
+- Focused review/gate + fixture suite: `python3 -m pytest tests/test_cli_output_contract.py tests/test_fixtures.py -q` passed (51 tests).
+- Full suite: `python3 -m pytest -q` passed (158 tests).
+- Canonical Docker suite: `docker compose run --rm test -q` passed.
+- Collection check: `python3 -m pytest --collect-only -q` reports 43 CLI contract, 8 fixture, 12 model, and 95 rule tests.
+- Review schema smoke: `PYTHONPATH=src python3 -m assessment_harness.cli --output json schema --command review` returns `status=success` and exposes `review_path`, `decision_count`, and `input_error`.
+- Gate schema smoke: `PYTHONPATH=src python3 -m assessment_harness.cli --output json schema --command gate` returns `status=success` and exposes `complete_final_review`, `fix_final_review`, and `revise_assessment`.
+- Diff hygiene: `git diff --check` passed.

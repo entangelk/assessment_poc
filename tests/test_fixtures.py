@@ -381,6 +381,64 @@ def test_gate_closes_orphan_scored_fixture_with_minimal_finding_keys(
     assert gate_envelope["blocking_findings"][0]["type"] == "orphan_scored_rubric_item"
 
 
+def test_review_draft_for_orphan_fixture_keeps_gate_pending(
+    fixture_dir: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """End-to-end review draft guard: generated final review records use
+    minimal finding keys and `hold`, so gate remains pending until a human
+    reviewer edits the decisions.
+    """
+    code, envelope, findings, diagnostics = _run_check(
+        fixture_dir / "orphan_scored_rubric", tmp_path, capsys, use_manifest=True
+    )
+    assert code == 0, f"diagnostics: {diagnostics}"
+    assert envelope["status"] == "provisional_findings"
+    assert len(findings["findings"]) == 3
+
+    review_code = main(
+        [
+            "--output",
+            "json",
+            "review",
+            "--findings",
+            str(tmp_path / "findings.json"),
+            "--out-dir",
+            str(tmp_path / "final_review"),
+            "--reviewer",
+            "fixture-reviewer",
+        ]
+    )
+    review_envelope = json.loads(capsys.readouterr().out)
+    assert validate("cli_output", review_envelope) == []
+    assert review_code == 0
+    assert review_envelope["decision_count"] == 3
+
+    review_doc = yaml.safe_load(
+        Path(review_envelope["review_path"]).read_text(encoding="utf-8")
+    )
+    assert validate("final_review", review_doc) == []
+    assert {decision["action"] for decision in review_doc["decisions"]} == {"hold"}
+    assert all(
+        set(decision["target_key"]) <= {"type", "rubric_id"}
+        for decision in review_doc["decisions"]
+    )
+
+    gate_code = main(
+        [
+            "--output",
+            "json",
+            "gate",
+            "--final-review",
+            review_envelope["review_path"],
+        ]
+    )
+    gate_envelope = json.loads(capsys.readouterr().out)
+    assert validate("cli_output", gate_envelope) == []
+    assert gate_code == 0
+    assert gate_envelope["status"] == "pending_review"
+    assert gate_envelope["pending_decision_count"] == 3
+
+
 def test_optionality_mismatch_fixture_locks_rule_three_policy_boundary(
     fixture_dir: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

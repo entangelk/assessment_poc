@@ -332,6 +332,25 @@ def test_schema_command_returns_gate_contract(
     assert "blocking_findings" in contract["informational"]
 
 
+def test_schema_command_returns_review_contract(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    code, envelope, _ = _run_main(
+        ["--output", "json", "schema", "--command", "review"], capsys
+    )
+    _assert_envelope(envelope)
+    assert code == 0
+    contract = envelope["contract"]
+    assert contract["command"] == "review"
+    assert contract["stable_core"] == STABLE_CORE_FIELDS
+    assert contract["exit_codes"]["0"] == "draft final review record written."
+    assert set(contract["informational"]) == {
+        "review_path",
+        "decision_count",
+        "input_error",
+    }
+
+
 def test_schema_command_rejects_unknown_command(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -348,6 +367,22 @@ def _write_findings(path: Path, findings: list[dict]) -> None:
         json.dumps(
             {
                 "status": "provisional_findings" if findings else "success",
+                "findings": findings,
+                "blocking_count": 0,
+                "generated_at": "2026-05-28T00:00:00Z",
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+
+def _write_findings_with_status(path: Path, findings: list[dict], status: str) -> None:
+    path.write_text(
+        json.dumps(
+            {
+                "status": status,
                 "findings": findings,
                 "blocking_count": 0,
                 "generated_at": "2026-05-28T00:00:00Z",
@@ -463,6 +498,330 @@ def test_gate_missing_finding_decision_returns_pending_review(
     assert envelope["next_actions"] == [
         {"type": "complete_final_review", "pending_decision_count": 1}
     ]
+
+
+def test_review_command_writes_hold_draft_with_minimal_finding_keys(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Review is a draft writer, not an auto-judge: it must copy only minimal
+    finding identity keys and keep every provisional finding on `hold`.
+    """
+    findings_path = tmp_path / "findings.json"
+    _write_findings(
+        findings_path,
+        [
+            {
+                "type": "optionality_mismatch",
+                "severity": "high",
+                "decision_status": "provisional",
+                "rubric_id": "R_HIGH",
+                "message": "optional-only scoring",
+                "evidence": {"spec_ids": ["S_OPTIONAL"]},
+            },
+            {
+                "type": "double_scored_spec",
+                "severity": "medium",
+                "decision_status": "provisional",
+                "spec_id": "S1",
+                "scored_rubric_id": "R1",
+                "bonus_rubric_id": "RB1",
+                "message": "double scoring",
+                "evidence": {"copied": "must not enter target_key"},
+            },
+        ],
+    )
+
+    code, envelope, _ = _run_main(
+        [
+            "--output",
+            "json",
+            "review",
+            "--findings",
+            str(findings_path),
+            "--out-dir",
+            str(tmp_path / "final_review"),
+            "--reviewer",
+            "tester",
+        ],
+        capsys,
+    )
+    _assert_envelope(envelope)
+    assert code == 0
+    assert envelope["status"] == "success"
+    assert envelope["decision_count"] == 2
+
+    review_doc = yaml.safe_load(Path(envelope["review_path"]).read_text(encoding="utf-8"))
+    assert validate("final_review", review_doc) == []
+    assert review_doc["reviewer"] == "tester"
+    assert review_doc["inputs"]["findings_path"] == str(findings_path.resolve())
+    assert [decision["action"] for decision in review_doc["decisions"]] == [
+        "hold",
+        "hold",
+    ]
+    assert review_doc["decisions"][0]["target_key"] == {
+        "type": "optionality_mismatch",
+        "rubric_id": "R_HIGH",
+    }
+    assert review_doc["decisions"][1]["target_key"] == {
+        "type": "double_scored_spec",
+        "spec_id": "S1",
+        "scored_rubric_id": "R1",
+        "bonus_rubric_id": "RB1",
+    }
+
+    gate_code, gate_envelope, _ = _run_main(
+        [
+            "--output",
+            "json",
+            "gate",
+            "--final-review",
+            envelope["review_path"],
+        ],
+        capsys,
+    )
+    _assert_envelope(gate_envelope)
+    assert gate_code == 0
+    assert gate_envelope["status"] == "pending_review"
+    assert gate_envelope["pending_decision_count"] == 2
+
+
+def test_review_command_empty_findings_draft_gates_success(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    findings_path = tmp_path / "findings.json"
+    _write_findings(findings_path, [])
+    code, envelope, _ = _run_main(
+        [
+            "--output",
+            "json",
+            "review",
+            "--findings",
+            str(findings_path),
+            "--out-dir",
+            str(tmp_path / "final_review"),
+            "--reviewer",
+            "tester",
+        ],
+        capsys,
+    )
+    _assert_envelope(envelope)
+    assert code == 0
+    assert envelope["decision_count"] == 0
+
+    gate_code, gate_envelope, _ = _run_main(
+        ["--output", "json", "gate", "--final-review", envelope["review_path"]],
+        capsys,
+    )
+    _assert_envelope(gate_envelope)
+    assert gate_code == 0
+    assert gate_envelope["status"] == "success"
+
+
+@pytest.mark.parametrize(
+    "findings_status",
+    [
+        "invalid_input",
+        "internal_error",
+        None,
+    ],
+)
+def test_review_command_rejects_non_draftable_findings_status(
+    findings_status: str | None,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Whitelist guard: only success/provisional_findings may become a draft.
+
+    This must fail if review is weakened into rejecting only invalid_input.
+    """
+    findings_path = tmp_path / "findings.json"
+    if findings_status is None:
+        findings_path.write_text(
+            json.dumps(
+                {
+                    "findings": [],
+                    "blocking_count": 0,
+                    "generated_at": "2026-05-28T00:00:00Z",
+                },
+                indent=2,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+    else:
+        _write_findings_with_status(findings_path, [], findings_status)
+    code, envelope, _ = _run_main(
+        [
+            "--output",
+            "json",
+            "review",
+            "--findings",
+            str(findings_path),
+            "--out-dir",
+            str(tmp_path / "final_review"),
+            "--reviewer",
+            "tester",
+        ],
+        capsys,
+    )
+    _assert_envelope(envelope)
+    assert code == 2
+    assert envelope["status"] == "invalid_input"
+    if findings_status is None:
+        assert "schema validation failed" in envelope["input_error"]
+    else:
+        assert "findings.status" in envelope["input_error"]
+
+
+def test_review_command_refuses_to_overwrite_existing_draft_without_force(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    findings_path = tmp_path / "findings.json"
+    out_dir = tmp_path / "final_review"
+    _write_findings(findings_path, [])
+    first_code, first_envelope, _ = _run_main(
+        [
+            "--output",
+            "json",
+            "review",
+            "--findings",
+            str(findings_path),
+            "--out-dir",
+            str(out_dir),
+            "--reviewer",
+            "tester",
+        ],
+        capsys,
+    )
+    _assert_envelope(first_envelope)
+    assert first_code == 0
+    review_path = Path(first_envelope["review_path"])
+    review_path.write_text("human edited draft\n", encoding="utf-8")
+
+    second_code, second_envelope, _ = _run_main(
+        [
+            "--output",
+            "json",
+            "review",
+            "--findings",
+            str(findings_path),
+            "--out-dir",
+            str(out_dir),
+            "--reviewer",
+            "tester",
+        ],
+        capsys,
+    )
+    _assert_envelope(second_envelope)
+    assert second_code == 2
+    assert second_envelope["status"] == "invalid_input"
+    assert "already exists" in second_envelope["input_error"]
+    assert review_path.read_text(encoding="utf-8") == "human edited draft\n"
+
+
+def test_review_command_force_overwrites_existing_draft(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    findings_path = tmp_path / "findings.json"
+    out_dir = tmp_path / "final_review"
+    _write_findings(findings_path, [])
+    review_path = out_dir / "review.yaml"
+    out_dir.mkdir()
+    review_path.write_text("old draft\n", encoding="utf-8")
+
+    code, envelope, _ = _run_main(
+        [
+            "--output",
+            "json",
+            "review",
+            "--findings",
+            str(findings_path),
+            "--out-dir",
+            str(out_dir),
+            "--reviewer",
+            "tester",
+            "--force",
+        ],
+        capsys,
+    )
+    _assert_envelope(envelope)
+    assert code == 0
+    assert envelope["status"] == "success"
+    assert "old draft" not in review_path.read_text(encoding="utf-8")
+
+
+def test_review_command_rejects_unknown_finding_type(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    findings_path = tmp_path / "findings.json"
+    _write_findings(
+        findings_path,
+        [
+            {
+                "type": "made_up_finding",
+                "severity": "medium",
+                "decision_status": "provisional",
+                "message": "unknown",
+            }
+        ],
+    )
+    code, envelope, _ = _run_main(
+        [
+            "--output",
+            "json",
+            "review",
+            "--findings",
+            str(findings_path),
+            "--out-dir",
+            str(tmp_path / "final_review"),
+            "--reviewer",
+            "tester",
+        ],
+        capsys,
+    )
+    _assert_envelope(envelope)
+    assert code == 2
+    assert envelope["status"] == "invalid_input"
+    assert "unknown finding type" in envelope["input_error"]
+
+
+def test_review_command_rejects_known_finding_missing_key_field(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Boundary guard paired with unknown-type rejection: findings schema
+    allows key fields to be absent, but review cannot draft a gate-safe
+    target_key without the canonical field.
+    """
+    findings_path = tmp_path / "findings.json"
+    _write_findings(
+        findings_path,
+        [
+            {
+                "type": "optionality_mismatch",
+                "severity": "high",
+                "decision_status": "provisional",
+                "message": "known type but missing rubric_id",
+            }
+        ],
+    )
+    code, envelope, _ = _run_main(
+        [
+            "--output",
+            "json",
+            "review",
+            "--findings",
+            str(findings_path),
+            "--out-dir",
+            str(tmp_path / "final_review"),
+            "--reviewer",
+            "tester",
+        ],
+        capsys,
+    )
+    _assert_envelope(envelope)
+    assert code == 2
+    assert envelope["status"] == "invalid_input"
+    assert "missing gate key field" in envelope["input_error"]
 
 
 def test_gate_accept_promotes_rule_one_to_confirmed_blocking_finding(

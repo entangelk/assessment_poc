@@ -128,6 +128,7 @@ assessment-harness review \
   --semantic-verifications work/semantic_verification/semantic_verifications.yaml \
   --review-queue work/compacted/review_queue.json \
   --report work/report.md \
+  --reviewer kdt \
   --out-dir work/final_review
 
 # 최종 review 이후 외부 판정
@@ -182,7 +183,7 @@ gate (external final decision)
 - **integrity_diagnostics.json**: Rule 0 위반 기록
 - **review_queue.json**: 기존 검토 entry 5종과 lint safeguard `double_scoring_review` / `mandatory_spec_bonus_review`. Phase 0에서는 Rule L1/L6가 각각 paired queue entry를 생성하며, Rule L5는 finding/action만 생성
 - **findings.json**: Rule 1~3 위반 (Rule 0는 별도 diagnostic)
-- **final_review/**: 최종 검토자의 accept/hold/rerun/override 기록. Finding decision은 최소 `target_key`로 `findings.json` 항목을 닫음
+- **final_review/**: 최종 검토자의 accept/hold/rerun/override 기록. `review` 명령은 `status=success`/`provisional_findings`인 findings만 받아 모든 finding을 `hold`로 둔 draft `review.yaml`을 만들고, 사람이 이를 수정해 최종 결정으로 닫음. 기존 draft는 기본적으로 덮어쓰지 않으며, 의도적 재생성은 `--force`를 사용. Finding decision은 최소 `target_key`로 `findings.json` 항목을 닫음
 - **gate output**: final review 이후 외부 호출자가 소비하는 pass/fail/pending 판정. confirmed blocking finding이 있을 때만 exit `1`
 
 ---
@@ -253,7 +254,7 @@ CLI는 `--policy config/policy.yaml` 하나로 모든 정책을 받는다.
 
 | 문서 | 역할 |
 |---|---|
-| [docs/implementation_plan_assessment_harness_poc_v1.md](docs/implementation_plan_assessment_harness_poc_v1.md) | **구현 명세 (1순위 SoT)** — 현재 v1.17 |
+| [docs/implementation_plan_assessment_harness_poc_v1.md](docs/implementation_plan_assessment_harness_poc_v1.md) | **구현 명세 (1순위 SoT)** — 현재 v1.19 |
 | [docs/ideation_assessment_harness_v2.2.md](docs/ideation_assessment_harness_v2.2.md) | Rubric Lint Rules 가족 (2순위, 2026-05-27 final + in-place 개정) |
 | [docs/ideation_assessment_harness_v2.1.md](docs/ideation_assessment_harness_v2.1.md) | 제품 목적과 장기 방향 (3순위) |
 | [docs/ideation_assessment_harness_v2.md](docs/ideation_assessment_harness_v2.md) | historical reference |

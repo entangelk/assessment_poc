@@ -1,4 +1,4 @@
-# Assessment Spec Harness PoC 구현 계획서 v1.17
+# Assessment Spec Harness PoC 구현 계획서 v1.19
 
 ## 0. 문서 목적
 
@@ -531,6 +531,32 @@ confirmed finding인 `orphan_scored_rubric_item` (`high`, `confirmed`)으로
 `mandatory_spec_bonus_only_traced`. Rule 2, L1, L5의 confirmed finding은 review
 결과로 기록되지만 현재 v0에서는 exit `1`을 만들지 않는다.
 
+Phase 0 `review` 명령은 final review record의 **draft writer**다. 최종 판단을
+자동으로 내리지 않는다. `review --findings <findings.json> --out-dir <dir>
+--reviewer <name>`은 `findings.json`의 각 provisional finding을 위 canonical
+`target_key`로 변환하고 `action: hold` decision을 생성한 뒤 `<dir>/review.yaml`에
+기록한다. reviewer는 이 draft를 열어 각 finding을 `accept`, `override`, `hold`,
+`rerun_requested` 중 하나로 수정한다. draft 그대로 `gate`에 전달하면 finding이
+있는 경우 `pending_review`가 정상 결과다.
+
+`review` draft 생성 규칙:
+
+- `target_key`는 §5.6의 finding별 canonical key만 포함한다.
+- `message`, `evidence`, rubric/spec 본문, title/description은 복사하지 않는다.
+- 알 수 없는 finding type이거나 canonical key field가 누락된 finding은
+  `invalid_input`/exit `2`다.
+- `findings.json`의 `status`는 `success` 또는 `provisional_findings`여야 한다.
+  Rule 0 invalid 기원의 `status: invalid_input` findings artifact는 review draft로
+  승격하지 않는다. 이 검사는 `review`에서 수행한다. `gate`는 이미 작성된
+  final_review record와 findings 구조를 소비하는 단계로 남겨 수동 복구/감사 흐름을
+  과도하게 차단하지 않는다.
+- finding이 없는 `findings.json`은 decisions가 빈 review record를 생성할 수 있다.
+  이 record는 `gate`에서 `success`가 된다.
+- `<out-dir>/review.yaml`이 이미 있으면 기본적으로 덮어쓰지 않고
+  `invalid_input`/exit `2`를 반환한다. 편집된 draft를 의도적으로 재생성하려면
+  `--force`를 명시한다. 별도 버전 관리는 현재 slice에서 자동 생성하지 않으며,
+  caller가 새 `--out-dir`을 선택해 draft version을 분리한다.
+
 review action enum:
 
 - `accept`: compacted entry를 그대로 채택
@@ -1010,6 +1036,7 @@ assessment-harness review \
   --semantic-verifications work/semantic_verification/semantic_verifications.yaml \
   --review-queue work/compacted/review_queue.json \
   --report work/report.md \
+  --reviewer kdt \
   --out-dir work/final_review
 
 assessment-harness gate \
@@ -1279,6 +1306,22 @@ Phase 2/3 전 확정할 사항:
 ---
 
 ## 15. 변경 이력
+
+### v1.19 (2026-05-28)
+
+핵심 변경: **review draft writer의 입력/덮어쓰기 안전장치를 보강.**
+
+- **status guard**: `review`는 `findings.status`가 `success` 또는 `provisional_findings`인 경우만 draft를 생성한다. Rule 0 invalid 결과가 빈 findings라는 이유로 gate success까지 흐르는 것을 막되, `gate`는 수동 복구 final_review 소비자 역할로 남긴다.
+- **overwrite guard**: `review`는 기존 `<out-dir>/review.yaml`을 기본적으로 덮어쓰지 않는다. 명시적 `--force`가 있을 때만 재생성한다.
+- **versioning boundary**: timestamp/versioned draft 자동 생성은 별도 정책/lineage 결정이 필요하므로 이번 slice에서는 넣지 않는다. caller가 새 `--out-dir`을 선택해 version을 분리한다.
+
+### v1.18 (2026-05-28)
+
+핵심 변경: **Phase 0 `review` draft writer를 정의하고 구현에 진입.**
+
+- **review 역할 제한**: `review`는 final 판단자가 아니라 `final_review/review.yaml` 초안을 생성한다. 모든 finding decision은 기본 `hold`이며, 사람 reviewer가 이후 `accept`/`override`/`hold`/`rerun_requested`로 수정한다.
+- **최소 key 재사용**: draft decision도 v1.17 §5.6의 canonical finding key만 기록한다. `message`, `evidence`, 본문/제목/설명 payload는 복사하지 않는다.
+- **안전한 gate 연동**: draft 그대로 `gate`에 전달하면 finding이 있는 경우 `pending_review`, finding이 없는 경우 `success`가 된다.
 
 ### v1.17 (2026-05-28)
 
