@@ -2,7 +2,7 @@
 
 ## Current Status
 
-- Implementation plan is at v1.20 (`docs/implementation_plan_assessment_harness_poc_v1.md`) and is the canonical implementation source of truth, ahead of `docs/ideation_assessment_harness_v2.2.md` (revised in-place 2026-05-27, supersedes v2.1).
+- Implementation plan is at v1.21 (`docs/implementation_plan_assessment_harness_poc_v1.md`) and is the canonical implementation source of truth, ahead of `docs/ideation_assessment_harness_v2.2.md` (revised in-place 2026-05-27, supersedes v2.1).
 - **Rule 0 is live**: source snapshot grounding, evidence completeness/reference-integrity checks, mandatory `--source-manifest`, and structured invalid-input recovery are implemented.
 - **Rule 1 is feature-complete** (plan v1.19 §6): `possible_orphan_scored_rubric_item`, `unconfirmed_trace_coverage`, and `orphan_bonus_rubric_item` are all implemented. The CLI exposes their review actions and provisional severity counts; slice 3.1 locks the public envelope/schema contract, including the bonus-only `(high=0, medium=0, informational=1)` boundary.
 - **Rule 2 is implemented** (plan v1.19 §6): `uncovered_must_spec_item` is emitted as medium/provisional when no `scored` rubric traces a `must` spec, with `review_uncovered_must_spec` exposed through `check`. It is structural only: pending scored traces cover, while bonus-only or qualitative-only traces do not.
@@ -149,6 +149,8 @@ Rule 3 plus plan v1.15's optional-only boundary reinforcement passed the owner's
 ### Test-surface lessons from today's session (Slice 3.1 retrospective)
 
 When adding any new envelope field, next_action type, or schema-contract entry, also add a regression that **explicitly** asserts on it. The CLI's primary user is an AI agent; the envelope (stdout JSON) is the public contract, not the on-disk `findings.json`. Tests that only read findings.json miss envelope-shape regressions — slice 3 shipped three new envelope surfaces with no test for any of them, and the gap only surfaced via owner review. `_run_check` in `tests/test_fixtures.py` now returns the envelope as a 4-tuple to make this easy. Use it.
+
+When a **verifier** claims branch coverage from probes, measure at the level that distinguishes the branches — usually the error message, not just exit code and `next_action` type. Two different code paths (e.g. policy schema validation vs `_validate_check_policy`) can converge on the same envelope outcome (`exit 2` / `fix_input` / `status=invalid_input`) while exercising entirely different functions. The v1.20 policy completeness verification probed 8 input shapes and reported "8/8 PASS" using only exit code and `next_action`; the v1.21 strengthening follow-up surfaced that one of those shapes never reached the named validator at all — same outcome, different path. The fix is on the verifier side: include the rejection message (or a path-attributing assertion) in any probe table that claims branch coverage. Probes that only check the outcome can give a false sense of coverage when defensive depth and primary checks both lead to the same envelope.
 
 ## Verification
 

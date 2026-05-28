@@ -2,6 +2,7 @@
 
 | Date | Change | Detail |
 |---|---|---|
+| 2026-05-28 | Plan v1.21: documents that policy schema-validation failures also produce `fix_input` recovery, closing the contract gap surfaced by the v1.20 strengthening follow-up. HANDOFF gains a verifier discipline note: probes claiming branch coverage must distinguish paths by error message, not only by exit code / `next_action`. No code change. | [Work log](docs/daily_logs/2026-05-28/work_log.md) |
 | 2026-05-28 | Plan v1.20 + Phase 0 policy completeness: `check` now requires `--policy` and rejects schema-valid policies that omit `rules.optionality_mismatch.weight_threshold`, preventing Rule 3 from being silently disabled. Adds `provide_policy` recovery metadata and regressions for missing/incomplete policy. | [Work log](docs/daily_logs/2026-05-28/work_log.md) |
 | 2026-05-28 | Plan v1.19 + `review` safety guards: `review` now rejects `invalid_input` findings docs before draft creation, refuses to overwrite an existing `review.yaml` unless `--force` is passed, and documents why `gate` remains status-agnostic for explicit final-review records. | [Work log](docs/daily_logs/2026-05-28/work_log.md) |
 | 2026-05-28 | Plan v1.18 + initial `review`: defines and implements a safe final-review draft writer. `review` creates `review.yaml` with one minimal-key `hold` decision per finding; humans edit the draft before `gate`. Adds review schema introspection and review→gate pending/success regressions. | [Work log](docs/daily_logs/2026-05-28/work_log.md) |

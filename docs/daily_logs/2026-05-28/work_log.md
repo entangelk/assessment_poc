@@ -334,3 +334,33 @@
 - Full suite: `python3 -m pytest -q` passed (163 tests).
 - Collection check: `python3 -m pytest --collect-only -q` reports 48 CLI contract, 8 fixture, 12 model, and 95 rule tests.
 - Parametrize enumeration: `pytest --collect-only -k "policy_missing_rule_three"` confirms 4 test ids.
+
+## Plan v1.21 — Contract Gap Closure & Verifier Discipline Note
+
+### Goals
+
+- Land the two follow-up items the owner accepted after reviewing the policy completeness verification's strengthening report:
+  1. Plan §8: name policy schema-validation failure as a `fix_input` recovery source so the v1.20 strengthening's "two paths converge on the same envelope" finding sits inside the contract instead of being a verifier-side observation.
+  2. HANDOFF: record the verifier discipline lesson (probes claiming branch coverage must distinguish paths by error message, not only by exit code / `next_action`) so future verifiers do not repeat the imprecise probe attribution.
+
+### Completed Work
+
+- Plan v1.21.
+  - Files changed: `docs/implementation_plan_assessment_harness_poc_v1.md`.
+  - Key changes: §8 905-911 policy completeness paragraph gains one sentence specifying that policy schema-validation failures (e.g. `rules.optionality_mismatch` typed as non-dict) are part of the same `fix_input` recovery surface as a missing required field. §15 adds v1.21 changelog entry tagged as no-code-change contract clarification.
+  - Effect: caller agents reading the contract see a single recovery instruction ("policy is not in a usable shape → `fix_input`") regardless of which internal validator raised it, matching the actual envelope behaviour.
+- HANDOFF verifier discipline note.
+  - Files changed: `HANDOFF.md`.
+  - Key changes: added a sibling paragraph to the existing "Test-surface lessons" section that records the v1.20→v1.21 finding directly. Names the exact failure mode (probing with only exit code / `next_action` while two code paths converge on the same envelope) and the operating fix (include the rejection message or a path-attributing assertion).
+  - Effect: the lesson lives next to the existing envelope-vs-findings.json discipline note, so future verifiers see both at the start of work without having to grep the verification archive.
+- CHANGELOG row added for v1.21.
+
+### Decisions
+
+- **Owner decision (2026-05-28)**: keep the verifier discipline note in HANDOFF rather than in personal memory; it should travel with the project, not the verifier instance. `CLAUDE.md` change deferred — the operating rule is small enough that HANDOFF placement is sufficient and avoids over-promoting a single instance lesson into project-wide policy.
+- No code change in this slice. The `_validate_check_policy` `isinstance(optionality, dict)` branch is left in place as documented defense-in-depth against a future policy schema relaxation; removing it would discard a guard that costs nothing today.
+
+### Verification
+
+- `python3 -m pytest -q` still passes 163 tests after the documentation-only change (no behavior change expected).
+- `git diff --check` clean.

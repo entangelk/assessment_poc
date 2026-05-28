@@ -1,4 +1,4 @@
-# Assessment Spec Harness PoC 구현 계획서 v1.20
+# Assessment Spec Harness PoC 구현 계획서 v1.21
 
 ## 0. 문서 목적
 
@@ -908,6 +908,10 @@ assessment-harness report \
 수 없으므로, policy 자체가 없거나 해당 field가 누락된 경우 `check`는
 `invalid_input`/exit `2`를 반환한다. policy 인자 누락은 next_action
 `provide_policy`, policy 파일의 필수 field 누락은 `fix_input`으로 복구 지시한다.
+policy 파일이 schema validation을 통과하지 못하는 경우(예: `rules.optionality_mismatch`가
+dict가 아닌 type으로 작성된 경우)도 같은 `fix_input` recovery에 포함된다 —
+caller 입장에서는 "policy 파일이 사용 가능한 형태가 아니다"라는 동일한 복구
+지시를 받는다.
 
 Rule L1/L6 lint safeguard entry가 발화할 수 있는 입력에서 `--review-queue-out`을
 지정하면 queue 경로를 명시할 수 있다. 생략하면 Rule 0가 통과한 `check`는
@@ -1312,6 +1316,16 @@ Phase 2/3 전 확정할 사항:
 ---
 
 ## 15. 변경 이력
+
+### v1.21 (2026-05-28)
+
+핵심 변경: **policy invalid_input source를 명시적으로 확장.**
+
+- §8 905-911의 policy completeness 단락에 한 줄 추가: policy 파일이 schema
+  validation을 통과하지 못하는 경우(예: `rules.optionality_mismatch`가 dict가
+  아닌 type)도 `fix_input` recovery에 포함된다. 이는 v1.20 검증의 강화 follow-up
+  중 발견된 "두 다른 코드 경로가 같은 envelope outcome으로 수렴하지만 메시지가
+  다른" 케이스를 계약 안에 위치시킨다. 동작 변경 아님(코드는 v1.20 이래 동일).
 
 ### v1.20 (2026-05-28)
 
