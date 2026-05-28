@@ -1,4 +1,4 @@
-# Assessment Spec Harness PoC 구현 계획서 v1.21
+# Assessment Spec Harness PoC 구현 계획서 v1.22
 
 ## 0. 문서 목적
 
@@ -197,6 +197,8 @@ documents:
 ```
 
 각 run의 ID는 run-local reference일 뿐이다. `compact`는 spec/rubric item을 먼저 compacting하여 canonical item ID를 부여하고, 이후 trace link의 run-local reference를 canonical ID로 remap한다.
+
+Trace link 내부의 `rubric_id` / `spec_ids`는 spec/rubric item의 `id_map`을 따라 remap되는 종속 reference다. 별도로 trace link entry 자체도 compacted artifact로서 `support` / `identity_basis` / `variants`를 갖고, review queue나 compacting 검토에서 하나의 관계 entry로 지칭되어야 한다. 따라서 `id_map.entity_type`은 `spec_item`, `rubric_item`, `trace_link`를 모두 허용한다. Trace link의 canonical identity는 종속 item ID remap 이후의 관계 identity(예: canonical rubric + sorted canonical specs, 정책의 `compacting.identity_basis.trace_link`)를 기준으로 부여하며, 이 결정 자체도 final review에서 검토 가능한 provenance로 남긴다.
 
 ```yaml
 id_map:
@@ -1316,6 +1318,18 @@ Phase 2/3 전 확정할 사항:
 ---
 
 ## 15. 변경 이력
+
+### v1.22 (2026-05-28)
+
+핵심 변경: **trace link canonical ID lineage 명시화.**
+
+- §5.0에 trace link ID lineage 경계를 추가했다. Trace link 내부의
+  `rubric_id` / `spec_ids`는 spec/rubric item `id_map`을 따라 remap되는
+  종속 reference지만, trace link entry 자체도 compacted artifact로서
+  `support` / `identity_basis` / `variants`와 review 대상성을 갖는다. 따라서
+  `id_map.entity_type`은 `spec_item`, `rubric_item`, `trace_link`를 모두 허용한다.
+  이는 v1.21 이후 추가된 `id_map.schema.json`의 `trace_link` enum을 정본
+  계약 안에 위치시키는 명시화다.
 
 ### v1.21 (2026-05-28)
 

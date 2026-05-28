@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://assessment-harness/id_map.schema.json",
+  "title": "Canonical ID Map",
+  "description": "Mapping from run-local candidate IDs to compacted canonical IDs.",
+  "type": "object",
+  "required": ["id_map"],
+  "properties": {
+    "id_map": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/id_map_entry" }
+    }
+  },
+  "additionalProperties": true,
+  "$defs": {
+    "id_map_entry": {
+      "type": "object",
+      "required": ["canonical_id", "entity_type", "run_refs"],
+      "properties": {
+        "canonical_id": { "type": "string", "minLength": 1 },
+        "entity_type": {
+          "type": "string",
+          "enum": ["spec_item", "rubric_item", "trace_link"]
+        },
+        "run_refs": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/run_ref" }
+        }
+      },
+      "additionalProperties": true
+    },
+    "run_ref": {
+      "type": "object",
+      "required": ["run_id", "local_id"],
+      "properties": {
+        "run_id": { "type": "string", "minLength": 1 },
+        "local_id": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": true
+    }
+  }
+}

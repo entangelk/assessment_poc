@@ -364,3 +364,166 @@
 
 - `python3 -m pytest -q` still passes 163 tests after the documentation-only change (no behavior change expected).
 - `git diff --check` clean.
+
+## Current Spec Version Reference Alignment
+
+### Goals
+
+- Start the next handoff-directed work by checking whether the project has a clear spec-precedence tree and whether current-state docs agree on the active implementation plan version.
+- Fix only stale "current version" references before deeper Phase 1/2 work, leaving historical v1.20 references intact.
+
+### Completed Work
+
+- Aligned current-state documentation to plan v1.21.
+  - Files changed: `HANDOFF.md`, `README.md`, this work log.
+  - Key changes: updated the HANDOFF canonical specification line, HANDOFF project-structure entry, HANDOFF sequencing rationale, and README document table from current v1.20 wording to current v1.21 wording.
+  - Effect: new workers see a single current implementation source of truth: `docs/implementation_plan_assessment_harness_poc_v1.md` v1.21, followed by ideation v2.2.
+
+### Issues Found
+
+- Problem: `HANDOFF.md` opened by saying the implementation plan is v1.21, but later current-state entries still named v1.20; README also listed the implementation plan as current v1.20.
+  Cause: the v1.21 documentation-only clarification updated the plan/changelog/HANDOFF lesson note, but not every current-version reference.
+  Resolution: updated only current-version statements to v1.21 and left historical v1.20 changelog, verification, and policy-completeness context untouched.
+  Outcome: spec precedence is internally consistent before Phase 1/2 entry.
+
+### Decisions
+
+- No new implementation direction was chosen. Phase 1 still needs authorized real assignment materials before a manual smoke can proceed, and Phase 2 still has unresolved runner/compacting policy decisions.
+
+### Next Steps
+
+1. If authorized real assignment/spec/rubric materials are available, run Phase 1 manual smoke with non-public content kept out of git unless explicitly anonymized.
+2. Otherwise, resolve the Phase 2 open decisions before implementing `extract`, `compact`, or `verify`.
+
+### Verification
+
+- Current-version stale-reference grep: `rg -n "현재 v1\\.20|Canonical specification.*v1\\.20|implementation source of truth \\(v1\\.20\\)|Plan v1\\.20 now supplies" README.md HANDOFF.md docs/daily_logs/2026-05-28/work_log.md` returned no matches.
+- Diff hygiene: `git diff --check` passed.
+
+## Cross-Project CLI Invocation Check
+
+### Goals
+
+- Confirm whether the harness can be invoked while working from a different project directory, before deciding whether Phase 1 real-assignment smoke must wait for more implementation work.
+
+### Completed Work
+
+- Checked CLI availability from outside the repository.
+  - Files changed: `HANDOFF.md`, this work log.
+  - Key changes: recorded the two currently working cross-project invocation forms: `docker compose -f /workspace/assessment_poc/docker-compose.yml run --rm harness ...` and `PYTHONPATH=/workspace/assessment_poc/src python3 -m assessment_harness.cli ...`.
+  - Effect: the owner can switch to another project and run the Phase 0 CLI during ongoing work without waiting for Phase 2.
+
+### Issues Found
+
+- Problem: the bare `assessment-harness` command is not on PATH, and `python3 -m assessment_harness.cli` from `/tmp` cannot import the package without `PYTHONPATH`.
+  Cause: the project has a console-script entry point in `pyproject.toml`, but the package is not installed in the active environment.
+  Resolution: verified Docker and explicit `PYTHONPATH` invocation forms instead of assuming the script exists globally.
+  Outcome: cross-project invocation is possible today, but not via the bare command unless the package is installed later.
+
+### Decisions
+
+- No Phase 2 implementation is required just to run Phase 0 checks from another project. Use absolute paths for input/output artifacts when invoking from outside this repository.
+
+### Next Steps
+
+1. Continue implementation/documentation work in this repository today.
+2. When ready to smoke a real assignment, run the existing Phase 0 CLI from that project via Docker `-f` or explicit `PYTHONPATH`, keeping non-public source files out of this repository unless anonymized.
+
+### Verification
+
+- `command -v assessment-harness` returned no executable.
+- From `/tmp`, `python3 -m assessment_harness.cli --output json schema --command check` failed with `ModuleNotFoundError`, confirming no ambient install.
+- From `/tmp`, `PYTHONPATH=/workspace/assessment_poc/src python3 -m assessment_harness.cli --output json schema --command check` returned `status=success`.
+- From `/tmp`, `docker compose -f /workspace/assessment_poc/docker-compose.yml run --rm harness --output json schema --command check` returned `status=success`.
+
+## Phase 2 Contract Schema Foundation
+
+### Goals
+
+- Continue implementation work without entering unresolved Phase 2 decisions such as runner credentials, identity-basis algorithm policy, run-count behavior, or trace retention.
+- Add only the schema surfaces already fixed in the canonical plan: canonical ID lineage (`id_map`) and read-only semantic verifier proposals (`semantic_verifications`).
+
+### Completed Work
+
+- Added and registered the Phase 2 foundation schemas.
+  - Files changed: `schemas/id_map.schema.json`, `schemas/semantic_verifications.schema.json`, `src/assessment_harness/schemas.py`.
+  - Key changes: `id_map` validates canonical IDs, entity type, and at least one `{run_id, local_id}` reference; `semantic_verifications` validates trace-link proposal entries with verifier-only statuses (`agent_supported`, `agent_rejected`, `agent_uncertain`), source refs, support, and variants.
+  - Effect: later `compact` and `verify` implementations have contract validation targets without silently choosing runner or compacting behavior today.
+- Added schema regression tests.
+  - Files changed: `tests/test_models.py`.
+  - Key changes: locked schema registration and plan-example validation for both new schemas; added rejection guards for empty `run_refs` and human final statuses appearing as verifier proposals.
+  - Effect: schema drift around ID lineage traceability and verifier/final-review status separation now fails tests.
+- Updated current-state docs.
+  - Files changed: `HANDOFF.md`, `CHANGELOG.md`, this work log.
+  - Key changes: schema count updated from ten to twelve and the new Phase 2 contract foundation is recorded as a milestone.
+  - Effect: handoff no longer understates the public contract surface.
+
+### Issues Found
+
+- Problem: the implementation plan listed `semantic_verifications.schema.json` and `id_map.schema.json` as planned schema files, and §5.0/§5.3.1 already defined their core shape, but the repository schema registry did not expose them.
+  Cause: Phase 0 focused on deterministic validation and final-review/gate surfaces; these Phase 2-adjacent schemas had stayed as plan-only contracts.
+  Resolution: added schemas for the already-specified structures and registered them in `SCHEMA_FILES`.
+  Outcome: future compact/verifier work can validate these artifacts through the same `validate()` helper used by existing contracts.
+
+### Decisions
+
+- This slice deliberately does not implement `compact`, `verify`, runner orchestration, queue composition, or an identity-basis algorithm. It only codifies the existing data contracts.
+- `semantic_verifications.status_proposal` is restricted to verifier-agent proposal statuses. Human statuses remain final-review/gate territory and are rejected by the schema.
+
+### Next Steps
+
+1. Add `compact` only after choosing or explicitly adopting the identity-basis algorithm behavior for Phase 2.
+2. Add `verify` only after runner credential/tool-side-effect and read-only verifier boundaries are settled.
+
+### Verification
+
+- Focused model/schema tests: `python3 -m pytest tests/test_models.py -q` passed (14 tests).
+- Focused existing schema contract smoke: `python3 -m pytest tests/test_cli_output_contract.py::test_schema_command_returns_check_contract -q` passed.
+- Full suite: `python3 -m pytest -q` passed (165 tests).
+- Canonical Docker suite: `docker compose run --rm test -q` passed.
+- Collection check: `python3 -m pytest --collect-only -q` reports 48 CLI contract, 8 fixture, 14 model, and 95 rule tests.
+- Stale schema-count grep: `rg -n "ten JSON Schemas|10 JSON Schemas|ten schemas|10 schemas" README.md HANDOFF.md CHANGELOG.md docs/implementation_plan_assessment_harness_poc_v1.md src tests` returned no matches.
+- Diff hygiene: `git diff --check` passed.
+
+## Plan v1.22 — Trace Link ID Lineage Clarification
+
+### Goals
+
+- Resolve the conditional verification finding against the Phase 2 contract schema foundation.
+- Make the `id_map.entity_type: trace_link` contract explicit rather than leaving it as schema-permitted but plan-silent behavior.
+
+### Completed Work
+
+- Promoted the plan to v1.22.
+  - Files changed: `docs/implementation_plan_assessment_harness_poc_v1.md`.
+  - Key changes: §5.0 now distinguishes dependent trace-link references (`rubric_id` / `spec_ids`, remapped through spec/rubric item `id_map`) from trace link entry identity (the compacted relationship artifact itself, with `support` / `identity_basis` / `variants`). §15 records the v1.22 clarification.
+  - Effect: `id_map.entity_type` including `trace_link` is now inside the canonical contract.
+- Updated current-state records.
+  - Files changed: `HANDOFF.md`, `README.md`, `CHANGELOG.md`, this work log.
+  - Key changes: bumped current plan references to v1.22 and recorded the owner decision that trace link entries keep canonical ID lineage separately from their dependent item references.
+  - Effect: future workers do not have to infer whether the schema should be narrowed or the plan should be expanded.
+
+### Issues Found
+
+- Problem: `id_map.schema.json` allowed `trace_link`, but plan v1.21 §5.0 only explicitly described spec/rubric item canonical IDs and trace-link reference remapping.
+  Cause: the schema treated trace links as compacted entries, matching §5.3/§5.7 review-target language, but §5.0 did not state that lineage boundary directly.
+  Resolution: owner chose explicit plan clarification rather than narrowing the enum; v1.22 now states both halves of the model.
+  Outcome: spec, schema, and intended compacting model agree.
+
+### Decisions
+
+- **Owner decision (2026-05-28)**: keep `trace_link` in `id_map.entity_type`. Internal trace-link references follow spec/rubric item remapping, while the relationship entry itself also has canonical identity because compacting/review must be able to target the trace link as a first-class artifact.
+
+### Next Steps
+
+1. Commit and push the current documentation/schema/test batch.
+2. Defer `compact` implementation until the remaining Phase 2 runner/identity-basis decisions are ready to be encoded.
+
+### Verification
+
+- Focused model/schema tests: `python3 -m pytest tests/test_models.py -q` passed (14 tests).
+- Full suite: `python3 -m pytest -q` passed (165 tests).
+- Canonical Docker suite: `docker compose run --rm test -q` passed.
+- Collection check: `python3 -m pytest --collect-only -q` reports 48 CLI contract, 8 fixture, 14 model, and 95 rule tests.
+- Current-version stale-reference grep: `rg -n "현재 v1\\.21|Implementation plan is at v1\\.21|Canonical specification.*v1\\.21|implementation source of truth \\(v1\\.21\\)" README.md HANDOFF.md docs/daily_logs/2026-05-28/work_log.md` returned no current-state matches.
+- Diff hygiene: `git diff --check` passed.

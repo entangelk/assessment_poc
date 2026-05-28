@@ -27,6 +27,8 @@ SCHEMA_FILES: dict[str, str] = {
     "cli_output": "cli_output.schema.json",
     "review_queue": "review_queue.schema.json",
     "final_review": "final_review.schema.json",
+    "id_map": "id_map.schema.json",
+    "semantic_verifications": "semantic_verifications.schema.json",
 }
 
 

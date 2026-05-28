@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://assessment-harness/semantic_verifications.schema.json",
+  "title": "Semantic Verification Proposals",
+  "description": "Read-only verifier-agent proposals for compacted trace links. Proposals do not rewrite compacted artifacts or final human decisions.",
+  "type": "object",
+  "required": ["semantic_verifications"],
+  "properties": {
+    "semantic_verifications": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/semantic_verification" }
+    }
+  },
+  "additionalProperties": true,
+  "$defs": {
+    "semantic_verification": {
+      "type": "object",
+      "required": [
+        "trace_link_id",
+        "status_proposal",
+        "rationale",
+        "source_refs",
+        "support",
+        "variants"
+      ],
+      "properties": {
+        "trace_link_id": { "type": "string", "minLength": 1 },
+        "status_proposal": {
+          "type": "string",
+          "enum": ["agent_supported", "agent_rejected", "agent_uncertain"]
+        },
+        "rationale": { "type": "string", "minLength": 1 },
+        "source_refs": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/source_ref" }
+        },
+        "support": { "$ref": "#/$defs/support" },
+        "variants": {
+          "type": "array",
+          "items": { "type": "object", "additionalProperties": true }
+        }
+      },
+      "additionalProperties": true
+    },
+    "source_ref": {
+      "type": "object",
+      "required": ["document_id", "start_line", "end_line"],
+      "properties": {
+        "document_id": { "type": "string", "minLength": 1 },
+        "start_line": { "type": "integer", "minimum": 1 },
+        "end_line": { "type": "integer", "minimum": 1 },
+        "quote": { "type": "string" }
+      },
+      "additionalProperties": true
+    },
+    "support": {
+      "type": "object",
+      "required": ["total_valid_runs", "found_in_runs"],
+      "properties": {
+        "total_valid_runs": { "type": "integer", "minimum": 0 },
+        "found_in_runs": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      },
+      "additionalProperties": true
+    }
+  }
+}

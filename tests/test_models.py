@@ -22,6 +22,7 @@ from assessment_harness.models import (
     load_validated,
     read_yaml,
 )
+from assessment_harness.schemas import SCHEMA_FILES, validate
 
 
 def test_read_yaml_missing_file_raises(tmp_path: Path) -> None:
@@ -56,6 +57,80 @@ def test_load_validated_top_level_must_be_mapping(tmp_path: Path) -> None:
     with pytest.raises(HarnessInputError) as exc_info:
         load_validated(path, "spec_items")
     assert "top-level value must be a mapping" in str(exc_info.value)
+
+
+def test_phase_two_contract_schemas_are_registered_and_validate_plan_examples() -> None:
+    id_map = {
+        "id_map": [
+            {
+                "canonical_id": "S1",
+                "entity_type": "spec_item",
+                "run_refs": [
+                    {"run_id": "run_a1b2", "local_id": "S4"},
+                    {"run_id": "run_c3d4", "local_id": "S1"},
+                ],
+            }
+        ]
+    }
+    semantic_verifications = {
+        "semantic_verifications": [
+            {
+                "trace_link_id": "T1",
+                "status_proposal": "agent_supported",
+                "rationale": (
+                    "Rubric criterion is explicitly disclosed by the referenced "
+                    "requirement."
+                ),
+                "source_refs": [
+                    {"document_id": "DOC_SPEC", "start_line": 42, "end_line": 42},
+                    {"document_id": "DOC_RUBRIC", "start_line": 18, "end_line": 22},
+                ],
+                "support": {
+                    "total_valid_runs": 3,
+                    "found_in_runs": ["verify_a1b2", "verify_c3d4"],
+                },
+                "variants": [],
+            }
+        ]
+    }
+
+    assert "id_map" in SCHEMA_FILES
+    assert "semantic_verifications" in SCHEMA_FILES
+    assert validate("id_map", id_map) == []
+    assert validate("semantic_verifications", semantic_verifications) == []
+
+
+def test_phase_two_contract_schemas_reject_untraceable_entries() -> None:
+    id_map_errors = validate(
+        "id_map",
+        {
+            "id_map": [
+                {
+                    "canonical_id": "S1",
+                    "entity_type": "spec_item",
+                    "run_refs": [],
+                }
+            ]
+        },
+    )
+    semantic_errors = validate(
+        "semantic_verifications",
+        {
+            "semantic_verifications": [
+                {
+                    "trace_link_id": "T1",
+                    "status_proposal": "human_accepted",
+                    "rationale": "invalid final status as verifier proposal",
+                    "source_refs": [],
+                    "support": {"total_valid_runs": 1, "found_in_runs": ["verify_1"]},
+                    "variants": [],
+                }
+            ]
+        },
+    )
+
+    assert id_map_errors
+    assert semantic_errors
 
 
 def test_load_source_snapshot_computes_sha256(tmp_path: Path) -> None:
