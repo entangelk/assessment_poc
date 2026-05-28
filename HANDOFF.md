@@ -2,11 +2,11 @@
 
 ## Current Status
 
-- Implementation plan is at v1.19 (`docs/implementation_plan_assessment_harness_poc_v1.md`) and is the canonical implementation source of truth, ahead of `docs/ideation_assessment_harness_v2.2.md` (revised in-place 2026-05-27, supersedes v2.1).
+- Implementation plan is at v1.20 (`docs/implementation_plan_assessment_harness_poc_v1.md`) and is the canonical implementation source of truth, ahead of `docs/ideation_assessment_harness_v2.2.md` (revised in-place 2026-05-27, supersedes v2.1).
 - **Rule 0 is live**: source snapshot grounding, evidence completeness/reference-integrity checks, mandatory `--source-manifest`, and structured invalid-input recovery are implemented.
 - **Rule 1 is feature-complete** (plan v1.19 §6): `possible_orphan_scored_rubric_item`, `unconfirmed_trace_coverage`, and `orphan_bonus_rubric_item` are all implemented. The CLI exposes their review actions and provisional severity counts; slice 3.1 locks the public envelope/schema contract, including the bonus-only `(high=0, medium=0, informational=1)` boundary.
 - **Rule 2 is implemented** (plan v1.19 §6): `uncovered_must_spec_item` is emitted as medium/provisional when no `scored` rubric traces a `must` spec, with `review_uncovered_must_spec` exposed through `check`. It is structural only: pending scored traces cover, while bonus-only or qualitative-only traces do not.
-- **Rule 3 is implemented** (plan v1.19 §6): `optionality_mismatch` is emitted as high/provisional when a scored rubric traces only optional specs at or above `rules.optionality_mismatch.weight_threshold`; it exposes `review_optionality_mismatch`. It is structural only: semantic status is not consulted.
+- **Rule 3 is implemented** (plan v1.20 §6): `optionality_mismatch` is emitted as high/provisional when a scored rubric traces only optional specs at or above `rules.optionality_mismatch.weight_threshold`; it exposes `review_optionality_mismatch`. It is structural only: semantic status is not consulted, and Phase 0 `check` now rejects missing/incomplete policy instead of silently suppressing Rule 3.
 - **Rule L1 is implemented** (plan v1.19 §6): `double_scored_spec` is emitted as medium/provisional when the same spec is traced by scored and bonus rubrics. The finding includes paired rubric context, and `check` writes paired `double_scoring_review` entries through the new `review_queue` contract.
 - **Rule L5 is implemented** (plan v1.19 §6): `bonus_grades_mandatory_only` is emitted as medium/provisional for a traced bonus rubric whose targets are all `must`; it exposes `review_bonus_mandatory_only` and does not add a queue entry.
 - **Rule L6 is implemented** (plan v1.19 §6): `mandatory_spec_bonus_only_traced` is emitted as high/provisional when a `must` spec is traced only by bonus rubrics; it exposes `bonus_rubric_ids[]`, `review_mandatory_spec_bonus_only`, and paired `mandatory_spec_bonus_review` queue entries.
@@ -40,13 +40,14 @@ docker compose run --rm harness --output json check \
 
 ## Active Decisions (Adopted)
 
-- **Canonical specification**: v1.19 implementation plan first, then `v2.2` ideation (revised in-place 2026-05-27). v2.1 and earlier ideation versions are historical; v2.2 supersedes v2.1 in any overlapping area without area limits.
+- **Canonical specification**: v1.20 implementation plan first, then `v2.2` ideation (revised in-place 2026-05-27). v2.1 and earlier ideation versions are historical; v2.2 supersedes v2.1 in any overlapping area without area limits.
 - **Final-review finding key minimalism** (plan v1.19 §5.6): `target_type: finding` decisions use only generated identifiers in `target_key`; no `message`, `evidence`, title/description/text, or other payload copies. Stale/duplicate decision keys and duplicate canonical keys inside `findings.json` are invalid input. Missing decisions or `hold`/`rerun_requested` keep `gate` at `pending_review`.
 - **Review draft status guard** (Owner, 2026-05-28; plan v1.19 §5.6): `review` accepts only `findings.status=success` or `provisional_findings`. `invalid_input` findings docs are rejected before draft creation so Rule 0 invalid empty findings cannot accidentally become a `gate success`. `gate` remains status-agnostic and consumes explicit final review records for manual recovery/audit workflows.
 - **Review draft overwrite guard** (Owner, 2026-05-28; plan v1.19 §5.6): `review` must not overwrite existing `<out-dir>/review.yaml` by default. Intentional regeneration requires `--force`; timestamped/versioned draft management is deferred, and callers should use a distinct `--out-dir` when they want parallel draft history.
 - **Gate blocking scope** (plan v1.19 §5.6): `gate` exit `1` is limited to confirmed `orphan_scored_rubric_item`, `optionality_mismatch`, and `mandatory_spec_bonus_only_traced`. Confirmed Rule 2/L1/L5 findings are review outcomes but not v0 blocking verdicts.
 - **Rule 1 finding type naming convention** (plan v1.19 §6): no-trace findings follow `{prefix_}orphan_{role}_rubric_item`. `possible_` prefix marks scored items because `gate` may promote them to confirmed; bonus / qualitative have no symmetric promotion path so prefix is omitted. Any future Rule 1 extension applies the same convention without re-deciding the literal.
 - **`--source-manifest` is a required `check` input** (plan v1.19 §5.0 / §5.1 / §11): Phase 0 mandates immutable source snapshot grounding. Missing manifest → `status=invalid_input` / exit `2` / diagnostic `source_manifest_required` / next_action `provide_source_manifest`. argparse keeps the flag declared as `default=None` so caller agents always receive the structured envelope on stdout instead of argparse's usage text on stderr.
+- **`--policy` is a required `check` input** (plan v1.20 §8 / §15): Phase 0 requires `rules.optionality_mismatch.weight_threshold`. Missing policy → `status=invalid_input` / exit `2` / next_action `provide_policy`; schema-valid policy missing that field → `invalid_input` / `fix_input`. This prevents Rule 3 from being silently disabled.
 - **Rule 1 final-coverage boundary** (plan v1.19 §6 Rule 1, §5.3.1): the only `semantic_status` values that count as final coverage for Rule 1 are `human_accepted` and `human_overridden`. Everything else — pre-review (`pending_verification`, `agent_*`) and post-review non-coverage (`human_rejected`, `rerun_requested`) — surfaces as `unconfirmed_trace_coverage` (medium / provisional) in `check`. `gate` is the only stage that may promote persistent non-coverage into a confirmed `orphan_scored_rubric_item`. **This boundary applies to Rule 1 and `gate` only.** Rule 2 and Rule 3 do not consult `semantic_status` (they use the structural conditions in plan §6 Rule 2 / Rule 3). Lint family (Rule L1/L5/L6) also does not consult `semantic_status` — L-DET, structural only.
 - **Rule 2 finding contract** (plan v1.19 §6; initially fixed in v1.14): `uncovered_must_spec_item` / `review_uncovered_must_spec` is locked as the public contract. The owner-recommended `uncovered_*_spec_item` naming reflects a spec coverage gap rather than a rubric orphan.
 - **Rule 3 finding contract** (plan v1.19 §6): `optionality_mismatch` / `review_optionality_mismatch` is locked as the public contract, matching the existing fixture and policy namespace.
@@ -91,7 +92,6 @@ docker compose run --rm harness --output json check \
 - Raw trace retention / redaction / access policy (especially for non-public rubric content).
 - Override usage scope: typo/omission only, or allow semantic overrides (semantic overrides should normally trigger `rerun_requested`).
 - Review queue composition at Phase 2: Phase 0 `--review-queue-out` currently writes the lint-safeguard artifact. When `compact`/`verify` queue generation lands, add merge/update behavior that retains upstream queue entries before routing all review work through one file.
-- Rule 3 policy completeness: `--policy` remains optional and missing `rules.optionality_mismatch.weight_threshold` currently suppresses Rule 3; decide in a dedicated input/policy-validation slice whether missing policy must yield structured invalid input.
 
 ## Next Tasks
 
@@ -99,7 +99,7 @@ docker compose run --rm harness --output json check \
 
 **Rule 0-3 and lint family L1/L5/L6 are complete. Initial finding-level `review`/`gate` path is implemented.**
 
-Rationale: Rule 2 and Rule 3 completed the remaining deterministic structural checks on the established lint/output pipeline. Plan v1.19 now supplies the minimal final-review finding mapping, safe review draft generation, gate boundary matrix, and draft safety guards.
+Rationale: Rule 2 and Rule 3 completed the remaining deterministic structural checks on the established lint/output pipeline. Plan v1.20 now supplies the minimal final-review finding mapping, safe review draft generation, gate boundary matrix, draft safety guards, and Phase 0 policy completeness.
 
 ### Publication Boundary (2026-05-27)
 
@@ -152,10 +152,10 @@ When adding any new envelope field, next_action type, or schema-contract entry, 
 
 ## Verification
 
-- 158 tests pass after the v1.19 review safety guard follow-up (`python3 -m pytest -q`; canonical Docker suite `docker compose run --rm test -q` also passes). Collection reports 43 CLI contract, 8 fixture, 12 model, and 95 rule tests.
+- 163 tests pass after the v1.20 policy completeness follow-up (`python3 -m pytest -q`; canonical Docker suite `docker compose run --rm test -q` also passes). Collection reports 48 CLI contract, 8 fixture, 12 model, and 95 rule tests. The policy-incomplete regression is parametrized across the four shapes `_validate_check_policy` must catch (empty doc, missing `rules`, empty `rules`, threshold absent) so a refactor cannot silently let one through.
 - `schema --command review --output json` exposes informational `review_path`, `decision_count`, and `input_error`.
 - `schema --command gate --output json` exposes `complete_final_review`, `fix_final_review`, `revise_assessment`, plus informational `final_review_path`, `findings_path`, `blocking_count`, `confirmed_finding_count`, `dismissed_finding_count`, `pending_decision_count`, `blocking_findings`, and `input_error`.
-- `schema --command check --output json` exposes `review_double_scoring`, `review_bonus_mandatory_only`, `review_mandatory_spec_bonus_only`, `review_uncovered_must_spec`, `review_optionality_mismatch`, plus informational `review_queue_path` and `review_queue_count`.
+- `schema --command check --output json` exposes `provide_policy`, `review_double_scoring`, `review_bonus_mandatory_only`, `review_mandatory_spec_bonus_only`, `review_uncovered_must_spec`, `review_optionality_mismatch`, plus informational `review_queue_path` and `review_queue_count`.
 - Smoke runs for the current state:
   - `gate` on a final review record with no decision for a provisional `optionality_mismatch`: exit `0`, `status=pending_review`, `pending_decision_count=1`, and `complete_final_review`.
   - `review` on grounded `fixtures/orphan_scored_rubric` findings writes three `hold` decisions with minimal finding keys; passing that draft to `gate` yields `pending_review` with `pending_decision_count=3`.
@@ -190,7 +190,7 @@ When adding any new envelope field, next_action type, or schema-contract entry, 
 - `fixtures/uncovered_must_spec/`: grounded Rule 2 fixture covering untraced, pending-scored-covered, bonus-only, qualitative-only, optional, and informational spec boundaries.
 - `fixtures/optionality_mismatch/`: grounded Rule 3 fixture covering optional-only high weight, policy threshold, pending-status structural emission, must/informational-mixed suppression, bonus/qualitative-role exclusion, and below-threshold suppression.
 - `tests/`: `test_rules.py`, `test_cli_output_contract.py`, `test_fixtures.py`, `test_models.py`, `conftest.py`.
-- `docs/implementation_plan_assessment_harness_poc_v1.md`: implementation source of truth (v1.19).
+- `docs/implementation_plan_assessment_harness_poc_v1.md`: implementation source of truth (v1.20).
 - `docs/ideation_assessment_harness_v2.2.md`: latest ideation (final 2026-05-27, in-place revised same day). Adds Rubric Lint Rules family — 6 accepted (L1, L2, L4, L5, L6, L7), 3 rejected. Source for plan v1.19's §6 lint family.
 - `docs/ideation_assessment_harness_v2.1.md`: latest ideation, second in precedence.
 - `docs/ideation_assessment_harness_v2.md`, `docs/ideation_assessment_harness_v1.md`: historical references.

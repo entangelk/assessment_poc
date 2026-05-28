@@ -145,6 +145,13 @@ def test_check_missing_input_returns_invalid_input(
 ) -> None:
     out = tmp_path / "findings.json"
     diag = tmp_path / "integrity_diagnostics.json"
+    policy = tmp_path / "policy.yaml"
+    policy.write_text(
+        yaml.safe_dump(
+            {"rules": {"optionality_mismatch": {"weight_threshold": 10}}}
+        ),
+        encoding="utf-8",
+    )
     argv = [
         "--output",
         "json",
@@ -160,6 +167,8 @@ def test_check_missing_input_returns_invalid_input(
         # not-found path rather than short-circuiting on missing manifest.
         "--source-manifest",
         str(tmp_path / "manifest-also-missing.yaml"),
+        "--policy",
+        str(policy),
         "--out",
         str(out),
         "--diagnostics-out",
@@ -255,6 +264,112 @@ def test_check_with_source_manifest_does_not_surface_manifest_required(
     )
 
 
+def test_check_without_policy_returns_invalid_input(
+    fixture_dir: Path,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Policy is required at check time so Rule 3 cannot be silently disabled.
+
+    The parser still accepts the omission so caller agents receive a structured
+    envelope and can retry with `--policy`.
+    """
+    out = tmp_path / "findings.json"
+    diag = tmp_path / "integrity_diagnostics.json"
+    code, envelope, _ = _run_main(
+        [
+            "--output",
+            "json",
+            "check",
+            "--spec-items",
+            str(fixture_dir / "clean_assignment/spec_items.yaml"),
+            "--rubric-items",
+            str(fixture_dir / "clean_assignment/rubric_items.yaml"),
+            "--trace-links",
+            str(fixture_dir / "clean_assignment/trace_links.yaml"),
+            "--source-manifest",
+            str(fixture_dir / "clean_assignment/source_manifest.yaml"),
+            "--out",
+            str(out),
+            "--diagnostics-out",
+            str(diag),
+        ],
+        capsys,
+    )
+    _assert_envelope(envelope)
+    assert code == 2
+    assert envelope["status"] == "invalid_input"
+    assert envelope["next_actions"][0]["type"] == "provide_policy"
+    assert "--policy is required" in envelope["input_error"]
+
+    findings_doc = json.loads(out.read_text(encoding="utf-8"))
+    assert findings_doc["status"] == "invalid_input"
+    assert "Rule 3" in findings_doc["input_error"]
+
+
+@pytest.mark.parametrize(
+    "policy_doc",
+    [
+        {},
+        {"other": 1},
+        {"rules": {}},
+        {"rules": {"optionality_mismatch": {"other": 1}}},
+    ],
+    ids=[
+        "empty_doc",
+        "rules_missing",
+        "rules_empty",
+        "threshold_missing",
+    ],
+)
+def test_check_policy_missing_rule_three_threshold_returns_invalid_input(
+    fixture_dir: Path,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    policy_doc: dict,
+) -> None:
+    """Completeness guard: a schema-valid policy without Rule 3's threshold is
+    invalid for Phase 0 check, not an instruction to suppress Rule 3. Locked
+    across every shape that the policy schema accepts but `_validate_check_policy`
+    must still reject — empty doc, missing `rules`, empty `rules`, and
+    `optionality_mismatch` present without `weight_threshold` — so a refactor
+    cannot let one incomplete shape silently disable Rule 3. Shapes the policy
+    schema already rejects (e.g. `optionality_mismatch` typed as a string) are
+    not covered here because they never reach this validator.
+    """
+    policy_path = tmp_path / "policy.yaml"
+    policy_path.write_text(yaml.safe_dump(policy_doc), encoding="utf-8")
+    out = tmp_path / "findings.json"
+    diag = tmp_path / "integrity_diagnostics.json"
+    code, envelope, _ = _run_main(
+        [
+            "--output",
+            "json",
+            "check",
+            "--spec-items",
+            str(fixture_dir / "clean_assignment/spec_items.yaml"),
+            "--rubric-items",
+            str(fixture_dir / "clean_assignment/rubric_items.yaml"),
+            "--trace-links",
+            str(fixture_dir / "clean_assignment/trace_links.yaml"),
+            "--source-manifest",
+            str(fixture_dir / "clean_assignment/source_manifest.yaml"),
+            "--policy",
+            str(policy_path),
+            "--out",
+            str(out),
+            "--diagnostics-out",
+            str(diag),
+        ],
+        capsys,
+    )
+    _assert_envelope(envelope)
+    assert code == 2
+    assert envelope["status"] == "invalid_input"
+    assert envelope["next_actions"][0]["type"] == "fix_input"
+    assert "rules.optionality_mismatch.weight_threshold" in envelope["input_error"]
+
+
 def test_schema_command_returns_check_contract(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -275,6 +390,7 @@ def test_schema_command_returns_check_contract(
     #   fix_reference_integrity      -- Rule 0 high-diagnostic recovery
     #   fix_input                    -- generic input load failure
     #   provide_source_manifest      -- slice 1.5 mandatory manifest
+    #   provide_policy               -- Phase 0 policy completeness recovery
     #   review_orphan_rubric         -- slice 1 high possible_orphan
     #   review_unconfirmed_trace_coverage -- slice 2 medium provisional
     #   review_orphan_bonus_rubric   -- slice 3 informational bonus orphan
@@ -282,6 +398,7 @@ def test_schema_command_returns_check_contract(
         "fix_reference_integrity",
         "fix_input",
         "provide_source_manifest",
+        "provide_policy",
         "review_orphan_rubric",
         "review_unconfirmed_trace_coverage",
         "review_orphan_bonus_rubric",
@@ -1389,6 +1506,7 @@ def _write_minimal_grounded_fixture(
         "rubric_items": root / "rubric_items.yaml",
         "trace_links": root / "trace_links.yaml",
         "source_manifest": root / "source_manifest.yaml",
+        "policy": root / "policy.yaml",
     }
     paths["spec_items"].write_text(yaml.safe_dump({"spec_items": spec_items}), encoding="utf-8")
     paths["rubric_items"].write_text(
@@ -1398,6 +1516,12 @@ def _write_minimal_grounded_fixture(
         yaml.safe_dump({"trace_links": trace_links}), encoding="utf-8"
     )
     paths["source_manifest"].write_text(yaml.safe_dump(manifest), encoding="utf-8")
+    paths["policy"].write_text(
+        yaml.safe_dump(
+            {"rules": {"optionality_mismatch": {"weight_threshold": 10}}}
+        ),
+        encoding="utf-8",
+    )
     return paths
 
 
@@ -1461,6 +1585,8 @@ def test_check_with_bonus_only_orphan_locks_informational_envelope_boundary(
         str(paths["trace_links"]),
         "--source-manifest",
         str(paths["source_manifest"]),
+        "--policy",
+        str(paths["policy"]),
         "--out",
         str(out),
         "--diagnostics-out",

@@ -55,6 +55,8 @@ assessment-harness report \
 
 `--source-manifest`는 Phase 0 `check`의 필수 인자다 (plan §5.0 / §5.1 / §11). 누락하면 `status=invalid_input`, exit `2`, 진단 `source_manifest_required`, next_action `provide_source_manifest`가 반환된다.
 
+`--policy`도 필수다. `rules.optionality_mismatch.weight_threshold`가 없으면 Rule 3 경계를 조용히 건너뛰지 않고 `status=invalid_input`, exit `2`로 복구 지시를 반환한다.
+
 Phase 0에서 semantic verification 입력이 없으면 `ai_judgement` link는 의미 확인 대기 상태로 남는다. Agent 실행 흐름에서는 아래 `verify` 산출물을 후속 명령에 전달한다.
 
 Rule L1/L6 lint safeguard는 Phase 0 `check`에서도 `review_queue.json`에 기록된다.
@@ -190,7 +192,8 @@ gate (external final decision)
 
 ## 정책 파일
 
-모든 정책은 `config/policy.yaml` 하나로 통합.
+모든 정책은 `config/policy.yaml` 하나로 통합. Phase 0 `check`에는 최소한
+`rules.optionality_mismatch.weight_threshold`가 필요하다.
 
 ```yaml
 rules:
@@ -254,7 +257,7 @@ CLI는 `--policy config/policy.yaml` 하나로 모든 정책을 받는다.
 
 | 문서 | 역할 |
 |---|---|
-| [docs/implementation_plan_assessment_harness_poc_v1.md](docs/implementation_plan_assessment_harness_poc_v1.md) | **구현 명세 (1순위 SoT)** — 현재 v1.19 |
+| [docs/implementation_plan_assessment_harness_poc_v1.md](docs/implementation_plan_assessment_harness_poc_v1.md) | **구현 명세 (1순위 SoT)** — 현재 v1.20 |
 | [docs/ideation_assessment_harness_v2.2.md](docs/ideation_assessment_harness_v2.2.md) | Rubric Lint Rules 가족 (2순위, 2026-05-27 final + in-place 개정) |
 | [docs/ideation_assessment_harness_v2.1.md](docs/ideation_assessment_harness_v2.1.md) | 제품 목적과 장기 방향 (3순위) |
 | [docs/ideation_assessment_harness_v2.md](docs/ideation_assessment_harness_v2.md) | historical reference |

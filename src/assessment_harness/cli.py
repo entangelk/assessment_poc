@@ -7,10 +7,10 @@ Subcommands implemented in Phase 0:
 - ``schema``  : self-discovery for the stable contract; lets caller agents
                 read the current `cli_output` shape without docs.
 - ``report``  : render findings + diagnostics into a Markdown report.
+- ``review``  : write a safe final-review draft with hold decisions.
+- ``gate``    : consume final review and emit the external verdict.
 
-Subcommands ``compact``, ``extract``, ``verify``, ``review``, and ``gate`` are
-defined as placeholders so the surface is stable; they will gain real
-behaviour in later phases.
+Subcommands ``compact``, ``extract``, and ``verify`` are later-phase scope.
 """
 
 from __future__ import annotations
@@ -101,6 +101,8 @@ def _cmd_check(args: argparse.Namespace) -> CommandResult:
 
     if not args.source_manifest:
         return _check_missing_manifest(args, next_actions)
+    if not args.policy:
+        return _check_missing_policy(args, next_actions)
 
     try:
         spec_doc = load_validated(Path(args.spec_items), "spec_items")
@@ -110,7 +112,8 @@ def _cmd_check(args: argparse.Namespace) -> CommandResult:
         return _check_invalid_input(args, exc, next_actions)
 
     try:
-        policy_doc = load_policy(Path(args.policy)) if args.policy else load_policy(None)
+        policy_doc = load_policy(Path(args.policy))
+        _validate_check_policy(policy_doc, Path(args.policy))
     except HarnessInputError as exc:
         return _check_invalid_input(args, exc, next_actions)
 
@@ -377,6 +380,38 @@ def _check_missing_manifest(
     return CommandResult(envelope=envelope, exit_code=2)
 
 
+def _check_missing_policy(
+    args: argparse.Namespace, next_actions: list[dict[str, Any]]
+) -> CommandResult:
+    message = (
+        "--policy is required: Phase 0 check needs "
+        "rules.optionality_mismatch.weight_threshold so Rule 3 cannot be "
+        "silently disabled."
+    )
+    exc = HarnessInputError(message)
+    result = _check_invalid_input(args, exc, next_actions)
+    result.envelope["next_actions"] = [
+        {
+            "type": "provide_policy",
+            "argument": "--policy",
+            "message": message,
+        }
+    ]
+    return result
+
+
+def _validate_check_policy(policy_doc: dict[str, Any], policy_path: Path) -> None:
+    rules = policy_doc.get("rules")
+    optionality = rules.get("optionality_mismatch") if isinstance(rules, dict) else None
+    if not isinstance(optionality, dict) or "weight_threshold" not in optionality:
+        raise HarnessInputError(
+            (
+                f"{policy_path}: missing required policy field "
+                "rules.optionality_mismatch.weight_threshold"
+            )
+        )
+
+
 def _check_invalid_input(
     args: argparse.Namespace, exc: HarnessInputError, next_actions: list[dict[str, Any]]
 ) -> CommandResult:
@@ -464,6 +499,7 @@ COMMAND_CONTRACTS: dict[str, dict[str, Any]] = {
             "fix_reference_integrity",
             "fix_input",
             "provide_source_manifest",
+            "provide_policy",
             "review_orphan_rubric",
             "review_unconfirmed_trace_coverage",
             "review_orphan_bonus_rubric",

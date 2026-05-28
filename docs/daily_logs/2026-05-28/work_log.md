@@ -65,8 +65,6 @@
 - Gate schema smoke: `PYTHONPATH=src python3 -m assessment_harness.cli --output json schema --command gate` returns `status=success` and exposes `complete_final_review`, `fix_final_review`, and `revise_assessment`.
 - Diff hygiene: `git diff --check` passed.
 
----
-
 ## Gate Conditional-Pass Follow-Up
 
 ### Goals
@@ -256,3 +254,83 @@
 - Review schema smoke: `PYTHONPATH=src python3 -m assessment_harness.cli --output json schema --command review` returns `status=success` and exposes `review_path`, `decision_count`, and `input_error`.
 - Gate schema smoke: `PYTHONPATH=src python3 -m assessment_harness.cli --output json schema --command gate` returns `status=success` and exposes `complete_final_review`, `fix_final_review`, and `revise_assessment`.
 - Diff hygiene: `git diff --check` passed.
+
+---
+
+## Phase 0 Policy Completeness Follow-Up
+
+### Goals
+
+- Continue Phase 0 cleanup before moving into real-assignment/manual flow.
+- Remove the remaining silent Rule 3 suppression path where missing policy made `optionality_mismatch` impossible to emit.
+- Keep caller-agent recovery structured rather than relying on argparse usage errors.
+
+### Completed Work
+
+- Promoted the plan to v1.20.
+  - Files changed: `docs/implementation_plan_assessment_harness_poc_v1.md`.
+  - Key changes: made `--policy` a Phase 0 `check` input requirement; made `rules.optionality_mismatch.weight_threshold` required for `check`; documented `provide_policy` and `fix_input` recovery behavior.
+  - Effect: Rule 3 cannot be accidentally disabled by omitting policy.
+- Hardened `assessment-harness check` policy validation.
+  - Files changed: `src/assessment_harness/cli.py`.
+  - Key changes: `check` now returns `invalid_input`/exit `2` with next_action `provide_policy` when `--policy` is absent; schema-valid policies missing `rules.optionality_mismatch.weight_threshold` return `invalid_input`/exit `2` with `fix_input`.
+  - Effect: caller agents get a structured recovery path and no longer receive a green run with Rule 3 silently skipped.
+- Expanded CLI contract regressions.
+  - Files changed: `tests/test_cli_output_contract.py`.
+  - Key changes: added missing-policy and incomplete-policy tests; added `provide_policy` to `schema --command check`; updated isolated fixture helper/tests to pass the required policy.
+  - Effect: both under-strict directions are locked: omitting policy and omitting Rule 3 threshold now fail.
+- Updated current-state docs.
+  - Files changed: `README.md`, `HANDOFF.md`, `CHANGELOG.md`, this work log.
+  - Key changes: documented plan v1.20 and removed the HANDOFF open decision for Rule 3 policy completeness.
+  - Effect: Phase 0 no longer has an active policy-completeness caveat.
+
+### Issues Found
+
+- Problem: `--policy` was optional and `load_policy(None)` returned `{}`.
+  Cause: early Phase 0 kept policy optional while Rule 3 was still being introduced.
+  Resolution: added an explicit structured missing-policy guard before loading YAML inputs.
+  Outcome: caller agents now receive `provide_policy` instead of a misleading run with Rule 3 suppressed.
+- Problem: a policy file could pass schema validation while omitting `rules.optionality_mismatch.weight_threshold`.
+  Cause: the unified policy schema permits later-phase sections and did not require the Rule 3 threshold.
+  Resolution: added `check`-level policy completeness validation for the required Rule 3 path.
+  Outcome: policy files that cannot support Rule 3 produce `invalid_input`.
+
+### Decisions
+
+- **Owner-guided decision (2026-05-28)**: because generated YAML will usually be prepared by a caller AI, Phase 0 should fail loudly and structurally when required policy is absent rather than letting a rule disappear.
+- Keep argparse permissive for `--policy` so missing input still returns the JSON envelope (`invalid_input`/exit `2`) that caller agents can parse and repair.
+
+### Next Steps
+
+1. Move toward Phase 1 manual real-assignment smoke once this Phase 0 cleanup is accepted.
+2. Independently verify v1.20 policy completeness before publication if needed.
+
+### Verification
+
+- Focused CLI + fixture suite: `python3 -m pytest tests/test_cli_output_contract.py tests/test_fixtures.py -q` passed (53 tests).
+- Full suite: `python3 -m pytest -q` passed (160 tests).
+- Canonical Docker suite: `docker compose run --rm test -q` passed.
+- Collection check: `python3 -m pytest --collect-only -q` reports 45 CLI contract, 8 fixture, 12 model, and 95 rule tests.
+- Check schema smoke: `PYTHONPATH=src python3 -m assessment_harness.cli --output json schema --command check` returns `status=success` and exposes `provide_policy` in `next_actions_types`.
+
+## Policy Completeness Verification Follow-up — Strengthening Applied
+
+### Goals
+
+- Close the strengthening recommendation in [2026-05-28_policy_completeness.md](../../verifications/2026-05-28_policy_completeness.md) §Issues 1 at owner request, before pushing the Phase 0 cleanup.
+
+### Completed Work
+
+- Parametrized `test_check_policy_missing_rule_three_threshold_returns_invalid_input` across the validator's reachable defect shapes.
+  - Files changed: `tests/test_cli_output_contract.py`.
+  - Key changes: replaced the single `{rules: {}}` case with four ids — `empty_doc`, `rules_missing`, `rules_empty`, `threshold_missing` — all asserting the same contract outcome (exit 2 / `fix_input` / `rules.optionality_mismatch.weight_threshold` in `input_error`).
+  - Effect: a refactor of `_validate_check_policy` cannot silently let one incomplete shape pass while another fails.
+- Discovery during strengthening: the `optionality_mismatch` typed as a non-dict shape never reaches `_validate_check_policy` because the policy schema rejects it first. That shape was removed from the parametrize and the validator's `isinstance(optionality, dict)` branch documented as a defensive guard rather than an actively reached path. The new docstring records this explicitly so future readers do not expect the schema-rejected shape to flow through the validator.
+- Updated HANDOFF Verification counts to reflect the +3 parametrized cases (160 → 163; CLI contract 45 → 48).
+
+### Verification
+
+- Focused CLI + fixture suite: `python3 -m pytest tests/test_cli_output_contract.py tests/test_fixtures.py -q` passed (56 tests).
+- Full suite: `python3 -m pytest -q` passed (163 tests).
+- Collection check: `python3 -m pytest --collect-only -q` reports 48 CLI contract, 8 fixture, 12 model, and 95 rule tests.
+- Parametrize enumeration: `pytest --collect-only -k "policy_missing_rule_three"` confirms 4 test ids.

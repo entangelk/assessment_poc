@@ -1,4 +1,4 @@
-# Assessment Spec Harness PoC 구현 계획서 v1.19
+# Assessment Spec Harness PoC 구현 계획서 v1.20
 
 ## 0. 문서 목적
 
@@ -903,6 +903,12 @@ assessment-harness report \
 
 `--source-manifest`는 Phase 0의 필수 인자다 (§5.0 / §5.1 / §11). 생략하면 `check`는 `status=invalid_input`, exit `2`, 진단 코드 `source_manifest_required`, next_action `provide_source_manifest`를 반환한다. argparse 단계에서 거부하지 않고 구조화된 envelope을 stdout에 출력하므로 caller agent는 인자 누락도 정상 흐름의 결과로 복구 가능하다.
 
+`--policy`도 Phase 0 `check`의 필수 인자다. 특히 Rule 3은
+`rules.optionality_mismatch.weight_threshold`가 없으면 정상/위반 경계를 판정할
+수 없으므로, policy 자체가 없거나 해당 field가 누락된 경우 `check`는
+`invalid_input`/exit `2`를 반환한다. policy 인자 누락은 next_action
+`provide_policy`, policy 파일의 필수 field 누락은 `fix_input`으로 복구 지시한다.
+
 Rule L1/L6 lint safeguard entry가 발화할 수 있는 입력에서 `--review-queue-out`을
 지정하면 queue 경로를 명시할 수 있다. 생략하면 Rule 0가 통과한 `check`는
 `--out`과 같은 디렉터리의 `review_queue.json`을 생성한다. lint finding이
@@ -1306,6 +1312,17 @@ Phase 2/3 전 확정할 사항:
 ---
 
 ## 15. 변경 이력
+
+### v1.20 (2026-05-28)
+
+핵심 변경: **Phase 0 policy completeness를 입력 계약으로 확정.**
+
+- **`--policy` 필수화**: `check`는 `--policy` 누락 시 `invalid_input`/exit `2`와
+  next_action `provide_policy`를 반환한다. argparse `required=True`는 쓰지 않아
+  caller agent가 구조화된 JSON envelope으로 복구할 수 있게 한다.
+- **Rule 3 threshold 필수화**: schema-valid policy라도
+  `rules.optionality_mismatch.weight_threshold`가 없으면 `invalid_input`/exit `2`다.
+  Rule 3이 조용히 비활성화되어 optionality mismatch를 놓치는 경로를 제거했다.
 
 ### v1.19 (2026-05-28)
 
