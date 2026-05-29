@@ -4,8 +4,94 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from assessment_harness.agent_runners import AgentRunner, MockFixtureRunner
+import copy
+from typing import Any
+
+import pytest
+
+from assessment_harness.agent_runners import (
+    AgentRunner,
+    MockFixtureRunner,
+    validate_candidate_audit_trace,
+)
 from assessment_harness.schemas import validate
+
+
+def _candidate_artifacts(run_id: str = "run_1") -> dict[str, Any]:
+    return {
+        "spec_item_candidates": [
+            {
+                "candidate_id": "SC1",
+                "proposed_item": {
+                    "id": "S1",
+                    "text": "Implement refund handling for cancelled orders.",
+                    "requirement_level": "must",
+                    "source_ref": {
+                        "document_id": "DOC_SPEC",
+                        "start_line": 42,
+                        "end_line": 42,
+                    },
+                },
+                "agent_runner": "mock_fixture",
+                "agent_run_id": run_id,
+                "integrity_status": "pending_check",
+            }
+        ],
+        "rubric_item_candidates": [
+            {
+                "candidate_id": "RC1",
+                "proposed_item": {
+                    "id": "R1",
+                    "title": "Refund policy handling",
+                    "evaluation_role": "scored",
+                    "source_ref": {
+                        "document_id": "DOC_RUBRIC",
+                        "start_line": 18,
+                        "end_line": 22,
+                    },
+                },
+                "agent_runner": "mock_fixture",
+                "agent_run_id": run_id,
+                "integrity_status": "pending_check",
+            }
+        ],
+        "trace_link_candidates": [
+            {
+                "candidate_id": "TC1",
+                "proposed_item": {
+                    "rubric_id": "R1",
+                    "spec_ids": ["S1"],
+                    "evidence_quotes": [
+                        {
+                            "spec_id": "S1",
+                            "quote": "Implement refund handling for cancelled orders.",
+                            "verification_mode": "token_sequence",
+                        }
+                    ],
+                },
+                "agent_runner": "mock_fixture",
+                "agent_run_id": run_id,
+                "integrity_status": "pending_check",
+            }
+        ],
+    }
+
+
+def _audit_trace(run_id: str = "run_1") -> list[dict[str, Any]]:
+    return [
+        {
+            "run_id": run_id,
+            "turn": 0,
+            "role": "system",
+            "content_ref": "mock_fixture_replay",
+        },
+        {
+            "run_id": run_id,
+            "finish_reason": "complete",
+            "turns": 0,
+            "tool_call_count": 0,
+        },
+    ]
 
 
 def test_mock_fixture_runner_satisfies_agent_runner_protocol(
@@ -51,3 +137,60 @@ def test_agent_trace_schema_requires_role_payload() -> None:
 
     for event in bare_role_events:
         assert validate("agent_trace", event) != []
+
+
+def test_candidate_audit_trace_validation_accepts_matching_run_ids() -> None:
+    candidates = _candidate_artifacts(run_id="run_1")
+    audit_trace = _audit_trace(run_id="run_1")
+
+    assert validate_candidate_audit_trace(candidates, audit_trace) == []
+
+
+def test_candidate_audit_trace_validation_rejects_missing_trace_run_id() -> None:
+    candidates = _candidate_artifacts(run_id="run_without_trace")
+    audit_trace = _audit_trace(run_id="run_1")
+
+    errors = validate_candidate_audit_trace(candidates, audit_trace)
+
+    assert any("has no matching audit_trace run_id" in error for error in errors)
+
+
+def test_candidate_audit_trace_validation_keeps_schema_errors_visible() -> None:
+    candidates = _candidate_artifacts(run_id="run_1")
+    del candidates["spec_item_candidates"][0]["agent_run_id"]
+    audit_trace = _audit_trace(run_id="run_1")
+
+    errors = validate_candidate_audit_trace(candidates, audit_trace)
+
+    assert any(
+        error.startswith("candidates:")
+        and "agent_run_id" in error
+        and "is a required property" in error
+        for error in errors
+    )
+
+
+@pytest.mark.parametrize(
+    "section",
+    ["spec_item_candidates", "rubric_item_candidates", "trace_link_candidates"],
+)
+def test_candidate_audit_trace_validation_checks_each_candidate_section(
+    section: str,
+) -> None:
+    candidates = _candidate_artifacts(run_id="run_1")
+    candidates[section][0]["agent_run_id"] = "run_without_trace"
+    audit_trace = _audit_trace(run_id="run_1")
+
+    errors = validate_candidate_audit_trace(candidates, audit_trace)
+
+    assert any(f"{section}/0/agent_run_id" in error for error in errors)
+
+
+def test_candidate_audit_trace_validation_rejects_invalid_trace_event() -> None:
+    candidates = _candidate_artifacts(run_id="run_1")
+    audit_trace = copy.deepcopy(_audit_trace(run_id="run_1"))
+    del audit_trace[0]["content_ref"]
+
+    errors = validate_candidate_audit_trace(candidates, audit_trace)
+
+    assert any("audit_trace/0" in error and "content_ref" in error for error in errors)

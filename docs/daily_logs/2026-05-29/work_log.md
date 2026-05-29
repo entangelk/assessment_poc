@@ -57,3 +57,56 @@
 - Canonical Docker suite: `docker compose run --rm test -q` passed.
 - Collection check: `python3 -m pytest --collect-only -q` reports 4 agent-runner contract, 48 CLI contract, 8 fixture, 21 model, and 95 rule tests.
 - Diff hygiene: `git diff --check` passed.
+
+## Candidate Audit Trace Attribution Helper
+
+### Goals
+
+- Continue Phase 2 contract work without entering `extract`, real SDK runner, compacting, identity-basis, or runner failure-recovery policy.
+- Implement the plan §10.2 boundary that every candidate `agent_run_id` must be present in the run's audit trace.
+
+### Completed work
+
+- Promoted the plan to v1.25.
+  - Files changed: `docs/implementation_plan_assessment_harness_poc_v1.md`.
+  - Key changes: recorded `validate_candidate_audit_trace` as a helper-level implementation of candidate/audit trace attribution, explicitly leaving `extract`, compacting, real runners, and recovery policy for later slices.
+  - Effect: the helper is tied to the canonical contract rather than becoming an implementation-only validation rule.
+- Added the candidate/audit trace validation helper.
+  - Files changed: `src/assessment_harness/agent_runners/validation.py`, `src/assessment_harness/agent_runners/__init__.py`.
+  - Key changes: validates the candidate artifact schema, validates every audit trace event schema, and checks that candidate `agent_run_id` values in all three candidate arrays have matching audit trace `run_id`s.
+  - Effect: future runner normalization and run integrity checks can reuse one tested attribution boundary.
+- Added focused runner contract regressions.
+  - Files changed: `tests/test_agent_runner_contract.py`.
+  - Key changes: tests lock matching-run success, missing trace attribution, candidate schema error surfacing, invalid audit trace event surfacing, and cross-reference checks for spec/rubric/trace candidate sections.
+  - Effect: under-strict attribution checks and section-specific blind spots now fail focused tests.
+- Updated current-state documentation.
+  - Files changed: `README.md`, `HANDOFF.md`, `CHANGELOG.md`, this work log.
+  - Key changes: bumped current plan references to v1.25 and recorded candidate audit-trace attribution as live helper-level Phase 2 infrastructure.
+  - Effect: next workers can continue into runner output normalization or run integrity handling with the attribution helper already documented.
+
+### Issues found
+
+- Problem: plan §10.2 required every candidate `agent_run_id` to exist in audit trace, but the repository only had independent schemas for candidates and audit trace events.
+  Cause: the previous slice intentionally stopped at schema registration and did not connect the two artifact surfaces.
+  Resolution: added a helper that validates both surfaces and checks run ID attribution without deciding how real runners emit or recover artifacts.
+  Outcome: missing audit trace attribution is now a focused test failure.
+
+### Decisions
+
+- The helper returns a list of human-readable errors, matching the existing schema helper style, rather than raising exceptions or emitting CLI envelopes.
+- This slice does not require a finish event for each candidate run ID. The current contract only says the candidate run ID must appear in audit trace; finish-reason recovery behavior remains a later runner-failure slice.
+
+### Next steps
+
+1. Add runner output normalization that can produce candidate artifacts for this helper to consume.
+2. Add runner failure/recovery cases for `blocked_by_runner_error`, max-turns, and tool errors.
+3. Defer compacting until identity-basis behavior is chosen or explicitly bounded.
+
+### Verification
+
+- Focused runner contract tests: `python3 -m pytest tests/test_agent_runner_contract.py -q` passed (11 tests).
+- Syntax check: `python3 -m py_compile src/assessment_harness/agent_runners/base.py src/assessment_harness/agent_runners/mock.py src/assessment_harness/agent_runners/validation.py src/assessment_harness/agent_runners/__init__.py` passed.
+- Full suite: `python3 -m pytest -q` passed (183 tests).
+- Canonical Docker suite: `docker compose run --rm test -q` passed.
+- Collection check: `python3 -m pytest --collect-only -q` reports 11 agent-runner contract, 48 CLI contract, 8 fixture, 21 model, and 95 rule tests.
+- Diff hygiene: `git diff --check` passed.

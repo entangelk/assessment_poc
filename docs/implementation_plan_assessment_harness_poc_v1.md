@@ -1,4 +1,4 @@
-# Assessment Spec Harness PoC 구현 계획서 v1.24
+# Assessment Spec Harness PoC 구현 계획서 v1.25
 
 ## 0. 문서 목적
 
@@ -1318,6 +1318,18 @@ Phase 2/3 전 확정할 사항:
 ---
 
 ## 15. 변경 이력
+
+### v1.25 (2026-05-29)
+
+핵심 변경: **candidate audit-trace run attribution 검증 헬퍼 추가.**
+
+- §10.2의 "모든 candidate의 `agent_run_id`가 audit trace에 존재해야 한다"
+  계약을 `validate_candidate_audit_trace` 헬퍼와 회귀 테스트로 구현했다. 이 검증은
+  candidate schema와 audit trace event schema 오류를 함께 노출하고, spec/rubric/
+  trace candidate 세 배열의 `agent_run_id`가 audit trace의 `run_id` 집합에 존재하는지
+  확인한다. 이는 runner output normalization 이후의 run integrity check에서 재사용될
+  선행 경계이며, `extract`, 실제 SDK runner, compacting, runner failure recovery 정책은
+  여전히 후속 범위다.
 
 ### v1.24 (2026-05-29)
 
