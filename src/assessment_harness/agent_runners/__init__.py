@@ -6,11 +6,13 @@ for now. Real SDK integrations are later Phase 2 work.
 
 from assessment_harness.agent_runners.base import AgentRunResult, AgentRunner
 from assessment_harness.agent_runners.mock import MockFixtureRunner
+from assessment_harness.agent_runners.normalization import normalize_result_candidates
 from assessment_harness.agent_runners.validation import validate_candidate_audit_trace
 
 __all__ = [
     "AgentRunResult",
     "AgentRunner",
     "MockFixtureRunner",
+    "normalize_result_candidates",
     "validate_candidate_audit_trace",
 ]

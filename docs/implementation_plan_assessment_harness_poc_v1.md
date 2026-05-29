@@ -1,4 +1,4 @@
-# Assessment Spec Harness PoC 구현 계획서 v1.25
+# Assessment Spec Harness PoC 구현 계획서 v1.26
 
 ## 0. 문서 목적
 
@@ -1318,6 +1318,21 @@ Phase 2/3 전 확정할 사항:
 ---
 
 ## 15. 변경 이력
+
+### v1.26 (2026-05-29)
+
+핵심 변경: **runner artifact → candidate artifact 정규화 헬퍼 추가.**
+
+- `AgentRunResult.artifacts`의 fixture-shaped `spec_items` / `rubric_items` /
+  `trace_links`를 `candidates.schema.json`에 맞는 `spec_item_candidates` /
+  `rubric_item_candidates` / `trace_link_candidates` 문서로 변환하는
+  `normalize_result_candidates` 헬퍼를 추가했다. 정규화는 `agent_runner`,
+  `agent_run_id`, 초기 `integrity_status: pending_check`를 부여하고, fixture replay
+  산출물에 포함될 수 있는 compacting-only 필드(`support`, `identity_basis`,
+  `variants`, trace review/provenance 필드)는 candidate `proposed_item`에서 제거한다.
+  이는 mock runner contract test를 candidate schema 및 audit-trace attribution helper와
+  연결하는 작은 normalization 표면이며, 실제 `extract`, SDK runner, compacting,
+  failure recovery 정책은 여전히 후속 범위다.
 
 ### v1.25 (2026-05-29)
 

@@ -12,6 +12,7 @@ import pytest
 from assessment_harness.agent_runners import (
     AgentRunner,
     MockFixtureRunner,
+    normalize_result_candidates,
     validate_candidate_audit_trace,
 )
 from assessment_harness.schemas import validate
@@ -122,6 +123,73 @@ def test_mock_fixture_runner_replays_fixture_artifacts(fixture_dir: Path) -> Non
     assert all(validate("agent_trace", event) == [] for event in result.audit_trace)
     assert result.audit_trace[-1]["finish_reason"] == "complete"
     assert result.raw_trace[0]["fixture_dir"].endswith("clean_assignment")
+
+
+def test_mock_fixture_runner_output_normalizes_to_candidate_artifacts(
+    fixture_dir: Path,
+) -> None:
+    runner = MockFixtureRunner(fixture_dir / "clean_assignment", run_id="mock_run")
+    result = runner.run(
+        spec_path=fixture_dir / "clean_assignment" / "source" / "spec.md",
+        rubric_path=fixture_dir / "clean_assignment" / "source" / "rubric.md",
+        tools=[],
+        max_turns=1,
+        policy={"rules": {}},
+    )
+
+    candidates = normalize_result_candidates(result)
+
+    assert validate("candidates", candidates) == []
+    assert validate_candidate_audit_trace(candidates, result.audit_trace) == []
+    assert candidates["spec_item_candidates"][0]["candidate_id"] == "SC1"
+    assert candidates["spec_item_candidates"][0]["agent_runner"] == "mock_fixture"
+    assert candidates["spec_item_candidates"][0]["agent_run_id"] == "mock_run"
+    assert candidates["spec_item_candidates"][0]["integrity_status"] == "pending_check"
+
+
+@pytest.mark.parametrize(
+    ("candidate_section", "stripped_fields"),
+    [
+        (
+            "spec_item_candidates",
+            ["support", "identity_basis", "variants"],
+        ),
+        (
+            "rubric_item_candidates",
+            ["support", "identity_basis", "variants"],
+        ),
+        (
+            "trace_link_candidates",
+            [
+                "support",
+                "identity_basis",
+                "variants",
+                "sources",
+                "reviewed_by",
+                "reviewed_at",
+            ],
+        ),
+    ],
+)
+def test_candidate_normalization_strips_compacting_only_fields(
+    fixture_dir: Path,
+    candidate_section: str,
+    stripped_fields: list[str],
+) -> None:
+    runner = MockFixtureRunner(fixture_dir / "clean_assignment", run_id="mock_run")
+    result = runner.run(
+        spec_path=fixture_dir / "clean_assignment" / "source" / "spec.md",
+        rubric_path=fixture_dir / "clean_assignment" / "source" / "rubric.md",
+        tools=[],
+        max_turns=1,
+        policy={"rules": {}},
+    )
+
+    candidates = normalize_result_candidates(result)
+    proposed_item = candidates[candidate_section][0]["proposed_item"]
+
+    for field in stripped_fields:
+        assert field not in proposed_item
 
 
 def test_agent_trace_schema_rejects_unattributed_event() -> None:

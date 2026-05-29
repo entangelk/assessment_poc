@@ -110,3 +110,68 @@
 - Canonical Docker suite: `docker compose run --rm test -q` passed.
 - Collection check: `python3 -m pytest --collect-only -q` reports 11 agent-runner contract, 48 CLI contract, 8 fixture, 21 model, and 95 rule tests.
 - Diff hygiene: `git diff --check` passed.
+
+## Runner Artifact Normalization Helper
+
+### Goals
+
+- Continue Phase 2 runner contract work with a small normalization surface that does not implement `extract`, a real SDK runner, compacting, identity-basis, or runner failure recovery.
+- Convert the existing mock runner's fixture-shaped artifacts into candidate schema artifacts so the candidate schema and audit-trace attribution helper can be exercised together.
+
+### Completed work
+
+- Promoted the plan to v1.26.
+  - Files changed: `docs/implementation_plan_assessment_harness_poc_v1.md`.
+  - Key changes: recorded `normalize_result_candidates` as a helper-level runner artifact normalization slice and explicitly left real `extract`, SDK runner, compacting, and recovery policy out of scope.
+  - Effect: candidate normalization is now a documented Phase 2 contract surface, not an implicit test helper.
+- Added runner artifact normalization.
+  - Files changed: `src/assessment_harness/agent_runners/normalization.py`, `src/assessment_harness/agent_runners/__init__.py`.
+  - Key changes: converts `AgentRunResult.artifacts` entries from `spec_items`, `rubric_items`, and `trace_links` into `spec_item_candidates`, `rubric_item_candidates`, and `trace_link_candidates`; assigns deterministic run-local candidate IDs (`SC*`, `RC*`, `TC*`); attaches `agent_runner`, `agent_run_id`, and default `integrity_status: pending_check`.
+  - Effect: runner outputs can be validated as pre-compacting candidate artifacts before any run integrity or compacting logic is introduced.
+- Added normalization regressions.
+  - Files changed: `tests/test_agent_runner_contract.py`.
+  - Key changes: the mock runner output now normalizes to a `candidates.schema.json`-valid document, passes candidate/audit trace attribution, preserves runner provenance, starts at `pending_check`, and strips compacting-only fields (`support`, `identity_basis`, `variants`, trace provenance/review fields) from `proposed_item`.
+  - Effect: fixture replay cannot accidentally masquerade compacted artifacts as pre-compacting candidates.
+- Updated current-state documentation.
+  - Files changed: `README.md`, `HANDOFF.md`, `CHANGELOG.md`, this work log.
+  - Key changes: bumped current plan references to v1.26 and recorded runner artifact normalization as live helper-level Phase 2 infrastructure.
+  - Effect: next workers can build run integrity checks on candidate-shaped runner outputs rather than compacted fixture artifacts.
+
+### Issues found
+
+- Problem: after v1.25, the attribution helper existed but the mock runner still exposed only fixture-shaped `spec_items` / `rubric_items` / `trace_links` artifacts.
+  Cause: earlier slices intentionally stopped at schema registration and cross-artifact validation, leaving normalization out of scope.
+  Resolution: added a helper that converts existing runner result artifacts into candidate documents while keeping real runner/orchestrator behavior deferred.
+  Outcome: mock runner contract tests now exercise candidate schema validation and audit-trace attribution on normalized runner output.
+- Problem: fixture-shaped artifacts may already carry compacting fields such as `support`, `identity_basis`, and `variants`.
+  Cause: grounded fixtures currently represent compacted Phase 0 inputs, not raw runner candidates.
+  Resolution: normalization strips compacting-only fields before placing an item under `proposed_item`.
+  Outcome: pre-compacting candidate artifacts stay distinct from compacted artifacts.
+- Problem: the initial stripping regression explicitly checked spec and trace payloads but did not make the rubric branch visible.
+  Cause: all three sections share `_normalize_items`, so rubric behavior was covered indirectly but not named in the boundary matrix.
+  Resolution: parametrized the stripping regression across spec/rubric/trace candidate sections.
+  Outcome: compacting-only field stripping is now visibly locked for all normalized candidate categories.
+- Problem: `_normalize_items` silently converted missing or malformed artifact sections into empty candidate arrays.
+  Cause: defensive guards were added before a malformed runner-output recovery contract existed.
+  Resolution: removed the guards and let malformed artifact shape fail at the normalization boundary instead of becoming a valid empty candidate document.
+  Outcome: the helper no longer hides malformed runner output behind successful empty normalization.
+
+### Decisions
+
+- Candidate IDs are deterministic run-local IDs using `SC*`, `RC*`, and `TC*` prefixes. They are only normalization output and do not claim canonical ID lineage.
+- Normalization assumes the runner result has the expected fixture-shaped artifact sections. Schema validation and run integrity handling for malformed real runner output remain later slices; this helper should not silently turn malformed artifacts into empty valid candidate documents.
+
+### Next steps
+
+1. Add run integrity handling that consumes normalized candidate artifacts and distinguishes schema violation from validated candidates.
+2. Add runner failure/recovery cases for `blocked_by_runner_error`, max-turns, and tool errors.
+3. Defer compacting until identity-basis behavior is chosen or explicitly bounded.
+
+### Verification
+
+- Focused runner contract tests: `python3 -m pytest tests/test_agent_runner_contract.py -q` passed (15 tests).
+- Syntax check: `python3 -m py_compile src/assessment_harness/agent_runners/base.py src/assessment_harness/agent_runners/mock.py src/assessment_harness/agent_runners/normalization.py src/assessment_harness/agent_runners/validation.py src/assessment_harness/agent_runners/__init__.py` passed.
+- Full suite: `python3 -m pytest -q` passed (187 tests).
+- Canonical Docker suite: `docker compose run --rm test -q` passed.
+- Collection check: `python3 -m pytest --collect-only -q` reports 15 agent-runner contract, 48 CLI contract, 8 fixture, 21 model, and 95 rule tests.
+- Diff hygiene: `git diff --check` passed.
