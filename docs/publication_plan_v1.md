@@ -100,6 +100,10 @@ and presentation work stay in separate commits (established convention).
       in fixtures.
 - [ ] **Step 6 — Documentation Map.** Wire README to all docs with a clear
       "which door for which purpose" map.
+- [ ] **Step 6.5 — Freeze + mirror moving docs (§7b).** Once content is frozen,
+      produce the bilingual mirrors of the moving docs in one pass: full English
+      mirror of the implementation plan, `.ko` mirror of this publication plan,
+      and the `HANDOFF.md` mirror.
 - [ ] **Step 7 — Visibility flip (Owner, manual).** Owner sets repo
       description/topics and flips `entangelk/assessment_poc` to public; this
       plan provides the ready-to-paste metadata.
@@ -151,14 +155,22 @@ Publication is blocked until all pass:
 7. **`docs/daily_logs/` and `docs/verifications/` → curated index**, not fully
    raw in the public surface (too long). A short index links the notable ones.
 
+## 7b. Bilingual timing principle (resolved v1.2)
+
+Mirror **continuously-moving docs only once, as the final pre-publication step**,
+after their content freezes — translating a moving target repeatedly is wasted
+work. Freshly-authored docs that stabilize quickly are mirrored as they finalize.
+
+- **Moving docs → mirror last:** implementation plan (full English mirror,
+  deferred to the end since it keeps updating), this publication plan
+  (`.ko` mirror at the end), `HANDOFF.md`.
+- **Stabilizing docs → mirror on finalize:** README, case study, decisions,
+  evaluation, AGENTS, CLAUDE.
+
 ## 7a. Remaining Open Decisions
 
-- [ ] Bilingual scope for the **implementation plan** (currently Korean,
-      ~1600 lines): full English mirror, or keep one canonical language + an
-      English abstract/header. (Lean: canonical + abstract — a single-language
-      SoT is safer against drift than two full copies of a 1600-line spec.)
-- [ ] Does this publication plan itself get a `.ko` mirror?
-- [ ] Final repo description / topics wording (drafted here for Owner to paste).
+- [ ] Final repo description / topics wording (drafted for Owner to paste; Owner
+      applies it manually together with the visibility flip — §7.5).
 
 ## 8. Definition of Done (= the publication moment)
 
@@ -168,6 +180,16 @@ Publication is blocked until all pass:
 - [ ] Repository visibility flipped to public (§4 Step 7).
 
 ## 9. Change log
+
+### v1.2 (2026-05-29)
+
+Added the **bilingual timing principle** (§7b): continuously-moving docs
+(implementation plan, this publication plan, HANDOFF) are mirrored once at the
+end after content freezes, not translated repeatedly against a moving target;
+stabilizing docs are mirrored as they finalize. Resolves prior §7a items:
+implementation plan gets a full English mirror deferred to the final step; this
+plan's `.ko` mirror is also deferred. Added Step 6.5 (freeze + mirror). Only the
+repo description/topics wording remains open (§7a).
 
 ### v1.1 (2026-05-29)
 
