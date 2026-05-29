@@ -77,7 +77,10 @@ assessment-harness gate \
   --output json
 ```
 
-### 3. 에이전트 실행 포함 전체 흐름 (Phase 2/3)
+### 3. 에이전트 실행 포함 전체 흐름 (Phase 2/3, 설계 목표 — 미구현)
+
+> ⚠️ 아래 `extract` / `compact` / `verify`는 **설계된 목표 흐름**이며 아직 구현되지 않았다.
+> 현재 실제로 동작하는 명령은 위 §1·§2의 `check` / `schema` / `report` / `review` / `gate`다.
 
 ```bash
 # 복수 독립 실행
@@ -241,14 +244,24 @@ CLI는 `--policy config/policy.yaml` 하나로 모든 정책을 받는다.
 
 ---
 
-## Phase 진행 상태
+## 구현 상태
 
-| Phase | 범위 | 상태 |
-|---|---|---|
-| 0 | Deterministic validation core (Rule 0~3 + lint, 수동 fixture) | 완료 (Rule 0~3 + lint Rule L1/L5/L6 구현 및 fixture 회귀 완료) |
-| 1 | 실제 과제 manual run | Phase 0 후 |
-| 2 | Candidate/verifier agent multi-run + compacting | Phase 1 후 |
-| 3 | Final human review + `gate` + caller agent 시연 | Phase 2 후 |
+| 영역 | 상태 |
+|---|---|
+| Phase 0 결정론적 검증 코어 (Rule 0~3 + lint L1/L5/L6, fixture 회귀) | 완료 |
+| review / gate finding-level 흐름 | 초기 구현 완료 |
+| AgentRunner protocol | 기반 완료 |
+| Candidate artifact schema | 기반 완료 |
+| Candidate audit-trace attribution | 기반 완료 |
+| Runner artifact normalization | 기반 완료 |
+| Candidate integrity 분류 (structural + staged model) | 기반 완료 |
+| Deep candidate Rule 0 검증 헬퍼 (3-way 격리) | 기반 완료 |
+| `extract` / `compact` / `verify` 오케스트레이션 | 미구현 |
+| 실제 SDK runner | 미구현 |
+| 전체 Phase 2/3 E2E 워크플로 | 미구현 |
+
+> 진행은 선형 단계가 아니었다. Phase 2 기반(runner·candidate 계열)이 먼저 들어왔고,
+> 실제 과제 manual run과 전체 E2E는 아직이다. 그래서 단계 번호 대신 영역별 상태로 표기한다.
 
 상세 진입 조건/완료 기준: [구현 계획서 §9, §12](docs/implementation_plan_assessment_harness_poc_v1.md#9-단계별-구현-계획)
 
@@ -258,7 +271,7 @@ CLI는 `--policy config/policy.yaml` 하나로 모든 정책을 받는다.
 
 | 문서 | 역할 |
 |---|---|
-| [docs/implementation_plan_assessment_harness_poc_v1.md](docs/implementation_plan_assessment_harness_poc_v1.md) | **구현 명세 (1순위 SoT)** — 현재 v1.28 |
+| [docs/implementation_plan_assessment_harness_poc_v1.md](docs/implementation_plan_assessment_harness_poc_v1.md) | **구현 명세 (1순위 SoT)** — 현재 v1.30 |
 | [docs/ideation_assessment_harness_v2.2.md](docs/ideation_assessment_harness_v2.2.md) | Rubric Lint Rules 가족 (2순위, 2026-05-27 final + in-place 개정) |
 | [docs/ideation_assessment_harness_v2.1.md](docs/ideation_assessment_harness_v2.1.md) | 제품 목적과 장기 방향 (3순위) |
 | [docs/ideation_assessment_harness_v2.md](docs/ideation_assessment_harness_v2.md) | historical reference |
