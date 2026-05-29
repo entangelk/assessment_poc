@@ -1,4 +1,4 @@
-# Assessment Spec Harness PoC 구현 계획서 v1.23
+# Assessment Spec Harness PoC 구현 계획서 v1.24
 
 ## 0. 문서 목적
 
@@ -1318,6 +1318,18 @@ Phase 2/3 전 확정할 사항:
 ---
 
 ## 15. 변경 이력
+
+### v1.24 (2026-05-29)
+
+핵심 변경: **candidate artifact schema foundation 등록.**
+
+- §5.4의 candidate artifact 계약을 `candidates.schema.json`으로 구현 가능한
+  Phase 2 입력 표면에 올렸다. 스키마는 run 격리 산출물의 세 배열
+  (`spec_item_candidates`, `rubric_item_candidates`, `trace_link_candidates`)과
+  공통 provenance 필드(`candidate_id`, `agent_runner`, `agent_run_id`,
+  `integrity_status`)를 검증한다. 이는 candidate-to-audit-trace cross-reference,
+  run integrity check, compacting 구현의 선행 계약이며, compacting 알고리즘이나
+  runner failure recovery 정책은 아직 선택하지 않는다.
 
 ### v1.23 (2026-05-28)
 

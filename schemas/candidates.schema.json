@@ -1,0 +1,184 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://assessment-harness/candidates.schema.json",
+  "title": "Run Candidate Artifacts",
+  "description": "Candidate artifacts emitted by one agent run before integrity validation and compacting.",
+  "type": "object",
+  "required": ["spec_item_candidates", "rubric_item_candidates", "trace_link_candidates"],
+  "properties": {
+    "spec_item_candidates": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/spec_item_candidate" }
+    },
+    "rubric_item_candidates": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/rubric_item_candidate" }
+    },
+    "trace_link_candidates": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/trace_link_candidate" }
+    }
+  },
+  "additionalProperties": true,
+  "$defs": {
+    "candidate_base": {
+      "type": "object",
+      "required": [
+        "candidate_id",
+        "proposed_item",
+        "agent_runner",
+        "agent_run_id",
+        "integrity_status"
+      ],
+      "properties": {
+        "candidate_id": { "type": "string", "minLength": 1 },
+        "agent_runner": { "type": "string", "minLength": 1 },
+        "agent_run_id": { "type": "string", "minLength": 1 },
+        "source_excerpt": { "type": "string" },
+        "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+        "integrity_status": {
+          "type": "string",
+          "enum": [
+            "pending_check",
+            "validated",
+            "invalid_reference",
+            "quote_mismatch",
+            "schema_violation",
+            "blocked_by_runner_error"
+          ]
+        }
+      },
+      "additionalProperties": true
+    },
+    "spec_item_candidate": {
+      "allOf": [
+        { "$ref": "#/$defs/candidate_base" },
+        {
+          "type": "object",
+          "properties": {
+            "proposed_item": { "$ref": "#/$defs/spec_item" }
+          }
+        }
+      ]
+    },
+    "rubric_item_candidate": {
+      "allOf": [
+        { "$ref": "#/$defs/candidate_base" },
+        {
+          "type": "object",
+          "properties": {
+            "proposed_item": { "$ref": "#/$defs/rubric_item" }
+          }
+        }
+      ]
+    },
+    "trace_link_candidate": {
+      "allOf": [
+        { "$ref": "#/$defs/candidate_base" },
+        {
+          "type": "object",
+          "properties": {
+            "proposed_item": { "$ref": "#/$defs/trace_link" }
+          }
+        }
+      ]
+    },
+    "spec_item": {
+      "type": "object",
+      "required": ["id", "text", "requirement_level", "source_ref"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "source": { "type": "string" },
+        "section": { "type": "string" },
+        "text": { "type": "string", "minLength": 1 },
+        "visibility": {
+          "type": "string",
+          "enum": ["candidate_facing", "evaluator_only", "internal"]
+        },
+        "requirement_level": {
+          "type": "string",
+          "enum": ["must", "optional", "informational"]
+        },
+        "source_ref": { "$ref": "#/$defs/source_ref" }
+      },
+      "additionalProperties": true
+    },
+    "rubric_item": {
+      "type": "object",
+      "required": ["id", "title", "evaluation_role", "source_ref"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "title": { "type": "string", "minLength": 1 },
+        "description": { "type": "string" },
+        "evaluation_role": {
+          "type": "string",
+          "enum": ["scored", "bonus", "qualitative"]
+        },
+        "weight": { "type": "number", "minimum": 0 },
+        "evidence_required": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "source_ref": { "$ref": "#/$defs/source_ref" }
+      },
+      "additionalProperties": true
+    },
+    "trace_link": {
+      "type": "object",
+      "required": ["rubric_id", "spec_ids", "evidence_quotes"],
+      "properties": {
+        "rubric_id": { "type": "string", "minLength": 1 },
+        "spec_ids": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "rationale": { "type": "string" },
+        "evidence_quotes": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/evidence_quote" }
+        },
+        "semantic_status": {
+          "type": "string",
+          "enum": [
+            "pending_verification",
+            "agent_supported",
+            "agent_rejected",
+            "agent_uncertain",
+            "human_accepted",
+            "human_rejected",
+            "human_overridden",
+            "rerun_requested"
+          ]
+        }
+      },
+      "additionalProperties": true
+    },
+    "evidence_quote": {
+      "type": "object",
+      "required": ["spec_id", "quote", "verification_mode"],
+      "properties": {
+        "spec_id": { "type": "string", "minLength": 1 },
+        "quote": { "type": "string" },
+        "verification_mode": {
+          "type": "string",
+          "enum": ["token_sequence", "ai_judgement"]
+        },
+        "source_ref": { "$ref": "#/$defs/source_ref" }
+      },
+      "additionalProperties": true
+    },
+    "source_ref": {
+      "type": "object",
+      "required": ["document_id", "start_line", "end_line"],
+      "properties": {
+        "document_id": { "type": "string", "minLength": 1 },
+        "start_line": { "type": "integer", "minimum": 1 },
+        "end_line": { "type": "integer", "minimum": 1 },
+        "quote": { "type": "string" }
+      },
+      "additionalProperties": true
+    }
+  }
+}

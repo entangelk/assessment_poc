@@ -60,6 +60,73 @@ def test_load_validated_top_level_must_be_mapping(tmp_path: Path) -> None:
 
 
 def test_phase_two_contract_schemas_are_registered_and_validate_plan_examples() -> None:
+    candidates = {
+        "spec_item_candidates": [
+            {
+                "candidate_id": "SC1",
+                "proposed_item": {
+                    "id": "S1",
+                    "text": "Implement refund handling for cancelled orders.",
+                    "requirement_level": "must",
+                    "source_ref": {
+                        "document_id": "DOC_SPEC",
+                        "start_line": 42,
+                        "end_line": 42,
+                        "quote": "Implement refund handling for cancelled orders.",
+                    },
+                },
+                "agent_runner": "claude_agent_sdk",
+                "agent_run_id": "run_2026_05_25_a1b2",
+                "source_excerpt": "Implement refund handling for cancelled orders.",
+                "confidence": 0.82,
+                "integrity_status": "pending_check",
+            }
+        ],
+        "rubric_item_candidates": [
+            {
+                "candidate_id": "RC1",
+                "proposed_item": {
+                    "id": "R1",
+                    "title": "Refund policy handling",
+                    "evaluation_role": "scored",
+                    "source_ref": {
+                        "document_id": "DOC_RUBRIC",
+                        "start_line": 18,
+                        "end_line": 22,
+                    },
+                },
+                "agent_runner": "claude_agent_sdk",
+                "agent_run_id": "run_2026_05_25_a1b2",
+                "integrity_status": "pending_check",
+            }
+        ],
+        "trace_link_candidates": [
+            {
+                "candidate_id": "TC1",
+                "proposed_item": {
+                    "rubric_id": "R1",
+                    "spec_ids": ["S1"],
+                    "rationale": "R1 evaluates the documented refund requirement.",
+                    "evidence_quotes": [
+                        {
+                            "spec_id": "S1",
+                            "quote": "Implement refund handling for cancelled orders.",
+                            "verification_mode": "token_sequence",
+                            "source_ref": {
+                                "document_id": "DOC_SPEC",
+                                "start_line": 42,
+                                "end_line": 42,
+                            },
+                        }
+                    ],
+                    "semantic_status": "pending_verification",
+                },
+                "agent_runner": "claude_agent_sdk",
+                "agent_run_id": "run_2026_05_25_a1b2",
+                "integrity_status": "pending_check",
+            }
+        ],
+    }
     id_map = {
         "id_map": [
             {
@@ -94,13 +161,39 @@ def test_phase_two_contract_schemas_are_registered_and_validate_plan_examples() 
         ]
     }
 
+    assert "candidates" in SCHEMA_FILES
     assert "id_map" in SCHEMA_FILES
     assert "semantic_verifications" in SCHEMA_FILES
+    assert validate("candidates", candidates) == []
     assert validate("id_map", id_map) == []
     assert validate("semantic_verifications", semantic_verifications) == []
 
 
 def test_phase_two_contract_schemas_reject_untraceable_entries() -> None:
+    candidate_errors = validate(
+        "candidates",
+        {
+            "spec_item_candidates": [
+                {
+                    "candidate_id": "SC1",
+                    "proposed_item": {
+                        "id": "S1",
+                        "text": "Implement refund handling for cancelled orders.",
+                        "requirement_level": "must",
+                        "source_ref": {
+                            "document_id": "DOC_SPEC",
+                            "start_line": 42,
+                            "end_line": 42,
+                        },
+                    },
+                    "agent_runner": "claude_agent_sdk",
+                    "integrity_status": "validated",
+                }
+            ],
+            "rubric_item_candidates": [],
+            "trace_link_candidates": [],
+        },
+    )
     id_map_errors = validate(
         "id_map",
         {
@@ -129,8 +222,144 @@ def test_phase_two_contract_schemas_reject_untraceable_entries() -> None:
         },
     )
 
+    assert any("agent_run_id" in error for error in candidate_errors)
     assert id_map_errors
     assert semantic_errors
+
+
+@pytest.mark.parametrize(
+    ("candidate_kind", "proposed_item", "expected_error"),
+    [
+        (
+            "spec_item_candidates",
+            {
+                "text": "Implement refund handling for cancelled orders.",
+                "requirement_level": "must",
+                "source_ref": {
+                    "document_id": "DOC_SPEC",
+                    "start_line": 42,
+                    "end_line": 42,
+                },
+            },
+            "'id' is a required property",
+        ),
+        (
+            "spec_item_candidates",
+            {
+                "id": "S1",
+                "text": "Implement refund handling for cancelled orders.",
+                "requirement_level": "mandatory",
+                "source_ref": {
+                    "document_id": "DOC_SPEC",
+                    "start_line": 42,
+                    "end_line": 42,
+                },
+            },
+            "'mandatory' is not one of",
+        ),
+        (
+            "spec_item_candidates",
+            "garbage",
+            "is not of type 'object'",
+        ),
+        (
+            "rubric_item_candidates",
+            {
+                "id": "R1",
+                "evaluation_role": "scored",
+                "source_ref": {
+                    "document_id": "DOC_RUBRIC",
+                    "start_line": 18,
+                    "end_line": 22,
+                },
+            },
+            "'title' is a required property",
+        ),
+        (
+            "trace_link_candidates",
+            {
+                "rubric_id": "R1",
+                "spec_ids": ["S1"],
+                "evidence_quotes": [
+                    {
+                        "spec_id": "S1",
+                        "quote": "Implement refund handling for cancelled orders.",
+                        "verification_mode": "exact",
+                    }
+                ],
+            },
+            "'exact' is not one of",
+        ),
+        (
+            "spec_item_candidates",
+            {
+                "rubric_id": "R1",
+                "spec_ids": ["S1"],
+                "evidence_quotes": [
+                    {
+                        "spec_id": "S1",
+                        "quote": "Implement refund handling for cancelled orders.",
+                        "verification_mode": "token_sequence",
+                    }
+                ],
+            },
+            "'text' is a required property",
+        ),
+    ],
+)
+def test_candidates_schema_rejects_invalid_proposed_item_shape(
+    candidate_kind: str,
+    proposed_item: object,
+    expected_error: str,
+) -> None:
+    candidates = {
+        "spec_item_candidates": [],
+        "rubric_item_candidates": [],
+        "trace_link_candidates": [],
+    }
+    candidates[candidate_kind].append(
+        {
+            "candidate_id": "C1",
+            "proposed_item": proposed_item,
+            "agent_runner": "claude_agent_sdk",
+            "agent_run_id": "run_2026_05_25_a1b2",
+            "integrity_status": "pending_check",
+        }
+    )
+
+    errors = validate("candidates", candidates)
+
+    assert any(expected_error in error for error in errors)
+
+
+def test_candidates_schema_rejects_invalid_integrity_status() -> None:
+    errors = validate(
+        "candidates",
+        {
+            "spec_item_candidates": [
+                {
+                    "candidate_id": "SC1",
+                    "proposed_item": {
+                        "id": "S1",
+                        "text": "Implement refund handling for cancelled orders.",
+                        "requirement_level": "must",
+                        "source_ref": {
+                            "document_id": "DOC_SPEC",
+                            "start_line": 42,
+                            "end_line": 42,
+                        },
+                    },
+                    "agent_runner": "claude_agent_sdk",
+                    "agent_run_id": "run_2026_05_25_a1b2",
+                    "integrity_status": "accepted",
+                }
+            ],
+            "rubric_item_candidates": [],
+            "trace_link_candidates": [],
+        },
+    )
+
+    assert errors
 
 
 def test_load_source_snapshot_computes_sha256(tmp_path: Path) -> None:

@@ -2,6 +2,7 @@
 
 | Date | Change | Detail |
 |---|---|---|
+| 2026-05-29 | Plan v1.24 + candidate artifact schema foundation: registers `candidates.schema.json` for run-level spec/rubric/trace candidates with runner provenance and integrity status, without choosing compacting identity algorithms or runner failure policy yet. | [Work log](docs/daily_logs/2026-05-29/work_log.md) |
 | 2026-05-28 | Plan v1.23 + audit trace role payloads: turn events now require role-specific audit payloads (`system`→`content_ref`, `agent`→`tool_call`, `tool`→`name` + `result_ref`), closing the bare `{run_id, turn, role}` permissiveness gap. | [Work log](docs/daily_logs/2026-05-28/work_log.md) |
 | 2026-05-28 | Audit trace schema foundation: registers `agent_trace.schema.json` for one append-only audit JSONL event and validates `MockFixtureRunner.audit_trace` against it. Raw trace retention/redaction and runner failure recovery remain later slices. | [Work log](docs/daily_logs/2026-05-28/work_log.md) |
 | 2026-05-28 | AgentRunner protocol foundation: adds framework-neutral `AgentRunner` / `AgentRunResult` and a deterministic fixture-replay mock runner with contract tests, without introducing SDK credentials, tools, orchestration, or compacting behavior. | [Work log](docs/daily_logs/2026-05-28/work_log.md) |

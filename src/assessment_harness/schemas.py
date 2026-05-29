@@ -21,6 +21,7 @@ SCHEMA_FILES: dict[str, str] = {
     "spec_items": "spec_items.schema.json",
     "rubric_items": "rubric_items.schema.json",
     "trace_links": "trace_links.schema.json",
+    "candidates": "candidates.schema.json",
     "policy": "policy.schema.json",
     "findings": "findings.schema.json",
     "integrity_diagnostics": "integrity_diagnostics.schema.json",
