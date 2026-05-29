@@ -139,7 +139,7 @@ A regression test should fail in *both* directions, not just one.
 ### Verification Records
 - **Trigger**: when the user explicitly requests verification of work done by another worker (human or AI) — phrases like "검증해줘", "verify this", "의심하고 또 의심해봐줘", "check that the implementation matches the spec", or any equivalent ask to audit a finished/in-progress slice against its specification.
 - **Do not** write a verification record for routine self-checks you perform while implementing your own change. Verification records exist to give the owner an independent, durable audit trail of work they didn't do themselves.
-- **Path**: `docs/verifications/YYYY-MM-DD_<slug>.md` (flat, dated prefix). Use a short slug describing the subject under verification (e.g. `rule_2_implementation`, `gate_promotion_flow`).
+- **Path**: `docs/verifications/YYYY-MM-DD/<slug>.md` (date-based subdirectory, mirroring `docs/daily_logs/`). Use a short slug describing the subject under verification (e.g. `rule_2_implementation`, `gate_promotion_flow`).
 - **Required sections**:
   - Subject metadata — date, requester, verifier, target slice/artifact, canonical spec reference (file + version), source of the work being verified (commit hash, branch, or "working tree, uncommitted").
   - Scope — the discrete surfaces being checked (e.g. spec contract, implementation code, regression tests, fixtures, public envelope/schema, full test suite, smoke runs).

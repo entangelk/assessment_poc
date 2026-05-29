@@ -317,7 +317,7 @@
 
 ### Goals
 
-- Close the strengthening recommendation in [2026-05-28_policy_completeness.md](../../verifications/2026-05-28_policy_completeness.md) §Issues 1 at owner request, before pushing the Phase 0 cleanup.
+- Close the strengthening recommendation in ~~[2026-05-28_policy_completeness.md](../../verifications/2026-05-28_policy_completeness.md)~~ (moved 2026-05-29 to date-based subdir → [2026-05-28/policy_completeness.md](../../verifications/2026-05-28/policy_completeness.md)) §Issues 1 at owner request, before pushing the Phase 0 cleanup.
 
 ### Completed Work
 

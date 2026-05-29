@@ -240,3 +240,24 @@
 - Canonical Docker suite: `docker compose run --rm test -q` passed.
 - Collection check: `python3 -m pytest --collect-only -q` reports 20 agent-runner contract, 48 CLI contract, 8 fixture, 21 model, and 95 rule tests.
 - Diff hygiene: `git diff --check` passed.
+
+## Verification Records Layout Reorganization
+
+### Goals
+
+- Reorganize `docs/verifications/` from a flat dated-prefix layout into date-based subdirectories so records group like `docs/daily_logs/` and are easier to navigate as the count grows.
+
+### Completed work
+
+- Moved all 15 verification records from `docs/verifications/YYYY-MM-DD_<slug>.md` to `docs/verifications/YYYY-MM-DD/<slug>.md` (3 date dirs: 2026-05-27, 2026-05-28, 2026-05-29). File contents unchanged; `git` detected 14 renames + 1 add (the previously-untracked deep-integrity record).
+- Updated the verification-record **Path** convention in `CLAUDE.md` and `AGENTS.md` from "flat, dated prefix" to "date-based subdirectory, mirroring `docs/daily_logs/`".
+- Updated the `HANDOFF.md` project-structure entry to the `docs/verifications/YYYY-MM-DD/<slug>.md` layout.
+
+### Decisions
+
+- Date-based subdirectories chosen over flat naming for parity with `docs/daily_logs/` and easier day-by-day linking (Owner request).
+- Historical work logs reference old flat verification paths in two forms. Inert backtick code-span mentions (2026-05-27 §"Files changed", 2026-05-28 next-step note) were left unchanged: they are dated diary records of the path at the time, not clickable, so they do not break. The one **active clickable markdown link** (2026-05-28 work log §Next Tasks → `policy_completeness.md`) was preserved with strikethrough plus a dated "moved" note and a working link to the new `DATE/slug.md` path — history kept, navigation fixed. Owner principle: active links need action; inert historical records do not.
+
+### Next steps
+
+- None. Layout change is self-contained; future verification records follow the date-subdirectory convention now codified in `CLAUDE.md` / `AGENTS.md`.

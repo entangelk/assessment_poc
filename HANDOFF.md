@@ -219,7 +219,7 @@ When a **verifier** claims branch coverage from probes, measure at the level tha
 - `docs/ideation_assessment_harness_v2.2.md`: latest ideation (final 2026-05-27, in-place revised same day). Adds Rubric Lint Rules family — 6 accepted (L1, L2, L4, L5, L6, L7), 3 rejected. Source for plan v1.19's §6 lint family.
 - `docs/ideation_assessment_harness_v2.1.md`: latest ideation, second in precedence.
 - `docs/ideation_assessment_harness_v2.md`, `docs/ideation_assessment_harness_v1.md`: historical references.
-- `docs/verifications/`: dated independent audit records; the Rule 3 boundary-tightening record supersedes the initial withdrawn Rule 3 verdict.
+- `docs/verifications/YYYY-MM-DD/<slug>.md`: independent audit records in date-based subdirectories (mirroring `docs/daily_logs/`); the Rule 3 boundary-tightening record supersedes the initial withdrawn Rule 3 verdict.
 - `docs/daily_logs/2026-05-25/work_log.md`: full record of planning iterations (v1.0 → v1.7) and Phase 0 iteration 1 / 1.5.
 - `docs/daily_logs/2026-05-26/work_log.md`: Phase 0 iteration 2 Rule 1 slices, contract regression follow-up, and publication review record.
 - `CHANGELOG.md`: major milestones.
