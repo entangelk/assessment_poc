@@ -1,4 +1,4 @@
-# Assessment Spec Harness PoC 구현 계획서 v1.26
+# Assessment Spec Harness PoC 구현 계획서 v1.28
 
 ## 0. 문서 목적
 
@@ -397,11 +397,18 @@ spec_item_candidates:
 
 `agent_runner`는 후보를 생성한 runner의 식별자다. `agent_run_id`는 같은 run의 모든 candidate가 공유하며, 해당 run의 trace로 역추적할 수 있다.
 
+`integrity_status` 는 staged model이다. 초기 structural classifier는 schema와 audit
+trace 귀속만 확인하고 `structurally_validated`까지만 부여한다. Deep candidate Rule 0
+검사(내부 reference, quote/source grounding)가 끝난 뒤에만 `validated`를 부여하며,
+`compact`는 `validated` run만 소비한다.
+
 `integrity_status` enum:
 
 - `pending_check`: integrity check 이전 초기 상태
-- `validated`: 모든 Rule 0 항목 통과. compacting 대상이 됨
-- `invalid_reference`: dangling rubric/spec id, evidence_quote spec_id 불일치 등
+- `structurally_validated`: candidate schema, audit trace schema, candidate `agent_run_id` → audit trace `run_id` 귀속 검사를 통과했지만 deep candidate Rule 0는 아직 통과하지 않은 중간 상태. compacting 대상 아님
+- `validated`: 내부 reference, quote/source grounding까지 포함한 모든 candidate Rule 0 항목 통과. compacting 대상이 됨
+- `trace_attribution_error`: candidate `agent_run_id`가 audit trace `run_id`에 귀속되지 않음
+- `invalid_reference`: dangling rubric/spec id, evidence_quote spec_id 불일치 등 candidate 내부 reference 오류
 - `quote_mismatch`: evidence_quote가 spec_item.text의 substring이 아님
 - `schema_violation`: candidate schema 위반
 - `blocked_by_runner_error`: max_turns 초과, tool error, partial output 등 runner 측 사유
@@ -1318,6 +1325,34 @@ Phase 2/3 전 확정할 사항:
 ---
 
 ## 15. 변경 이력
+
+### v1.28 (2026-05-29)
+
+핵심 변경: **candidate integrity staged model 정합화.**
+
+- §5.4의 `integrity_status`를 staged model로 명시했다. `structurally_validated`는
+  candidate schema, audit trace schema, candidate `agent_run_id` → audit trace
+  `run_id` 귀속 검사를 통과한 중간 상태이며 compacting 대상이 아니다. `validated`는
+  내부 reference, quote/source grounding까지 포함한 deep candidate Rule 0를 모두
+  통과한 뒤에만 부여한다. `trace_attribution_error`를 추가해 audit trace 귀속 누락을
+  `invalid_reference`(candidate 내부 dangling reference)와 분리했다.
+- `classify_candidate_run_integrity`는 더 이상 `validated`를 emit하지 않고 clean
+  structural run을 `structurally_validated`로 표시한다. Deep Rule 0와 compacting은
+  후속 슬라이스에서 `structurally_validated` run을 입력으로 받아 `validated` 또는
+  `invalid_reference` / `quote_mismatch`로 승격·격리한다.
+
+### v1.27 (2026-05-29)
+
+핵심 변경: **normalized candidate run integrity 분류 헬퍼 추가.**
+
+- `classify_candidate_run_integrity` 헬퍼를 추가해 normalized candidate artifacts와
+  audit trace를 compacting 전 structural integrity 상태로 분류한다. candidate/audit
+  trace schema 오류는 `schema_violation`, audit trace run attribution 누락은
+  `trace_attribution_error`, 오류가 없는 structural run은 모든 candidate를
+  `structurally_validated`로 표시한다. 이 헬퍼는 원본 candidate 문서를 mutate하지 않고
+  상태가 반영된 복사본과 오류 목록을 반환한다. 아직 Rule 0 deep reference validation,
+  `validated` 승격, `blocked_by_runner_error` recovery, review_queue invalid-run entry
+  생성, compacting은 후속 범위다.
 
 ### v1.26 (2026-05-29)
 

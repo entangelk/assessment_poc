@@ -12,6 +12,7 @@ import pytest
 from assessment_harness.agent_runners import (
     AgentRunner,
     MockFixtureRunner,
+    classify_candidate_run_integrity,
     normalize_result_candidates,
     validate_candidate_audit_trace,
 )
@@ -190,6 +191,100 @@ def test_candidate_normalization_strips_compacting_only_fields(
 
     for field in stripped_fields:
         assert field not in proposed_item
+
+
+def test_candidate_run_integrity_marks_clean_structural_run_candidates_structural(
+    fixture_dir: Path,
+) -> None:
+    runner = MockFixtureRunner(fixture_dir / "clean_assignment", run_id="mock_run")
+    result = runner.run(
+        spec_path=fixture_dir / "clean_assignment" / "source" / "spec.md",
+        rubric_path=fixture_dir / "clean_assignment" / "source" / "rubric.md",
+        tools=[],
+        max_turns=1,
+        policy={"rules": {}},
+    )
+    candidates = normalize_result_candidates(result)
+
+    integrity = classify_candidate_run_integrity(candidates, result.audit_trace)
+
+    assert integrity.integrity_status == "structurally_validated"
+    assert integrity.errors == ()
+    assert validate("candidates", integrity.candidates) == []
+    assert {
+        candidate["integrity_status"]
+        for section in integrity.candidates.values()
+        for candidate in section
+    } == {"structurally_validated"}
+    assert candidates["spec_item_candidates"][0]["integrity_status"] == "pending_check"
+
+
+def test_candidate_run_integrity_does_not_claim_deep_rule_zero_validation() -> None:
+    candidates = _candidate_artifacts(run_id="run_1")
+    candidates["rubric_item_candidates"] = []
+    candidates["trace_link_candidates"][0]["proposed_item"] = {
+        "rubric_id": "R_DOES_NOT_EXIST",
+        "spec_ids": ["S_DOES_NOT_EXIST"],
+        "evidence_quotes": [
+            {
+                "spec_id": "S_MISMATCH",
+                "quote": "totally unrelated quote",
+                "verification_mode": "token_sequence",
+            }
+        ],
+    }
+
+    integrity = classify_candidate_run_integrity(candidates, _audit_trace("run_1"))
+
+    assert integrity.integrity_status == "structurally_validated"
+    assert integrity.errors == ()
+    assert {
+        candidate["integrity_status"]
+        for section in integrity.candidates.values()
+        for candidate in section
+    } == {"structurally_validated"}
+
+
+def test_candidate_run_integrity_classifies_candidate_schema_errors() -> None:
+    candidates = _candidate_artifacts(run_id="run_1")
+    del candidates["spec_item_candidates"][0]["agent_run_id"]
+
+    integrity = classify_candidate_run_integrity(candidates, _audit_trace("run_1"))
+
+    assert integrity.integrity_status == "schema_violation"
+    assert any(error.startswith("candidates:") for error in integrity.errors)
+    assert integrity.candidates["spec_item_candidates"][0]["integrity_status"] == (
+        "schema_violation"
+    )
+
+
+def test_candidate_run_integrity_classifies_audit_trace_schema_errors() -> None:
+    candidates = _candidate_artifacts(run_id="run_1")
+    audit_trace = copy.deepcopy(_audit_trace(run_id="run_1"))
+    del audit_trace[0]["content_ref"]
+
+    integrity = classify_candidate_run_integrity(candidates, audit_trace)
+
+    assert integrity.integrity_status == "schema_violation"
+    assert any(error.startswith("audit_trace/0") for error in integrity.errors)
+    assert integrity.candidates["trace_link_candidates"][0]["integrity_status"] == (
+        "schema_violation"
+    )
+
+
+def test_candidate_run_integrity_classifies_missing_trace_attribution() -> None:
+    candidates = _candidate_artifacts(run_id="run_without_trace")
+
+    integrity = classify_candidate_run_integrity(candidates, _audit_trace("run_1"))
+
+    assert integrity.integrity_status == "trace_attribution_error"
+    assert any("has no matching audit_trace run_id" in error for error in integrity.errors)
+    assert validate("candidates", integrity.candidates) == []
+    assert {
+        candidate["integrity_status"]
+        for section in integrity.candidates.values()
+        for candidate in section
+    } == {"trace_attribution_error"}
 
 
 def test_agent_trace_schema_rejects_unattributed_event() -> None:

@@ -2,6 +2,8 @@
 
 | Date | Change | Detail |
 |---|---|---|
+| 2026-05-29 | Plan v1.28 + candidate integrity staged model: adds `structurally_validated` and `trace_attribution_error`, keeps `validated` reserved for deep candidate Rule 0 success and compacting eligibility, and updates the classifier so structural checks no longer over-claim final validation. | [Work log](docs/daily_logs/2026-05-29/work_log.md) |
+| 2026-05-29 | Plan v1.27 + normalized candidate run integrity helper: adds helper-level structural candidate run classification and mutation-safe status copies as a precursor to deep candidate Rule 0 validation and compacting. Superseded in-place by v1.28's staged status vocabulary. | [Work log](docs/daily_logs/2026-05-29/work_log.md) |
 | 2026-05-29 | Plan v1.26 + runner artifact normalization helper: converts fixture-shaped `AgentRunResult.artifacts` into candidate artifacts with runner/run provenance and strips compacting-only fields before candidate validation. | [Work log](docs/daily_logs/2026-05-29/work_log.md) |
 | 2026-05-29 | Plan v1.25 + candidate audit-trace attribution helper: validates candidate schema, audit trace event schema, and that every candidate `agent_run_id` appears in audit trace `run_id`s, without implementing extract/compact or runner recovery policy. | [Work log](docs/daily_logs/2026-05-29/work_log.md) |
 | 2026-05-29 | Plan v1.24 + candidate artifact schema foundation: registers `candidates.schema.json` for run-level spec/rubric/trace candidates with runner provenance and integrity status, without choosing compacting identity algorithms or runner failure policy yet. | [Work log](docs/daily_logs/2026-05-29/work_log.md) |

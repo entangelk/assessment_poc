@@ -175,3 +175,68 @@
 - Canonical Docker suite: `docker compose run --rm test -q` passed.
 - Collection check: `python3 -m pytest --collect-only -q` reports 15 agent-runner contract, 48 CLI contract, 8 fixture, 21 model, and 95 rule tests.
 - Diff hygiene: `git diff --check` passed.
+
+## Normalized Candidate Run Integrity Helper / Staged Model Reconciliation
+
+### Goals
+
+- Continue Phase 2 run-isolation work without implementing deep Rule 0 candidate validation, runner failure recovery, invalid-run review queue entries, compacting, or real runners.
+- Classify normalized candidate artifacts before deep candidate Rule 0 validation without over-claiming final `validated` status.
+- Reconcile the contract so structural validation and compacting eligibility are separate stages.
+
+### Completed work
+
+- Promoted the plan to v1.27, then reconciled the status vocabulary in v1.28.
+  - Files changed: `docs/implementation_plan_assessment_harness_poc_v1.md`.
+  - Key changes: recorded `classify_candidate_run_integrity` as a helper-level structural classifier; added staged `integrity_status` semantics where `structurally_validated` means schema + audit attribution passed, while `validated` remains reserved for later deep candidate Rule 0 success and compacting eligibility; added `trace_attribution_error` so audit trace attribution failures do not reuse `invalid_reference`.
+  - Effect: candidate run integrity classification is now a documented Phase 2 contract surface without weakening the meaning of `validated`.
+- Added normalized candidate run integrity classification.
+  - Files changed: `src/assessment_harness/agent_runners/integrity.py`, `src/assessment_harness/agent_runners/__init__.py`.
+  - Key changes: returns a frozen `CandidateRunIntegrityResult` with run-level `integrity_status`, candidate copies, and errors; marks clean structural candidate/audit trace inputs as `structurally_validated`; classifies candidate or audit trace schema errors as `schema_violation`; classifies missing audit trace run attribution as `trace_attribution_error`.
+  - Effect: later deep candidate Rule 0 validation can promote only truly clean runs to `validated`, while structural and attribution failures keep machine-readable reasons.
+- Added focused run integrity regressions.
+  - Files changed: `tests/test_agent_runner_contract.py`.
+  - Key changes: tests lock clean structural-run `structurally_validated` behavior, no mutation of original normalized candidates, candidate schema error classification, audit trace schema error classification, trace attribution `trace_attribution_error`, schema-valid attribution-error output, and the reproduced dangling internal reference case staying below `validated`.
+  - Effect: schema errors, trace attribution errors, and deferred deep Rule 0 checks cannot collapse into one undifferentiated failure state.
+- Updated current-state documentation.
+  - Files changed: `README.md`, `HANDOFF.md`, `CHANGELOG.md`, this work log.
+  - Key changes: bumped current plan references to v1.28 and recorded staged candidate run integrity classification as live helper-level Phase 2 infrastructure.
+  - Effect: next workers can add deeper candidate Rule 0 checks or invalid-run queue entries on top of a small tested classifier.
+
+### Issues found
+
+- Problem: normalized candidates could be schema-valid and audit-trace-attributed, but there was no helper that actually promoted them out of `pending_check`.
+  Cause: v1.26 stopped at normalization and cross-artifact validation.
+  Resolution: added `classify_candidate_run_integrity` to produce `structurally_validated` copies when schema + audit attribution succeeds.
+  Outcome: clean normalized runs now have an explicit structural state without claiming deep Rule 0 success.
+- Problem: candidate schema errors and missing audit trace run attribution both surfaced as generic validation errors.
+  Cause: `validate_candidate_audit_trace` intentionally returns a flat error list.
+  Resolution: classified `candidates:` and `audit_trace/` errors as `schema_violation`, and pure attribution errors as `trace_attribution_error`.
+  Outcome: early run isolation can distinguish malformed output from missing trace attribution without overloading `invalid_reference`.
+- Problem: independent verification showed that v1.27 over-claimed `validated`, even though deep candidate Rule 0 checks for internal dangling references and quote mismatches were still deferred.
+  Cause: the helper treated "schema + audit attribution passed" as if it meant "all Rule 0 passed".
+  Resolution: added staged status semantics, changed clean structural runs to `structurally_validated`, kept `validated` reserved for deep Rule 0 success, and added a regression using dangling internal references to prove the classifier no longer emits `validated`.
+  Outcome: compacting can continue to rely on `validated` as the only safe status once deep Rule 0 exists.
+
+### Decisions
+
+- The helper does not mutate the input candidate document. It returns a copy with updated `integrity_status` so callers can retain the original normalized artifact if needed.
+- `validated` remains a terminal deep Rule 0 success status and compacting gate. The structural classifier must not emit it.
+- Missing audit trace run attribution is classified as `trace_attribution_error`, not `schema_violation` or `invalid_reference`, because the candidate and trace documents can both be schema-valid while the run attribution is broken. `invalid_reference` is reserved for candidate-internal dangling references.
+- This slice deliberately does not create `review_queue` `invalid_run` entries. Queue composition remains deferred until invalid-run retention/review policy is implemented.
+
+### Next steps
+
+1. Add deeper candidate Rule 0 integrity checks that promote `structurally_validated` runs to `validated` or isolate them as `invalid_reference` / `quote_mismatch`.
+2. Add invalid-run review_queue entries once retention/review policy is ready.
+3. Add runner failure/recovery cases for `blocked_by_runner_error`, max-turns, and tool errors.
+4. Defer compacting until identity-basis behavior is chosen or explicitly bounded.
+
+### Verification
+
+- Focused runner contract tests: `python3 -m pytest tests/test_agent_runner_contract.py -q` passed (20 tests).
+- Syntax check: `python3 -m py_compile src/assessment_harness/agent_runners/base.py src/assessment_harness/agent_runners/mock.py src/assessment_harness/agent_runners/normalization.py src/assessment_harness/agent_runners/validation.py src/assessment_harness/agent_runners/integrity.py src/assessment_harness/agent_runners/__init__.py` passed.
+- Full suite: `python3 -m pytest -q` passed (192 tests).
+- Canonical Docker suite: `docker compose run --rm test -q` passed.
+- Collection check: `python3 -m pytest --collect-only -q` reports 20 agent-runner contract, 48 CLI contract, 8 fixture, 21 model, and 95 rule tests.
+- Diff hygiene: `git diff --check` passed.
