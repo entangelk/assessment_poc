@@ -23,6 +23,35 @@
 - The PoC is an **agent-level harness**: the 1st-class caller is an AI agent (Claude Code / Codex / Gemini), not a human. Humans participate only as final reviewers.
 - The final workflow is `extract --runs N -> compact -> verify --runs N -> check -> report -> review -> gate`. Compacting is a **union-based audit operation**: every valid candidate is preserved with `support` / `identity_basis` / `variants`.
 
+## Publication / Portfolio Effort (active, 2026-05-29)
+
+The project is being prepared for public release as a portfolio piece.
+
+- **Canonical plan:** [`docs/publication_plan_v1.md`](docs/publication_plan_v1.md) (v1.2) — governs the whole effort; completion of its inventory + Open Decisions = the publication moment. Read it first.
+- **Framing (Owner):** foreground *decisions and process over code*; no overclaiming; single source of truth per fact (link, don't duplicate); AI collaboration shown honestly. EN primary + KO mirror with a language-switch header.
+- **Done & committed:** publication plan (v1.0→v1.2); **Step 0 truth pass** of `README.md` (plan ref v1.28→v1.30, linear Phase table → area-based status, `extract`/`compact`/`verify` marked unimplemented).
+- **WIP, uncommitted:** [`docs/decisions.md`](docs/decisions.md) — first-person draft, AI-collaboration foregrounded, with 8 vignettes (A1 agent-as-user, A2 rejected L3/L8/L9 scope boundary, A3 check-vs-gate, B1 `validated`→staged→3-way, B2 union compacting, B3 verification_mode, B4 source-snapshot grounding, C1 verification discipline + withdrawn Rule 3 verdict). **Voice is locked:** first person ("I decided"), AI collaboration explicit, honesty clarifiers (e.g. "no live incident — caught at the contract level"). Keep that voice.
+
+### Next task: 4-section decision harvest → reconcile into `decisions.md`
+
+The 8 vignettes were drawn from a *partial* survey. Before finalizing `decisions.md`, sweep all four decision sources systematically so nothing major is missed, then reconcile (add genuinely new decisions as vignettes; do **not** duplicate ones already covered above):
+
+1. **Daily logs** — `docs/daily_logs/2026-05-2[5-9]/work_log.md` `### Decisions` sections. **NOT yet swept.** Look for Owner decisions + rationale not in the change log (e.g. raw-vs-audit trace separation, human-override at final review, multi-run-instead-of-human-approval shift, cross-AI review culture).
+2. **Verification records** — `docs/verifications/2026-05-2[7-9]/*.md` Verdict/Issues sections. **NOT yet swept.** Source of reconciliation stories and conditional-pass/withdrawn-verdict narratives (Rule 3 withdrawal already used in C1; check for others: gate conditional pass, policy completeness, review safety guards).
+3. **Ideation** — `docs/ideation_assessment_harness_v2.2.md` accept/reject rationale. **DONE** → L3/L8/L9 rejections became vignette A2.
+4. **Implementation plan change log** — §15, v1.0→v1.30. **DONE** → v1.2/v1.3/v1.4/v1.5/v1.6/v1.7 became A1/A3/B1/B2/B3/B4.
+
+### Remaining publication steps (per publication_plan §4)
+
+- **Step 1 — Bilingual scaffold:** EN/KO pairs + language-switch header for showcase docs (README, case_study, decisions, evaluation) and technical docs (HANDOFF/AGENTS/CLAUDE). Embed a **Mermaid architecture diagram** in README (replaces a separate arch doc).
+- **Step 2 — Case study + decisions:** finish `decisions.md` (after harvest); write `docs/case_study.md` (Problem/Goal/Key decisions/What I built/Verification/Limitations/Next).
+- **Step 3 — Evaluation (`docs/evaluation.md`):** test + smoke tables **built from real `docker compose run` / `pytest` output, never transcribed** (200 passing as of v1.30; recompute before publishing).
+- **Step 4 — AGENTS/CLAUDE augment:** add agent workflow rules not already present; do not duplicate existing content.
+- **Step 5 — Cleanup + safety:** add `LICENSE` (**Apache 2.0**, copyright `entangelk`); curated index for `daily_logs`/`verifications` (not raw-dumped); secret scan over tree **and history** (repo flips as-is); fix broken links.
+- **Step 6 — Documentation Map** in README.
+- **Step 6.5 — Freeze + mirror moving docs** (§7b): full EN mirror of the implementation plan, `.ko` of the publication plan, `HANDOFF.md` mirror — done once at the end so a moving target isn't translated repeatedly.
+- **Step 7 — Visibility flip (Owner, manual):** `gh` unavailable here. Owner sets repo description/topics and flips to public. Ready-to-paste draft is in the response history and publication_plan §7a; description = "An agent-consumable CLI harness that validates assessment *design* … Proof-of-concept", topics = `assessment` `spec-validation` `rubric` `cli` `json-schema` `llm-agents` `agent-tooling` `design-by-contract` `python` `proof-of-concept`.
+
 ## Quick Start (dev)
 
 ```bash
