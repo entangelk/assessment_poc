@@ -44,6 +44,7 @@
             "validated",
             "trace_attribution_error",
             "invalid_reference",
+            "source_grounding_mismatch",
             "quote_mismatch",
             "schema_violation",
             "blocked_by_runner_error"

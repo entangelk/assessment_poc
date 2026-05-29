@@ -13,9 +13,11 @@ from assessment_harness.agent_runners import (
     AgentRunner,
     MockFixtureRunner,
     classify_candidate_run_integrity,
+    classify_deep_candidate_run_integrity,
     normalize_result_candidates,
     validate_candidate_audit_trace,
 )
+from assessment_harness.models import SourceSnapshot, load_source_snapshot
 from assessment_harness.schemas import validate
 
 
@@ -94,6 +96,24 @@ def _audit_trace(run_id: str = "run_1") -> list[dict[str, Any]]:
             "tool_call_count": 0,
         },
     ]
+
+
+def _normalized_clean_run(
+    fixture_dir: Path,
+) -> tuple[dict[str, Any], list[dict[str, Any]], SourceSnapshot]:
+    runner = MockFixtureRunner(fixture_dir / "clean_assignment", run_id="mock_run")
+    result = runner.run(
+        spec_path=fixture_dir / "clean_assignment" / "source" / "spec.md",
+        rubric_path=fixture_dir / "clean_assignment" / "source" / "rubric.md",
+        tools=[],
+        max_turns=1,
+        policy={"rules": {}},
+    )
+    candidates = normalize_result_candidates(result)
+    snapshot = load_source_snapshot(
+        fixture_dir / "clean_assignment" / "source_manifest.yaml"
+    )
+    return candidates, result.audit_trace, snapshot
 
 
 def test_mock_fixture_runner_satisfies_agent_runner_protocol(
@@ -243,6 +263,190 @@ def test_candidate_run_integrity_does_not_claim_deep_rule_zero_validation() -> N
         for section in integrity.candidates.values()
         for candidate in section
     } == {"structurally_validated"}
+
+
+def test_deep_candidate_run_integrity_promotes_clean_run_to_validated(
+    fixture_dir: Path,
+) -> None:
+    runner = MockFixtureRunner(fixture_dir / "clean_assignment", run_id="mock_run")
+    result = runner.run(
+        spec_path=fixture_dir / "clean_assignment" / "source" / "spec.md",
+        rubric_path=fixture_dir / "clean_assignment" / "source" / "rubric.md",
+        tools=[],
+        max_turns=1,
+        policy={"rules": {}},
+    )
+    candidates = normalize_result_candidates(result)
+    snapshot = load_source_snapshot(
+        fixture_dir / "clean_assignment" / "source_manifest.yaml"
+    )
+
+    integrity = classify_deep_candidate_run_integrity(
+        candidates,
+        result.audit_trace,
+        snapshot,
+    )
+
+    assert integrity.integrity_status == "validated"
+    assert integrity.errors == ()
+    assert validate("candidates", integrity.candidates) == []
+    assert {
+        candidate["integrity_status"]
+        for section in integrity.candidates.values()
+        for candidate in section
+    } == {"validated"}
+    assert candidates["spec_item_candidates"][0]["integrity_status"] == "pending_check"
+
+
+def test_deep_candidate_run_integrity_rejects_dangling_internal_reference(
+    fixture_dir: Path,
+) -> None:
+    runner = MockFixtureRunner(fixture_dir / "clean_assignment", run_id="mock_run")
+    result = runner.run(
+        spec_path=fixture_dir / "clean_assignment" / "source" / "spec.md",
+        rubric_path=fixture_dir / "clean_assignment" / "source" / "rubric.md",
+        tools=[],
+        max_turns=1,
+        policy={"rules": {}},
+    )
+    candidates = normalize_result_candidates(result)
+    candidates["trace_link_candidates"][0]["proposed_item"]["rubric_id"] = "R_MISSING"
+    snapshot = load_source_snapshot(
+        fixture_dir / "clean_assignment" / "source_manifest.yaml"
+    )
+
+    integrity = classify_deep_candidate_run_integrity(
+        candidates,
+        result.audit_trace,
+        snapshot,
+    )
+
+    assert integrity.integrity_status == "invalid_reference"
+    assert any("dangling_rubric_reference" in error for error in integrity.errors)
+    assert {
+        candidate["integrity_status"]
+        for section in integrity.candidates.values()
+        for candidate in section
+    } == {"invalid_reference"}
+
+
+def test_deep_candidate_run_integrity_rejects_token_sequence_quote_mismatch(
+    fixture_dir: Path,
+) -> None:
+    candidates, audit_trace, snapshot = _normalized_clean_run(fixture_dir)
+    quote = candidates["trace_link_candidates"][0]["proposed_item"]["evidence_quotes"][0]
+    quote["quote"] = "This quote is not in the referenced spec item."
+    quote.pop("source_ref")
+
+    integrity = classify_deep_candidate_run_integrity(
+        candidates,
+        audit_trace,
+        snapshot,
+    )
+
+    assert integrity.integrity_status == "quote_mismatch"
+    assert any(
+        "evidence_quote_token_sequence_mismatch" in error
+        for error in integrity.errors
+    )
+
+
+def test_deep_candidate_run_integrity_rejects_evidence_spec_id_mismatch(
+    fixture_dir: Path,
+) -> None:
+    candidates, audit_trace, snapshot = _normalized_clean_run(fixture_dir)
+    quote = candidates["trace_link_candidates"][0]["proposed_item"]["evidence_quotes"][0]
+    quote["spec_id"] = "S2"
+
+    integrity = classify_deep_candidate_run_integrity(
+        candidates,
+        audit_trace,
+        snapshot,
+    )
+
+    assert integrity.integrity_status == "invalid_reference"
+    assert any(
+        "evidence_quote_spec_id_mismatch" in error
+        for error in integrity.errors
+    )
+
+
+def test_deep_candidate_run_integrity_rejects_source_grounding_mismatch(
+    fixture_dir: Path,
+) -> None:
+    candidates, audit_trace, snapshot = _normalized_clean_run(fixture_dir)
+    candidates["spec_item_candidates"][0]["proposed_item"]["text"] = (
+        "This text is not present in the source span."
+    )
+
+    integrity = classify_deep_candidate_run_integrity(
+        candidates,
+        audit_trace,
+        snapshot,
+    )
+
+    assert integrity.integrity_status == "source_grounding_mismatch"
+    assert any("spec_text_not_in_snapshot_span" in error for error in integrity.errors)
+    assert validate("candidates", integrity.candidates) == []
+
+
+def test_deep_candidate_run_integrity_prefers_reference_over_grounding_and_quote(
+    fixture_dir: Path,
+) -> None:
+    candidates, audit_trace, snapshot = _normalized_clean_run(fixture_dir)
+    candidates["spec_item_candidates"][0]["proposed_item"]["text"] = (
+        "This text is not present in the source span."
+    )
+    quote = candidates["trace_link_candidates"][0]["proposed_item"]["evidence_quotes"][0]
+    quote["spec_id"] = "S2"
+    quote["quote"] = "This quote is not in the referenced spec item."
+    quote.pop("source_ref")
+
+    integrity = classify_deep_candidate_run_integrity(
+        candidates,
+        audit_trace,
+        snapshot,
+    )
+
+    assert integrity.integrity_status == "invalid_reference"
+    assert any(
+        "evidence_quote_spec_id_mismatch" in error
+        for error in integrity.errors
+    )
+    assert any("spec_text_not_in_snapshot_span" in error for error in integrity.errors)
+
+
+def test_deep_candidate_run_integrity_does_not_over_reject_ai_judgement_quote(
+    fixture_dir: Path,
+) -> None:
+    runner = MockFixtureRunner(fixture_dir / "clean_assignment", run_id="mock_run")
+    result = runner.run(
+        spec_path=fixture_dir / "clean_assignment" / "source" / "spec.md",
+        rubric_path=fixture_dir / "clean_assignment" / "source" / "rubric.md",
+        tools=[],
+        max_turns=1,
+        policy={"rules": {}},
+    )
+    candidates = normalize_result_candidates(result)
+    quote = candidates["trace_link_candidates"][0]["proposed_item"]["evidence_quotes"][0]
+    quote["quote"] = "Semantic paraphrase that still awaits verifier review."
+    quote["verification_mode"] = "ai_judgement"
+    quote.pop("source_ref")
+    snapshot = load_source_snapshot(
+        fixture_dir / "clean_assignment" / "source_manifest.yaml"
+    )
+
+    integrity = classify_deep_candidate_run_integrity(
+        candidates,
+        result.audit_trace,
+        snapshot,
+    )
+
+    assert integrity.integrity_status == "validated"
+    assert not any(
+        "evidence_quote_token_sequence_mismatch" in error
+        for error in integrity.errors
+    )
 
 
 def test_candidate_run_integrity_classifies_candidate_schema_errors() -> None:

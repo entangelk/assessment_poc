@@ -1,4 +1,4 @@
-# Assessment Spec Harness PoC 구현 계획서 v1.28
+# Assessment Spec Harness PoC 구현 계획서 v1.30
 
 ## 0. 문서 목적
 
@@ -408,10 +408,16 @@ trace 귀속만 확인하고 `structurally_validated`까지만 부여한다. Dee
 - `structurally_validated`: candidate schema, audit trace schema, candidate `agent_run_id` → audit trace `run_id` 귀속 검사를 통과했지만 deep candidate Rule 0는 아직 통과하지 않은 중간 상태. compacting 대상 아님
 - `validated`: 내부 reference, quote/source grounding까지 포함한 모든 candidate Rule 0 항목 통과. compacting 대상이 됨
 - `trace_attribution_error`: candidate `agent_run_id`가 audit trace `run_id`에 귀속되지 않음
-- `invalid_reference`: dangling rubric/spec id, evidence_quote spec_id 불일치 등 candidate 내부 reference 오류
-- `quote_mismatch`: evidence_quote가 spec_item.text의 substring이 아님
+- `invalid_reference`: duplicate id, dangling rubric/spec id, evidence_quote spec_id 불일치, evidence_quote 누락/공백 등 candidate 내부 reference/completeness 오류
+- `source_grounding_mismatch`: source document/hash/source_ref document/span 오류, item text 또는 source_ref.quote가 snapshot span에 없음, evidence_quote source_ref가 referenced spec span에 포함되지 않음, evidence_quote가 지정된 snapshot span에 없음
+- `quote_mismatch`: `verification_mode: token_sequence`인 evidence_quote가 referenced spec_item.text의 substring이 아님
 - `schema_violation`: candidate schema 위반
 - `blocked_by_runner_error`: max_turns 초과, tool error, partial output 등 runner 측 사유
+
+Deep candidate Rule 0에서 여러 상태 후보가 동시에 발생하면 대표 `integrity_status`는
+`invalid_reference > source_grounding_mismatch > quote_mismatch` 순서로 선택한다.
+상세 Rule 0 diagnostic은 모두 `errors`에 보존되므로, 대표 상태는 review/triage용
+첫 분류일 뿐이다.
 
 `validated` 외의 status는 모두 compacting/assessment 단계에서 제외되며, 해당 사유는 `integrity_diagnostics.json`과 `review_queue.json`에 보존된다.
 
@@ -1325,6 +1331,40 @@ Phase 2/3 전 확정할 사항:
 ---
 
 ## 15. 변경 이력
+
+### v1.30 (2026-05-29)
+
+핵심 변경: **deep candidate Rule 0 diagnostic → integrity_status 3-way routing 확정.**
+
+- §5.4 enum에 `source_grounding_mismatch`를 추가했다. source document/hash,
+  `source_ref` document/span, item text/source quote snapshot mismatch, evidence
+  source_ref containment, evidence quote snapshot-span mismatch는 이 상태로 격리한다.
+- `quote_mismatch`는 `verification_mode: token_sequence` evidence_quote가 referenced
+  spec_item.text의 substring이 아닌 경우로 좁힌다. spec/rubric/evidence source
+  grounding 실패는 더 이상 `quote_mismatch`로 라벨링하지 않는다.
+- deep Rule 0 대표 상태 precedence를
+  `invalid_reference > source_grounding_mismatch > quote_mismatch`로 명시했다. 여러
+  diagnostic 계열이 동시에 발생하면 더 근본적인 reference/completeness 문제를 먼저
+  triage하고, 상세 diagnostic은 모두 errors에 보존한다.
+
+### v1.29 (2026-05-29)
+
+핵심 변경: **deep candidate Rule 0 integrity 헬퍼 추가.**
+
+- `classify_deep_candidate_run_integrity` 헬퍼를 추가해 structural integrity를 통과한
+  normalized candidate run을 기존 Rule 0 engine으로 검사한다. 내부 reference와
+  source/quote grounding diagnostic이 없을 때만 모든 candidate 복사본을
+  `validated`로 승격한다.
+- candidate 내부 dangling rubric/spec reference, evidence quote spec mismatch,
+  missing/empty evidence quote, source_ref 문서/span 오류 등 reference 계열 Rule 0
+  diagnostic은 run을 `invalid_reference`로 격리한다. token-sequence quote mismatch,
+  source snapshot span quote mismatch, spec/rubric source quote mismatch 등
+  quote/source grounding 계열 diagnostic만 있을 때는 `quote_mismatch`로 격리한다.
+- `ai_judgement` evidence quote는 기존 Rule 0 계약과 동일하게 spec text substring
+  검사를 요구하지 않는다. 단, 별도 `source_ref`가 제공된 경우에는 snapshot span
+  grounding 검사는 유지한다.
+- 이 슬라이스는 helper-level 구현이다. `extract`, `compact`, invalid-run
+  `review_queue` 보존, runner failure recovery, 실제 SDK runner는 여전히 후속 범위다.
 
 ### v1.28 (2026-05-29)
 

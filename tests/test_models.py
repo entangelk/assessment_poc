@@ -362,6 +362,36 @@ def test_candidates_schema_rejects_invalid_integrity_status() -> None:
     assert errors
 
 
+def test_candidates_schema_accepts_source_grounding_mismatch_status() -> None:
+    errors = validate(
+        "candidates",
+        {
+            "spec_item_candidates": [
+                {
+                    "candidate_id": "SC1",
+                    "proposed_item": {
+                        "id": "S1",
+                        "text": "Implement refund handling for cancelled orders.",
+                        "requirement_level": "must",
+                        "source_ref": {
+                            "document_id": "DOC_SPEC",
+                            "start_line": 42,
+                            "end_line": 42,
+                        },
+                    },
+                    "agent_runner": "claude_agent_sdk",
+                    "agent_run_id": "run_2026_05_25_a1b2",
+                    "integrity_status": "source_grounding_mismatch",
+                }
+            ],
+            "rubric_item_candidates": [],
+            "trace_link_candidates": [],
+        },
+    )
+
+    assert errors == []
+
+
 def test_load_source_snapshot_computes_sha256(tmp_path: Path) -> None:
     spec_path = tmp_path / "spec.md"
     rubric_path = tmp_path / "rubric.md"

@@ -2,6 +2,8 @@
 
 | Date | Change | Detail |
 |---|---|---|
+| 2026-05-29 | Plan v1.30 + source-grounding integrity status: adds `source_grounding_mismatch`, narrows `quote_mismatch` to token-sequence evidence quote substring failures, and locks deep Rule 0 precedence as `invalid_reference > source_grounding_mismatch > quote_mismatch`. | [Work log](docs/daily_logs/2026-05-29/work_log.md) |
+| 2026-05-29 | Plan v1.29 + deep candidate Rule 0 helper: promotes structurally validated normalized candidates to `validated` only after existing Rule 0 passes, and isolates candidate-internal reference/source_ref failures as `invalid_reference` or quote/source grounding failures as `quote_mismatch`. | [Work log](docs/daily_logs/2026-05-29/work_log.md) |
 | 2026-05-29 | Plan v1.28 + candidate integrity staged model: adds `structurally_validated` and `trace_attribution_error`, keeps `validated` reserved for deep candidate Rule 0 success and compacting eligibility, and updates the classifier so structural checks no longer over-claim final validation. | [Work log](docs/daily_logs/2026-05-29/work_log.md) |
 | 2026-05-29 | Plan v1.27 + normalized candidate run integrity helper: adds helper-level structural candidate run classification and mutation-safe status copies as a precursor to deep candidate Rule 0 validation and compacting. Superseded in-place by v1.28's staged status vocabulary. | [Work log](docs/daily_logs/2026-05-29/work_log.md) |
 | 2026-05-29 | Plan v1.26 + runner artifact normalization helper: converts fixture-shaped `AgentRunResult.artifacts` into candidate artifacts with runner/run provenance and strips compacting-only fields before candidate validation. | [Work log](docs/daily_logs/2026-05-29/work_log.md) |

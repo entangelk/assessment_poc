@@ -241,6 +241,127 @@
 - Collection check: `python3 -m pytest --collect-only -q` reports 20 agent-runner contract, 48 CLI contract, 8 fixture, 21 model, and 95 rule tests.
 - Diff hygiene: `git diff --check` passed.
 
+## Deep Candidate Rule 0 Integrity Helper
+
+### Goals
+
+- Continue the Phase 2 run-integrity path by adding the smallest deep candidate Rule 0 helper, without implementing `extract`, `compact`, SDK runners, runner failure recovery, or invalid-run queue retention.
+- Promote normalized candidate runs to `validated` only after schema/audit attribution and existing Rule 0 reference/source grounding both pass.
+- Lock both directions: invalid internal references or quote mismatches must not pass, while `ai_judgement` quotes must not be over-rejected by token-substring rules.
+
+### Completed work
+
+- Promoted the plan to v1.29.
+  - Files changed: `docs/implementation_plan_assessment_harness_poc_v1.md`.
+  - Key changes: recorded `classify_deep_candidate_run_integrity` as a helper-level deep Rule 0 slice and kept extraction, compacting, invalid-run queue entries, runner recovery, and real SDK runners out of scope.
+  - Effect: the `validated` integrity status now has an implemented helper path rather than being only a reserved future state.
+- Added deep candidate Rule 0 classification.
+  - Files changed: `src/assessment_harness/agent_runners/integrity.py`, `src/assessment_harness/agent_runners/__init__.py`.
+  - Key changes: converts normalized candidate `proposed_item`s into temporary Rule 0 input documents, reuses `run_rule_zero`, promotes clean runs to `validated`, maps reference/source_ref diagnostics to `invalid_reference`, and maps quote/source grounding diagnostics to `quote_mismatch`.
+  - Effect: compacting can later consume only candidates that passed structural checks and the existing deterministic Rule 0 integrity engine.
+- Added focused runner contract regressions.
+  - Files changed: `tests/test_agent_runner_contract.py`.
+  - Key changes: tests lock clean fixture normalization promoting to `validated`, dangling rubric references becoming `invalid_reference`, token-sequence quote mismatches becoming `quote_mismatch`, and `ai_judgement` paraphrases without `source_ref` not being rejected by token-substring checks.
+  - Effect: under-strict and over-strict deep candidate Rule 0 boundaries are now visible in the agent-runner contract suite.
+- Updated current-state documentation.
+  - Files changed: `README.md`, `HANDOFF.md`, `CHANGELOG.md`, this work log.
+  - Key changes: bumped current plan references to v1.29 and recorded the deep candidate Rule 0 helper as live Phase 2 infrastructure.
+  - Effect: next workers can proceed to invalid-run queue retention or runner failure recovery without re-deciding the `validated` boundary.
+
+### Issues found
+
+- Problem: after v1.28, `validated` was reserved for deep Rule 0 success but no helper could actually produce it.
+  Cause: the previous slice intentionally stopped at structural validation to avoid over-claiming.
+  Resolution: added a helper that first runs structural validation, then reuses the existing Rule 0 engine over normalized candidate payloads.
+  Outcome: clean normalized candidate runs can now be promoted to `validated` without weakening the staged integrity contract.
+- Problem: the deep helper needed to fit existing status literals even though Rule 0 has more diagnostic codes than the candidate integrity enum.
+  Cause: candidate run integrity deliberately exposes a small machine-readable status set.
+  Resolution: grouped internal reference/source_ref failures under `invalid_reference`, and quote/source grounding-only failures under `quote_mismatch`.
+  Outcome: callers get stable run-level statuses while detailed Rule 0 diagnostic codes remain visible in `errors`.
+
+### Decisions
+
+- The helper short-circuits on structural/schema/audit errors and preserves those statuses rather than running deep Rule 0 on malformed candidate artifacts.
+- `invalid_reference` covers candidate-internal reference failures plus source_ref document/span grounding failures, because both make the candidate unsafe to compact.
+- `quote_mismatch` is used only when all Rule 0 diagnostics are quote/source grounding mismatches. If a run has both a reference failure and a quote mismatch, the run-level status is `invalid_reference` so callers fix the structural issue first.
+- `ai_judgement` keeps the existing Rule 0 behavior: no spec text substring check is required, but any explicit evidence `source_ref` must still ground to the snapshot span.
+
+### Next steps
+
+1. Add invalid-run `review_queue` entries once retention/review policy is ready.
+2. Add runner failure/recovery cases for `blocked_by_runner_error`, max-turns, and tool errors.
+3. Defer compacting until identity-basis behavior is chosen or explicitly bounded.
+
+### Verification
+
+- Focused runner contract tests: `python3 -m pytest tests/test_agent_runner_contract.py -q` passed (24 tests).
+- Full suite: `python3 -m pytest -q` passed (196 tests).
+- Collection check: `python3 -m pytest --collect-only -q` reports 24 agent-runner contract, 48 CLI contract, 8 fixture, 21 model, and 95 rule tests.
+- Syntax check: `python3 -m py_compile src/assessment_harness/agent_runners/integrity.py src/assessment_harness/agent_runners/__init__.py` passed.
+- Diff hygiene: `git diff --check` passed.
+
+## Deep Candidate Rule 0 Source-Grounding Status Reconciliation
+
+### Goals
+
+- Resolve the v1.29 verification finding that `quote_mismatch` was doing double duty for evidence quote substring failures and spec/rubric/source grounding failures.
+- Add one explicit source-grounding status rather than broadening a misleading label.
+- Lock the representative diagnostic-to-status mapping and mixed-case precedence before compacting or invalid-run review queues build on these statuses.
+
+### Completed work
+
+- Promoted the plan to v1.30.
+  - Files changed: `docs/implementation_plan_assessment_harness_poc_v1.md`.
+  - Key changes: added `source_grounding_mismatch` to §5.4, narrowed `quote_mismatch` to token-sequence evidence quote substring failures, and documented precedence as `invalid_reference > source_grounding_mismatch > quote_mismatch`.
+  - Effect: §5.4 now names the three deep Rule 0 failure families instead of leaving source-grounding diagnostics to inference.
+- Added the new candidate integrity status to the schema.
+  - Files changed: `schemas/candidates.schema.json`.
+  - Key changes: added `source_grounding_mismatch` to the `integrity_status` enum.
+  - Effect: deep classifier outputs remain schema-valid when source grounding fails.
+- Rerouted deep Rule 0 classification.
+  - Files changed: `src/assessment_harness/agent_runners/integrity.py`.
+  - Key changes: split the old quote set into invalid-reference, source-grounding, and quote-mismatch code sets; unknown future Rule 0 codes default to `invalid_reference`; mixed diagnostic runs use the documented precedence.
+  - Effect: source document/hash/source_ref/snapshot-span failures no longer appear as evidence quote substring failures.
+- Added focused regressions.
+  - Files changed: `tests/test_agent_runner_contract.py`, `tests/test_models.py`.
+  - Key changes: locked `evidence_quote_spec_id_mismatch -> invalid_reference`, `spec_text_not_in_snapshot_span -> source_grounding_mismatch`, mixed reference+grounding+quote precedence to `invalid_reference`, and schema acceptance of the new status literal.
+  - Effect: the previously empty mapping cells are now covered by non-ambiguous tests.
+- Updated current-state documentation.
+  - Files changed: `README.md`, `HANDOFF.md`, `CHANGELOG.md`, this work log.
+  - Key changes: bumped current plan references to v1.30 and recorded the new source-grounding status and precedence rule.
+  - Effect: later compacting/review_queue work can rely on stable, accurately named triage labels.
+
+### Issues found
+
+- Problem: `quote_mismatch` included spec/rubric/source grounding diagnostics even though §5.4 defined it as an evidence_quote substring failure.
+  Cause: the initial deep Rule 0 helper grouped all quote/source grounding diagnostics under one status to keep the enum small.
+  Resolution: added `source_grounding_mismatch` and kept `quote_mismatch` evidence-quote-specific.
+  Outcome: status names now match their triage meaning and §5.4 no longer conflicts with the classifier.
+- Problem: representative mapping cells were not locked by tests.
+  Cause: v1.29 only covered dangling rubric reference and token-sequence quote mismatch.
+  Resolution: added tests for evidence spec-id mismatch, source grounding mismatch, and mixed precedence.
+  Outcome: accidental rerouting of the three failure families will fail the focused agent-runner contract suite.
+
+### Decisions
+
+- Owner chose the 3-way split over broadening `quote_mismatch`, because the status names will become review_queue/triage surfaces and should be accurate before later phases depend on them.
+- Precedence is `invalid_reference > source_grounding_mismatch > quote_mismatch`. A representative run-level status points reviewers at the most fundamental issue first while detailed errors retain every diagnostic.
+- Unknown future Rule 0 diagnostic codes default to `invalid_reference` rather than being treated as source or quote mismatches silently.
+
+### Next steps
+
+1. Add invalid-run `review_queue` entries once retention/review policy is ready.
+2. Add runner failure/recovery cases for `blocked_by_runner_error`, max-turns, and tool errors.
+3. Defer compacting until identity-basis behavior is chosen or explicitly bounded.
+
+### Verification
+
+- Focused runner/model tests: `python3 -m pytest tests/test_agent_runner_contract.py tests/test_models.py -q` passed (49 tests).
+- Full suite: `python3 -m pytest -q` passed (200 tests).
+- Collection check: `python3 -m pytest --collect-only -q` reports 27 agent-runner contract, 48 CLI contract, 8 fixture, 22 model, and 95 rule tests.
+- Syntax check: `python3 -m py_compile src/assessment_harness/agent_runners/integrity.py src/assessment_harness/agent_runners/__init__.py` passed.
+- Diff hygiene: `git diff --check` passed.
+
 ## Verification Records Layout Reorganization
 
 ### Goals

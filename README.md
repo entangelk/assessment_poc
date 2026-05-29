@@ -176,6 +176,7 @@ gate (external final decision)
 자세한 schema는 [구현 계획서 §5](docs/implementation_plan_assessment_harness_poc_v1.md#5-데이터-계약) 참고. 요약:
 
 - **spec_items / rubric_items / trace_links**: compacted artifacts. `support` (어느 run에서 발견), `identity_basis` (동일성 판단 기준), `variants` (미세 차이 보존)
+- **candidate artifacts**: run별 pre-compacting 후보. `classify_candidate_run_integrity`는 schema/audit trace attribution만 확인해 `structurally_validated`로 표시하고, `classify_deep_candidate_run_integrity`가 내부 reference, source grounding, token quote mismatch를 구분해 통과한 run만 `validated`로 승격한다.
 - **source_manifest / source_ref**: immutable input snapshot hash와 line/span anchor. DB/RAG 없이도 원문 grounding 검증
 - **id_map**: run-local ID를 compacted canonical ID로 remap한 provenance. 후속 프로젝트/버전 관리 확장 지점
 - **trace_links.evidence_quotes**: `verification_mode` 별 분기
