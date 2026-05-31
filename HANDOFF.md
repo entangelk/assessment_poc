@@ -46,9 +46,9 @@ The 4-section decision harvest and curation are **complete**. `decisions.md` con
 
 - **Step 1 — Bilingual scaffold (partial, 2026-05-31):**
   - **Done:** Mermaid architecture diagram embedded in `README.md` (replaced the ASCII flow under 흐름 개요; marks implemented vs foundation-only honestly). Language-switch header added to the English docs `HANDOFF.md` / `AGENTS.md` / `CLAUDE.md` (`decisions.md` already had it).
-  - **Deferred — open question for Owner:** `README.md` is currently **Korean**, but publication_plan §1.5 makes `README.md` the **English** canonical file. The README language-switch header is intentionally **not** added yet (an "EN" badge on a Korean file would lie). Confirm finalization plan: current Korean `README.md` → `README.ko.md`, and author a new English `README.md`. Until then the README header + EN/KO split wait for Step 6.5.
+  - **Owner-confirmed (2026-05-31):** **English is canonical (`*.md`), Korean is the mirror (`*.ko.md`), and the two are full-parity** — neither version is written in more detail than the other (publication_plan §1.5 + §6 bilingual-parity gate). This holds even though the target market is domestic-centric. At finalization (§6.5) the current Korean `README.md` content moves to `README.ko.md` and a new English `README.md` is authored. The README language-switch header is therefore deferred until that flip (an "EN" badge on today's Korean `README.md` would lie); every other doc already carries it.
   - **Pending creation:** `case_study.md` / `evaluation.md` get the header when authored (Steps 2/3).
-- **Step 2 — Case study:** write `docs/case_study.md`, curating 3–5 decisions *from the 11 in decisions.md* (don't re-derive; link).
+- **Step 2 — Case study (drafted 2026-05-31):** `docs/case_study.md` written in English (canonical), with the language-switch header. Narrative arc — Problem / Goal / 5 curated key decisions (A1, A2+A4, A3, B1, C1, each linking to `decisions.md`) / What I built (today) / How it's verified / Limitations / Next. Links use no fragments (robust). `.ko` mirror deferred to §6.5. **Next:** Step 3 evaluation (`docs/evaluation.md`) from real `docker compose run` / `pytest` output.
 
 Harvest record (all four sources DONE — kept for audit; do not re-sweep expecting more):
 

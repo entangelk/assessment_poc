@@ -109,3 +109,33 @@
 - `grep -c '```mermaid' README.md` = 1; `grep -c 'caller agent' README.md` = 0 (ASCII flow replaced).
 - Language-switch header presence: README=0 (deferred), HANDOFF=1, AGENTS=1, CLAUDE=1, decisions=1.
 - Docs-only; no code or test surface touched.
+
+## Publication Step 2 — Case Study (`docs/case_study.md`)
+
+### Goals
+
+- Write the narrative case study (the "heart" per publication_plan §3.1) in English (canonical), curating 3–5 key decisions *from* `decisions.md` rather than re-deriving them.
+
+### Completed work
+
+- Authored `docs/case_study.md` (English) with the language-switch header and the structure: Problem / Goal (with scope honesty) / **5 curated key decisions** / What I built (today) / How it's verified / Limitations / What's next / an AI-collaboration footer.
+  - The 5 featured decisions link back to `decisions.md`: §A1 (agent-as-user), §A2+§A4 (scope by rejection + lint pivot), §A3 (check never blocks), §B1 (the `validated` label that lied — flagged as flagship), §C1 (independent audit + withdrawn verdict). The case study gives each a 2–4 sentence curated version and links to the full vignette — no duplication of the decision record.
+  - "What I built" mirrors the README implementation-status table honestly (implemented core/review flow vs foundation-only extract/compact/verify).
+- Updated `HANDOFF.md` Step 2 line to "drafted".
+
+### Decisions
+
+- **Owner confirmation (2026-05-31): English is canonical, Korean is the full-parity mirror — even though the target market is domestic-centric.** The two language versions say the same facts; neither is written in more detail (publication_plan §1.5 + §6 bilingual-parity gate). This resolves the README "open question" from the Step 1 note: at finalization the Korean `README.md` content moves to `README.ko.md` and a new English `README.md` is authored. Rationale (Owner): main/canonical in English for reach and consistency with the already-English technical docs; Korean mirror serves the domestic audience without being a reduced version. So new showcase docs (case study, evaluation) are authored in English first.
+- Case study links deliberately omit heading fragments (e.g. `decisions.md` not `decisions.md#a1-...`) to stay robust against vignette-title edits and satisfy the "no broken links" quality gate without fragile anchor matching.
+
+### Next steps
+
+1. Step 3 — `docs/evaluation.md` (English): test + smoke tables built from real `docker compose run` / `pytest` output (recompute the 200-pass count and the smoke envelope numbers; never transcribe).
+2. Step 4 — AGENTS/CLAUDE augment; Step 5 — LICENSE (Apache 2.0) + curated index + secret scan; Step 6 — Documentation Map in README.
+3. Step 6.5 (finalization) — bilingual mirrors in one pass, including the README EN/KO flip.
+
+### Verification
+
+- Case study internal link targets exist: `docs/decisions.md`, `README.md` (`../README.md`), `docs/verifications/`, `docs/implementation_plan_assessment_harness_poc_v1.md` — all present; links use no fragments.
+- `grep -c 'Switch language' docs/case_study.md` = 1.
+- Docs-only; no code or test surface touched.
