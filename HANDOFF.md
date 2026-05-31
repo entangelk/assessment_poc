@@ -80,8 +80,8 @@ docker compose run --rm harness --help  # CLI help
 From another project directory, the harness can be invoked without installing the console script by either:
 
 ```bash
-docker compose -f /workspace/assessment_poc/docker-compose.yml run --rm harness --output json schema --command check
-PYTHONPATH=/workspace/assessment_poc/src python3 -m assessment_harness.cli --output json schema --command check
+docker compose -f <repo>/docker-compose.yml run --rm harness --output json schema --command check
+PYTHONPATH=<repo>/src python3 -m assessment_harness.cli --output json schema --command check
 ```
 
 The bare `assessment-harness` executable is not currently on PATH in this environment.

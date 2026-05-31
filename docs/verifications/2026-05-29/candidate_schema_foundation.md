@@ -3,7 +3,7 @@
 ## Subject metadata
 
 - **Date**: 2026-05-29
-- **Requester**: Owner (kdtyohan@gmail.com) — "검증하고 의심해줄래?"
+- **Requester**: Owner — "검증하고 의심해줄래?"
 - **Verifier**: Claude (independent audit)
 - **Target slice**: candidate artifact schema foundation — `schemas/candidates.schema.json` 신설, `schemas.py` 등록, `test_models.py` 회귀 추가, plan v1.24 승격 + 문서 갱신.
 - **Canonical spec reference**: `docs/implementation_plan_assessment_harness_poc_v1.md` v1.24, §5.4 Candidate Artifact (lines 377–411), §5.4.1 cross-ref, 보강 A enum (line 1522), v1.24 변경 이력 (lines 1324–1330).
@@ -115,7 +115,7 @@ Owner가 조건을 처리한 뒤 재검증함. 독립적으로 재확인한 결�
 ## Reproduction
 
 ```bash
-cd "/workspace/assessment_poc"
+cd "<repo>"
 # 동작 탐침
 python3 -c "from src.assessment_harness.schemas import validate; \
 print(validate('candidates', {'spec_item_candidates':[{'candidate_id':'X','agent_runner':'r','agent_run_id':'r1','integrity_status':'pending_check','proposed_item':'garbage'}],'rubric_item_candidates':[],'trace_link_candidates':[]}))"

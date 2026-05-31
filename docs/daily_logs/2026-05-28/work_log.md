@@ -410,7 +410,7 @@
 
 - Checked CLI availability from outside the repository.
   - Files changed: `HANDOFF.md`, this work log.
-  - Key changes: recorded the two currently working cross-project invocation forms: `docker compose -f /workspace/assessment_poc/docker-compose.yml run --rm harness ...` and `PYTHONPATH=/workspace/assessment_poc/src python3 -m assessment_harness.cli ...`.
+  - Key changes: recorded the two currently working cross-project invocation forms: `docker compose -f <repo>/docker-compose.yml run --rm harness ...` and `PYTHONPATH=<repo>/src python3 -m assessment_harness.cli ...`.
   - Effect: the owner can switch to another project and run the Phase 0 CLI during ongoing work without waiting for Phase 2.
 
 ### Issues Found
@@ -433,8 +433,8 @@
 
 - `command -v assessment-harness` returned no executable.
 - From `/tmp`, `python3 -m assessment_harness.cli --output json schema --command check` failed with `ModuleNotFoundError`, confirming no ambient install.
-- From `/tmp`, `PYTHONPATH=/workspace/assessment_poc/src python3 -m assessment_harness.cli --output json schema --command check` returned `status=success`.
-- From `/tmp`, `docker compose -f /workspace/assessment_poc/docker-compose.yml run --rm harness --output json schema --command check` returned `status=success`.
+- From `/tmp`, `PYTHONPATH=<repo>/src python3 -m assessment_harness.cli --output json schema --command check` returned `status=success`.
+- From `/tmp`, `docker compose -f <repo>/docker-compose.yml run --rm harness --output json schema --command check` returned `status=success`.
 
 ## Phase 2 Contract Schema Foundation
 

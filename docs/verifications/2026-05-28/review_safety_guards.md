@@ -99,7 +99,7 @@ Issue 1(internal_error 미표본)은 **차단으로 올리지 않는다** — �
 ## Reproduction
 
 ```bash
-cd /workspace/assessment_poc
+cd <repo>
 PYTHONPATH=src python3 -m pytest tests/test_cli_output_contract.py tests/test_fixtures.py -q   # 49 passed
 PYTHONPATH=src python3 -m pytest -q                                                            # 156 passed
 PYTHONPATH=src python3 -m assessment_harness.cli --output json schema --command review

@@ -3,7 +3,7 @@
 ## Subject metadata
 
 - **Date**: 2026-05-29
-- **Requester**: Owner (kdtyohan@gmail.com) — "검증 진행해줘"
+- **Requester**: Owner — "검증 진행해줘"
 - **Verifier**: Claude (independent audit)
 - **Target slice**: `classify_candidate_run_integrity` / `CandidateRunIntegrityResult` (`integrity.py`) 신설 + 회귀, plan v1.27 승격, 문서 갱신.
 - **Canonical spec reference**: `docs/implementation_plan_assessment_harness_poc_v1.md` v1.27 — §5.4 integrity_status enum (lines 400-411, 특히 403 `validated` 정의, 404 `invalid_reference`, 405 `quote_mismatch`, 411 run-integrity→compacting 흐름), §10.2 (line 1194 attribution), line 1168 (invalid candidate가 deterministic assessment로 유입 금지), v1.27 §15 changelog (lines 1322-1334).
@@ -110,7 +110,7 @@ Owner가 옵션 A(계약을 staged 모델로 개정)를 선택해 개발측에�
 ## Reproduction
 
 ```bash
-cd "/workspace/assessment_poc"
+cd "<repo>"
 PYTHONPATH=src python3 -c "
 from assessment_harness.agent_runners import classify_candidate_run_integrity as cls
 c={'spec_item_candidates':[{'candidate_id':'SC1','agent_runner':'m','agent_run_id':'run_1','integrity_status':'pending_check','proposed_item':{'id':'S1','text':'Refund handling required.','requirement_level':'must','source_ref':{'document_id':'D','start_line':1,'end_line':1}}}],'rubric_item_candidates':[],'trace_link_candidates':[{'candidate_id':'TC1','agent_runner':'m','agent_run_id':'run_1','integrity_status':'pending_check','proposed_item':{'rubric_id':'R_X','spec_ids':['S_X'],'evidence_quotes':[{'spec_id':'S_MISMATCH','quote':'unrelated','verification_mode':'token_sequence'}]}}]}

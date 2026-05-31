@@ -1,7 +1,7 @@
 # Verification — Rule 2 (Required Spec Coverage) Implementation
 
 - 검증 일자: 2026-05-27
-- 검증 요청자: Owner (kdtyohan@gmail.com)
+- 검증 요청자: Owner
 - 검증 수행자: AI (Claude Code, claude-opus-4-7)
 - 검증 대상: Phase 0 Rule 2 (`uncovered_must_spec_item` / `review_uncovered_must_spec`) slice — working tree, uncommitted
 - 정본 spec 기준: `docs/implementation_plan_assessment_harness_poc_v1.md` v1.14 §6 Rule 2

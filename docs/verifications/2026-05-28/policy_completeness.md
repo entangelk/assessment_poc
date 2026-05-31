@@ -113,7 +113,7 @@ Issue 1은 명명 outcome이 모두 잠긴 상태에서 implementation defensive
 ## Reproduction
 
 ```bash
-cd /workspace/assessment_poc
+cd <repo>
 PYTHONPATH=src python3 -m pytest tests/test_cli_output_contract.py tests/test_fixtures.py -q   # 53 passed
 PYTHONPATH=src python3 -m pytest -q                                                            # 160 passed
 PYTHONPATH=src python3 -m assessment_harness.cli --output json schema --command check          # provide_policy 노출

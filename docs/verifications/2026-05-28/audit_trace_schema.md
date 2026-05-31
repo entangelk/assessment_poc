@@ -152,7 +152,7 @@
 ## Reproduction
 
 ```bash
-cd /workspace/assessment_poc
+cd <repo>
 PYTHONPATH=src python3 -m pytest tests/test_agent_runner_contract.py -q   # → 3 passed
 PYTHONPATH=src python3 -m pytest -q                                        # → 168 passed
 PYTHONPATH=src python3 -m pytest --collect-only -q | tail -6               # → 3 + 48 + 8 + 14 + 95 = 168

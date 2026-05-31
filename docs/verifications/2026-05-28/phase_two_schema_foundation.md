@@ -136,7 +136,7 @@ Plan §5.3.1 예시(345-356) 필드와 [semantic_verifications.schema.json:17-43
 ## Reproduction
 
 ```bash
-cd /workspace/assessment_poc
+cd <repo>
 PYTHONPATH=src python3 -m pytest tests/test_models.py -q          # → 14 passed
 PYTHONPATH=src python3 -m pytest -q                                # → 165 passed
 PYTHONPATH=src python3 -m pytest --collect-only -q | tail -5       # → 48 CLI / 8 fixture / 14 model / 95 rule

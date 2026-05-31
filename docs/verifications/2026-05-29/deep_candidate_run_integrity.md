@@ -3,7 +3,7 @@
 ## Subject metadata
 
 - **Date**: 2026-05-29
-- **Requester**: Owner (kdtyohan@gmail.com) — "다음작업 검증해줘"
+- **Requester**: Owner — "다음작업 검증해줘"
 - **Verifier**: Claude (independent audit)
 - **Target slice**: `classify_deep_candidate_run_integrity` (`integrity.py`) 신설 + 회귀 4종, plan v1.29 승격, 문서 갱신. structurally_validated → validated/invalid_reference/quote_mismatch 승격·격리 단계(직전 라운드에서 후속으로 scope된 것).
 - **Canonical spec reference**: plan v1.29 — §5.4 integrity_status enum (lines 405-415, 특히 412 quote_mismatch / 411 invalid_reference 정의), §6 Rule 0 (`run_rule_zero` diagnostic 코드), §5.3 verification_mode(ai_judgement vs token_sequence, line 923), v1.29 changelog (1329-1347).
@@ -102,7 +102,7 @@ Owner가 3-way 분리(grounding 전용 상태 신설)를 선택, 개발측 반�
 ## Reproduction
 
 ```bash
-cd "/workspace/assessment_poc"
+cd "<repo>"
 PYTHONPATH=src python3 -c "
 from pathlib import Path
 from assessment_harness.agent_runners import MockFixtureRunner, normalize_result_candidates, classify_deep_candidate_run_integrity as deep
