@@ -139,3 +139,39 @@
 - Case study internal link targets exist: `docs/decisions.md`, `README.md` (`../README.md`), `docs/verifications/`, `docs/implementation_plan_assessment_harness_poc_v1.md` — all present; links use no fragments.
 - `grep -c 'Switch language' docs/case_study.md` = 1.
 - Docs-only; no code or test surface touched.
+
+## Publication Step 3 — Evaluation (`docs/evaluation.md`), measured
+
+### Goals
+
+- Build the measured test + smoke evidence doc from a **real run** (publication_plan §6: recompute, never transcribe), and — per Owner — frame the numbers as a dated, moving snapshot since the project is under active development.
+
+### Completed work
+
+- Ran the suite and fixture smokes live, then authored `docs/evaluation.md` (English) from the captured output:
+  - **Test suite:** `200 passed`; per-module from `--collect-only`: rules 95 / cli-output-contract 48 / agent-runner-contract 27 / models 22 / fixtures 8.
+  - **`check` smoke table** for all six grounded fixtures (each with its own `policy.yaml` + `source_manifest.yaml`): measured `(high, medium, informational)`, `review_queue_count`, and a separate deduplicated `next_actions` table.
+  - **Input-guard table** with the *verified* order (see Issues).
+  - **Reproduction** section: canonical Docker commands + the direct `PYTHONPATH=src python3 -m pytest` form + a single-fixture smoke template.
+- Banner frames the figures as a 2026-05-31 snapshot that moves; "treat shapes/behaviors as the stable claim, counts as true-on-the-date."
+
+### Issues found
+
+- Problem: I nearly recorded the input-guard order as "policy validated before manifest" — which is **wrong**.
+  Cause: an early no-manifest smoke (run while the sandbox shell was mangling output and one of my debug one-liners piped stderr into a JSON parser) produced an unreliable reading.
+  Resolution: re-ran all three guard cases cleanly and read the source. Confirmed `_cmd_check` checks `--source-manifest` first (cli.py:102) then `--policy` (cli.py:104): manifest-omitted → `provide_source_manifest`; manifest-present/policy-omitted → `provide_policy`; both-omitted → `provide_source_manifest`. Only the verified order went into the doc.
+  Outcome: reinforced the session rule — re-verify any measurement taken while the environment is degraded, and read the code rather than trusting a single CLI reading, before recording it. (This wrong ordering never reached a committed file; the earlier Step-3 edits were cancelled mid-batch.)
+- Note: an earlier draft mentioned `200 passed in 7.16s`; dropped the wall-clock time from the doc since it is the least stable number and adds no signal on a "moving snapshot."
+
+### Verification
+
+- Measured live this session (clean shell): six-fixture smoke counts — clean `(0,2,0)` q0, orphan `(1,1,1)` q0, uncovered `(1,5,0)` q1, optionality `(2,1,0)` q0, bonus_misuse `(1,5,1)` q2, reference_integrity `invalid_input` exit 2 `high_integrity_count=9`. `next_actions` per fixture captured from the live envelopes (not from memory).
+- Input guards re-verified clean: `provide_source_manifest` / `provide_policy` / both-omitted→`provide_source_manifest`, cross-checked against cli.py:102-105.
+- `evaluation.md` internal links: `verifications/` and `decisions.md` exist; `#reproduction` is its own H2.
+- Docs-only; no code or test surface modified (smokes wrote only to `/tmp` and `work/`).
+
+### Next steps
+
+1. Step 4 — augment `AGENTS.md` / `CLAUDE.md` with any agent workflow rules not already present (no duplication).
+2. Step 5 — `LICENSE` (Apache 2.0, `entangelk`); curated index for `daily_logs`/`verifications`; secret scan over tree + history.
+3. Step 6 — Documentation Map in README; Step 6.5 — bilingual mirrors in one pass incl. README EN/KO flip.
