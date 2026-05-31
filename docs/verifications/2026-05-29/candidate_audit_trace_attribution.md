@@ -3,7 +3,7 @@
 ## Subject metadata
 
 - **Date**: 2026-05-29
-- **Requester**: Owner — "다음 작업물 검증해줘"
+- **Requester**: Owner (kdtyohan@gmail.com) — "다음 작업물 검증해줘"
 - **Verifier**: Claude (independent audit)
 - **Target slice**: `validate_candidate_audit_trace` 헬퍼 신설 + 회귀 테스트, plan v1.25 승격, 문서 갱신.
 - **Canonical spec reference**: `docs/implementation_plan_assessment_harness_poc_v1.md` v1.25, §10.2 (line 1194: "audit trace는 schema validation을 통과하고, 모든 candidate의 `agent_run_id`가 audit trace에 존재해야 한다"), v1.25 변경 이력 (lines 1322-1331). 연계 스키마: `candidates.schema.json`, `agent_trace.schema.json`.
@@ -93,7 +93,7 @@
 ## Reproduction
 
 ```bash
-cd "<repo>"
+cd "/workspace/assessment_poc"
 PYTHONPATH=src python3 -c "
 from assessment_harness.agent_runners import validate_candidate_audit_trace as v
 c={'spec_item_candidates':[{'candidate_id':'SC1','agent_runner':'m','agent_run_id':'rX','integrity_status':'pending_check','proposed_item':{'id':'S1','text':'t','requirement_level':'must','source_ref':{'document_id':'D','start_line':1,'end_line':1}}}],'rubric_item_candidates':[],'trace_link_candidates':[]}

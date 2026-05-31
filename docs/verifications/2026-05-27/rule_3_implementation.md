@@ -3,7 +3,7 @@
 > **Superseded / verdict withdrawn (2026-05-27):** This initial record incorrectly treated uncovered Rule 3 boundary branches as non-blocking and also incorrectly stated that omission of `--policy` loads a default policy. Its pass verdict is withdrawn. The corrected post-remediation verdict is recorded in [2026-05-27_rule_3_boundary_tightening.md](2026-05-27_rule_3_boundary_tightening.md).
 
 - 검증 일자: 2026-05-27
-- 검증 요청자: Owner
+- 검증 요청자: Owner (kdtyohan@gmail.com)
 - 검증 수행자: AI (Claude Code, claude-opus-4-7)
 - 검증 대상: Phase 0 Rule 3 (`optionality_mismatch` / `review_optionality_mismatch`) slice — working tree, uncommitted
 - 정본 spec 기준: `docs/implementation_plan_assessment_harness_poc_v1.md` v1.15 §6 Rule 3

@@ -107,7 +107,7 @@ gate 슬라이스를 합격시킬 때 쓴 척도("코드가 정확해도 계약 
 ## Reproduction
 
 ```bash
-cd <repo>
+cd /workspace/assessment_poc
 PYTHONPATH=src python3 -m pytest -q                                   # 152 passed
 PYTHONPATH=src python3 -m assessment_harness.cli --output json schema --command review
 

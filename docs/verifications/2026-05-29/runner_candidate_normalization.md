@@ -3,7 +3,7 @@
 ## Subject metadata
 
 - **Date**: 2026-05-29
-- **Requester**: Owner — "다음 작업 검증해줘"
+- **Requester**: Owner (kdtyohan@gmail.com) — "다음 작업 검증해줘"
 - **Verifier**: Claude (independent audit)
 - **Target slice**: `normalize_result_candidates` 헬퍼 신설(`normalization.py`) + 회귀 테스트, plan v1.26 승격, 문서 갱신. 직전 라운드 outstanding(단언 정밀화) 적용 여부 동시 확인.
 - **Canonical spec reference**: `docs/implementation_plan_assessment_harness_poc_v1.md` v1.26, 변경 이력 v1.26 (lines 1322-1339). 연계: `candidates.schema.json`, `spec_items`/`rubric_items`/`trace_links` schema, `base.py:AgentRunResult`, `mock.py`.
@@ -113,7 +113,7 @@ Owner가 비차단 잔여 중 두 가지를 정리하고 `semantic_status` 유�
 ## Reproduction
 
 ```bash
-cd "<repo>"
+cd "/workspace/assessment_poc"
 PYTHONPATH=src python3 -c "
 from pathlib import Path
 from assessment_harness.agent_runners import MockFixtureRunner, normalize_result_candidates

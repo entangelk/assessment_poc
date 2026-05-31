@@ -190,7 +190,7 @@ plan §15 line 1530: "`cli_output.schema.json`, `agent_trace.schema.json` 추가
 ## Reproduction
 
 ```bash
-cd <repo>
+cd /workspace/assessment_poc
 PYTHONPATH=src python3 -m pytest tests/test_agent_runner_contract.py -q     # → 2 passed
 PYTHONPATH=src python3 -m pytest -q                                          # → 167 passed
 PYTHONPATH=src python3 -m pytest --collect-only -q | tail -6                 # → 2 + 48 + 8 + 14 + 95 = 167

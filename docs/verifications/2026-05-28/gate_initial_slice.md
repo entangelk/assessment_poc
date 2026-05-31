@@ -1,7 +1,7 @@
 # Verification — Initial `gate` Slice & Final-Review Finding Mapping (plan v1.16)
 
 - 검증 일자: 2026-05-28
-- 검증 요청자: Owner
+- 검증 요청자: Owner (kdtyohan@gmail.com)
 - 검증 수행자: AI (Claude Code, claude-opus-4-7)
 - 검증 대상: plan v1.16 final-review→finding 매핑 계약 + `gate` 첫 수직 조각 (schema, `gate` 명령, CLI 계약/fixture 회귀) — working tree, uncommitted
 - 정본 spec 기준: `docs/implementation_plan_assessment_harness_poc_v1.md` v1.16 §5.5 / §5.6 / §6 Rule 1·2·3·L1·L5·L6 / §8.1
@@ -152,7 +152,7 @@ CHANGELOG v1.16 항목, HANDOFF "Initial finding-level `gate` is implemented", R
 ## Reproduction
 
 ```bash
-cd <repo>
+cd /workspace/assessment_poc
 
 # 회귀
 PYTHONPATH=src python3 -m pytest tests/test_cli_output_contract.py tests/test_fixtures.py -q
