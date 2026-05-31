@@ -72,3 +72,40 @@
 
 - Post-curation structure check: `grep -cE "^### [A-C][0-9]\." docs/decisions.md` = 11; headers are exactly A1–A4, B1–B5, C1–C2.
 - Dangling-reference scan for removed IDs (`see A5/A6`, `(B6/B7/B8)`, etc.): NONE — no surviving vignette references a dropped one (the only A5-style content is now inlined in A3).
+
+## Publication Step 1 — Bilingual Scaffold + README Architecture Diagram (partial)
+
+### Goals
+
+- Begin publication_plan Step 1 without doing any translation (Owner: bilingual mirroring is batched at finalization, §7b/§6.5): set up the language-switch header scaffold on the English docs and embed the Mermaid architecture diagram in the README.
+
+### Completed work
+
+- Embedded a **Mermaid architecture diagram** in `README.md`, replacing the plain-text ASCII pipeline under `## 흐름 개요`.
+  - The diagram marks the implemented/foundation boundary honestly (the prior ASCII flow did not): deterministic core (Rule 0 → Rules 1-3 + lint → findings) and the review/verdict flow (check → report → review → human → gate → verdict) are styled "implemented"; the agent extraction pipeline (AgentRunner ×N → candidates → compact → verify) is styled "foundation only". The solid arrow into Rule 0 is today's manual/fixture input path; the dashed arrow is the agent path "when built".
+  - Everything anchors to the immutable source snapshot node.
+- Added the language-switch header (EN/KO badges + `<!-- .ko mirror created on finalize -->` comment) to the English docs: `HANDOFF.md`, `AGENTS.md`, `CLAUDE.md`. `docs/decisions.md` already carried it.
+
+### Issues found
+
+- Problem: severe tool-output mangling this session led me to draft README edits against an **assumed English README** that does not exist — the live `README.md` is **Korean**. All three README edits failed (string-not-found), so `README.md` was undamaged; I then re-read the real file and redid the diagram against the actual Korean content.
+  Cause: I issued edits in the same batch as the README read instead of confirming the read result first.
+  Resolution: re-established ground truth with clean `git status` / `grep` before any further edit; only the verified diagram replacement and the AGENTS header were applied afterward.
+  Outcome: no damage; lesson — never edit a file in the same batch as its first read this session.
+
+### Decisions
+
+- **README language-switch header deferred (not added yet).** `README.md` is currently Korean, but publication_plan §1.5 makes `README.md` the **English** canonical file (Korean → `README.ko.md`). Putting an "EN"-highlighted badge on a Korean file would be a false signal, so the README header waits until the finalization-time EN/KO split (§6.5) decides which content lands at which path. The English docs (HANDOFF/AGENTS/CLAUDE/decisions) get the header now because their EN badge is already accurate.
+- The Mermaid diagram uses English technical-term node labels inside the Korean README — consistent with the README's existing inline-English-term style, and it carries over unchanged when `README.md` becomes the English canonical file.
+
+### Next steps / open question for Owner
+
+1. **README language at finalization:** confirm the plan — current Korean `README.md` content moves to `README.ko.md`, and a new English `README.md` is authored (per §1.5 EN-canonical). This is the one piece blocking the README language header; everything else in Step 1 for existing docs is done.
+2. `docs/case_study.md` (Step 2) and `docs/evaluation.md` (Step 3) do not exist yet; they get the language-switch header when authored.
+3. Proceed to Step 2 (case study, curating 3–5 decisions from the 11 in `decisions.md`).
+
+### Verification
+
+- `grep -c '```mermaid' README.md` = 1; `grep -c 'caller agent' README.md` = 0 (ASCII flow replaced).
+- Language-switch header presence: README=0 (deferred), HANDOFF=1, AGENTS=1, CLAUDE=1, decisions=1.
+- Docs-only; no code or test surface touched.

@@ -144,32 +144,42 @@ assessment-harness gate \
 
 ---
 
-## 흐름 개요
+## 흐름 개요 (아키텍처)
 
-```
-caller agent → CLI
-    ↓
-spec.md + rubric → agent runner (multi-run, tool use)
-    ↓
-run별 candidate + agent_trace (raw + audit 분리 저장)
-    ↓
-run integrity check (Rule 0)
-    ↓
-compacting (union, 자동 채택 없음, support/identity_basis/variants 보존)
-    ↓
-compacted artifacts + review_queue
-    ↓
-semantic verifier-agent (read-only, multi-run)
-    ↓
-semantic_verifications (제안 보존, 자동 확정 없음)
-    ↓
-deterministic check (Rule 0~3, provisional findings)
-    ↓
-findings + report
-    ↓
-final human review (accept | hold | rerun | override)
-    ↓
-gate (external final decision)
+전체 파이프라인은 **불변 소스 스냅샷**(sha256 + line/span `source_ref`)에 anchor된다.
+결정론적 검증 코어와 review/verdict 흐름은 **구현 완료**, 이를 먹이는 multi-run
+에이전트 추출 파이프라인은 **contract/foundation 단계**다. 아래 다이어그램은 그
+경계를 그대로 표기한다 — Rule 0로 들어가는 실선은 *현재* 입력 경로(수동/fixture),
+점선은 *구현 시* 에이전트 경로다.
+
+```mermaid
+flowchart TB
+    SNAP["Immutable source snapshot<br/>(sha256 + line/span source_ref)"]
+
+    subgraph EXTRACT["Agent extraction (foundation only)"]
+        direction LR
+        RUNS["AgentRunner x N<br/>framework-agnostic"] --> CANDS["candidates<br/>+ raw/audit trace"] --> COMPACT["compact<br/>union, no auto-merge"] --> VERIFY["verify<br/>semantic, multi-run"]
+    end
+
+    subgraph CORE["Deterministic validation core (implemented)"]
+        direction LR
+        R0["Rule 0<br/>reference integrity"] --> RJ["Rules 1-3<br/>+ lint L1/L5/L6"] --> FINDINGS["provisional findings"]
+    end
+
+    subgraph FLOW["Review and verdict (implemented)"]
+        direction LR
+        CHECK["check"] --> REPORT["report"] --> REVIEW["review<br/>hold draft"] --> HUMAN(["human final review<br/>accept / hold / rerun / override"]) --> GATE["gate"] --> VERDICT{{"pass / fail / pending"}}
+    end
+
+    SNAP --> RUNS
+    SNAP -->|"manual / fixture inputs today"| R0
+    VERIFY -.->|"compacted + verified artifacts (when built)"| R0
+    FINDINGS --> CHECK
+
+    classDef done fill:#e6ffed,stroke:#22863a,color:#111827;
+    classDef todo fill:#fff5e6,stroke:#b08800,color:#111827,stroke-dasharray:5 3;
+    class R0,RJ,FINDINGS,CHECK,REPORT,REVIEW,HUMAN,GATE,VERDICT done;
+    class RUNS,CANDS,COMPACT,VERIFY todo;
 ```
 
 ---

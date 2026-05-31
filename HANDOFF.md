@@ -1,3 +1,11 @@
+<!-- .ko mirror created on finalize (publication_plan §7b) -->
+
+<p align="center">
+  <a href="./HANDOFF.md"><img src="https://img.shields.io/badge/Language-EN-111111?style=for-the-badge" alt="English"></a>
+  <a href="./HANDOFF.ko.md"><img src="https://img.shields.io/badge/Language-KO-6B7280?style=for-the-badge" alt="한국어"></a>
+</p>
+<p align="center"><sub>Switch language / 언어 전환</sub></p>
+
 # Handoff
 
 ## Current Status
@@ -36,7 +44,10 @@ The project is being prepared for public release as a portfolio piece.
 
 The 4-section decision harvest and curation are **complete**. `decisions.md` content is frozen at 11 vignettes pending only the `.ko` mirror (Step 6.5). Next:
 
-- **Step 1 — Bilingual scaffold:** EN/KO pairs + language-switch header for showcase + technical docs; embed the Mermaid architecture diagram in README.
+- **Step 1 — Bilingual scaffold (partial, 2026-05-31):**
+  - **Done:** Mermaid architecture diagram embedded in `README.md` (replaced the ASCII flow under 흐름 개요; marks implemented vs foundation-only honestly). Language-switch header added to the English docs `HANDOFF.md` / `AGENTS.md` / `CLAUDE.md` (`decisions.md` already had it).
+  - **Deferred — open question for Owner:** `README.md` is currently **Korean**, but publication_plan §1.5 makes `README.md` the **English** canonical file. The README language-switch header is intentionally **not** added yet (an "EN" badge on a Korean file would lie). Confirm finalization plan: current Korean `README.md` → `README.ko.md`, and author a new English `README.md`. Until then the README header + EN/KO split wait for Step 6.5.
+  - **Pending creation:** `case_study.md` / `evaluation.md` get the header when authored (Steps 2/3).
 - **Step 2 — Case study:** write `docs/case_study.md`, curating 3–5 decisions *from the 11 in decisions.md* (don't re-derive; link).
 
 Harvest record (all four sources DONE — kept for audit; do not re-sweep expecting more):
