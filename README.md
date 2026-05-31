@@ -277,18 +277,43 @@ CLI는 `--policy config/policy.yaml` 하나로 모든 정책을 받는다.
 
 ---
 
-## 문서
+## 문서 지도 (Documentation Map)
+
+어떤 목적엔 어느 문서를 보면 되는지 정리한 지도다.
+
+**이 프로젝트를 이해하고 싶다면 (3~5분)**
+
+| 문서 | 역할 |
+|---|---|
+| [docs/case_study.md](docs/case_study.md) | **여기서 시작** — 문제 / 목표 / 핵심 결정 / 무엇을 만들었나 / 검증 / 한계의 서사 |
+| [docs/decisions.md](docs/decisions.md) | 왜 이렇게 설계했는가 — 동시대 출처를 인용한 결정 vignette 모음 |
+| [docs/evaluation.md](docs/evaluation.md) | 측정된 테스트·smoke 근거 (날짜 박힌 moving snapshot) |
+| [docs/audit_index.md](docs/audit_index.md) | 작업 일지 + 독립 검증 기록 큐레이션 인덱스 |
+
+**명세와 설계 (정본)**
 
 | 문서 | 역할 |
 |---|---|
 | [docs/implementation_plan_assessment_harness_poc_v1.md](docs/implementation_plan_assessment_harness_poc_v1.md) | **구현 명세 (1순위 SoT)** — 현재 v1.30 |
 | [docs/ideation_assessment_harness_v2.2.md](docs/ideation_assessment_harness_v2.2.md) | Rubric Lint Rules 가족 (2순위, 2026-05-27 final + in-place 개정) |
 | [docs/ideation_assessment_harness_v2.1.md](docs/ideation_assessment_harness_v2.1.md) | 제품 목적과 장기 방향 (3순위) |
-| [docs/ideation_assessment_harness_v2.md](docs/ideation_assessment_harness_v2.md) | historical reference |
-| [docs/ideation_assessment_harness_v1.md](docs/ideation_assessment_harness_v1.md) | historical ideation |
-| [HANDOFF.md](HANDOFF.md) | 현재 상태 스냅샷, 다음 작업자용 |
+| [docs/ideation_assessment_harness_v2.md](docs/ideation_assessment_harness_v2.md) · [v1](docs/ideation_assessment_harness_v1.md) | historical reference |
+| [docs/publication_plan_v1.md](docs/publication_plan_v1.md) | 이 공개 작업 자체의 계획 (메타 프로세스) |
+| [schemas/](schemas/) | JSON Schema 데이터 계약 |
+
+**상세 기록 (감사 추적)**
+
+| 문서 | 역할 |
+|---|---|
+| [docs/verifications/](docs/verifications/) | 슬라이스별 독립 검증 기록 (자산) |
+| [docs/daily_logs/](docs/daily_logs/) | 동시대 작업 일지 |
 | [CHANGELOG.md](CHANGELOG.md) | 주요 milestone |
-| [docs/daily_logs/](docs/daily_logs/) | 작업 일지 |
+
+**에이전트·기여자용 (운영)**
+
+| 문서 | 역할 |
+|---|---|
+| [HANDOFF.md](HANDOFF.md) | 현재 상태 스냅샷, 다음 작업자용 |
 | [AGENTS.md](AGENTS.md) / [CLAUDE.md](CLAUDE.md) | 코딩 에이전트 행동 지침 |
 
 ---
