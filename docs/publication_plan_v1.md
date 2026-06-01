@@ -100,10 +100,11 @@ and presentation work stay in separate commits (established convention).
       in fixtures.
 - [ ] **Step 6 — Documentation Map.** Wire README to all docs with a clear
       "which door for which purpose" map.
-- [ ] **Step 6.5 — Freeze + mirror moving docs (§7b).** Once content is frozen,
-      produce the bilingual mirrors of the moving docs in one pass: full English
-      mirror of the implementation plan, `.ko` mirror of this publication plan,
-      and the `HANDOFF.md` mirror.
+- [ ] **Step 6.5 — Freeze + mirror all docs (§7b).** Once development and
+      publication copy are frozen, produce the bilingual mirrors in one pass:
+      full English mirror of the implementation plan, `.ko` mirror of this
+      publication plan, `HANDOFF.md` mirror, README EN/KO flip, and the
+      showcase/doc mirrors.
 - [ ] **Step 7 — Visibility flip (Owner, manual).** Owner sets repo
       description/topics and flips `entangelk/assessment_poc` to public; this
       plan provides the ready-to-paste metadata.
@@ -157,15 +158,17 @@ Publication is blocked until all pass:
 
 ## 7b. Bilingual timing principle (resolved v1.2)
 
-Mirror **continuously-moving docs only once, as the final pre-publication step**,
-after their content freezes — translating a moving target repeatedly is wasted
-work. Freshly-authored docs that stabilize quickly are mirrored as they finalize.
+Mirror **all docs only once, as the final pre-publication step**, after product
+development and publication copy both freeze — translating a moving target
+repeatedly is wasted work.
 
-- **Moving docs → mirror last:** implementation plan (full English mirror,
-  deferred to the end since it keeps updating), this publication plan
-  (`.ko` mirror at the end), `HANDOFF.md`.
-- **Stabilizing docs → mirror on finalize:** README, case study, decisions,
-  evaluation, AGENTS, CLAUDE.
+- **Mirror last:** implementation plan (full English mirror), this publication
+  plan (`.ko` mirror), `HANDOFF.md`, README, case study, decisions,
+  evaluation, audit index, AGENTS, and CLAUDE.
+- **Delta checkpoint:** until mirroring begins, treat the 2026-06-01 work log as
+  the baseline for publication-doc state. A later mirror pass should review
+  document changes from that log forward instead of assuming any current
+  showcase document is stable.
 
 ## 7a. Remaining Open Decisions
 
@@ -183,10 +186,10 @@ work. Freshly-authored docs that stabilize quickly are mirrored as they finalize
 
 ### v1.2 (2026-05-29)
 
-Added the **bilingual timing principle** (§7b): continuously-moving docs
-(implementation plan, this publication plan, HANDOFF) are mirrored once at the
-end after content freezes, not translated repeatedly against a moving target;
-stabilizing docs are mirrored as they finalize. Resolves prior §7a items:
+Added the **bilingual timing principle** (§7b): docs are mirrored once at the
+end after development and publication copy freeze, not translated repeatedly
+against a moving target. The 2026-06-01 work log is the baseline for later
+publication-doc delta review before mirroring. Resolves prior §7a items:
 implementation plan gets a full English mirror deferred to the final step; this
 plan's `.ko` mirror is also deferred. Added Step 6.5 (freeze + mirror). Only the
 repo description/topics wording remains open (§7a).

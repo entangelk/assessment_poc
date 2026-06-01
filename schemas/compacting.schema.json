@@ -1,0 +1,142 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://assessment-harness/compacting.schema.json",
+  "title": "Compacted Candidate Artifacts",
+  "description": "Union-based compacted artifacts with canonical ID lineage and reviewable provenance.",
+  "type": "object",
+  "required": ["spec_items", "rubric_items", "trace_links", "id_map"],
+  "properties": {
+    "spec_items": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/compacted_item" }
+    },
+    "rubric_items": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/compacted_item" }
+    },
+    "trace_links": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/compacted_trace_link" }
+    },
+    "id_map": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/id_map_entry" }
+    }
+  },
+  "additionalProperties": true,
+  "$defs": {
+    "support": {
+      "type": "object",
+      "required": ["total_valid_runs", "found_in_runs"],
+      "properties": {
+        "total_valid_runs": { "type": "integer", "minimum": 0 },
+        "found_in_runs": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        }
+      },
+      "additionalProperties": true
+    },
+    "variant": {
+      "type": "object",
+      "required": ["run_id", "candidate_id", "proposed_item"],
+      "properties": {
+        "run_id": { "type": "string", "minLength": 1 },
+        "candidate_id": { "type": "string", "minLength": 1 },
+        "proposed_item": { "type": "object", "additionalProperties": true }
+      },
+      "additionalProperties": true
+    },
+    "compacted_item": {
+      "type": "object",
+      "required": ["id", "support", "identity_basis", "variants"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "support": { "$ref": "#/$defs/support" },
+        "identity_basis": { "type": "string", "minLength": 1 },
+        "variants": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/variant" }
+        }
+      },
+      "additionalProperties": true
+    },
+    "compacted_trace_link": {
+      "type": "object",
+      "required": [
+        "rubric_id",
+        "spec_ids",
+        "evidence_quotes",
+        "support",
+        "identity_basis",
+        "variants",
+        "sources",
+        "reviewed_by",
+        "reviewed_at"
+      ],
+      "properties": {
+        "rubric_id": { "type": "string", "minLength": 1 },
+        "spec_ids": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "evidence_quotes": {
+          "type": "array",
+          "items": { "type": "object", "additionalProperties": true }
+        },
+        "support": { "$ref": "#/$defs/support" },
+        "identity_basis": { "type": "string", "minLength": 1 },
+        "variants": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/variant" }
+        },
+        "sources": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/source" }
+        },
+        "reviewed_by": { "type": ["string", "null"] },
+        "reviewed_at": { "type": ["string", "null"] }
+      },
+      "additionalProperties": true
+    },
+    "source": {
+      "type": "object",
+      "required": ["kind"],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": ["agent_run", "manual", "human_override"]
+        },
+        "run_id": { "type": "string" }
+      },
+      "additionalProperties": true
+    },
+    "id_map_entry": {
+      "type": "object",
+      "required": ["canonical_id", "entity_type", "run_refs"],
+      "properties": {
+        "canonical_id": { "type": "string", "minLength": 1 },
+        "entity_type": {
+          "type": "string",
+          "enum": ["spec_item", "rubric_item", "trace_link"]
+        },
+        "run_refs": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/run_ref" }
+        }
+      },
+      "additionalProperties": true
+    },
+    "run_ref": {
+      "type": "object",
+      "required": ["run_id", "local_id"],
+      "properties": {
+        "run_id": { "type": "string", "minLength": 1 },
+        "local_id": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": true
+    }
+  }
+}

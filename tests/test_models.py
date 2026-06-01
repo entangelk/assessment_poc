@@ -162,6 +162,7 @@ def test_phase_two_contract_schemas_are_registered_and_validate_plan_examples() 
     }
 
     assert "candidates" in SCHEMA_FILES
+    assert "compacting" in SCHEMA_FILES
     assert "id_map" in SCHEMA_FILES
     assert "semantic_verifications" in SCHEMA_FILES
     assert validate("candidates", candidates) == []
