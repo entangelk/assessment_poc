@@ -1,7 +1,7 @@
 """Assessment Spec Harness PoC.
 
-Phase 0 deterministic validation core plus Phase 2 helper foundations. The
-package is intentionally minimal: later commands (`compact`, `verify`) and
+Phase 0 deterministic validation core plus Phase 2 compacting foundations. The
+package is intentionally minimal: later commands (`extract`, `verify`) and
 runner integrations attach to the same CLI and schema scaffolding established
 here.
 """

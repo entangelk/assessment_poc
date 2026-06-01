@@ -4,13 +4,14 @@ Subcommands implemented in Phase 0:
 
 - ``check``   : run deterministic rules over the supplied compacted YAML and
                 emit JSON findings + integrity diagnostics.
+- ``compact`` : compact validated candidate runs into canonical YAML artifacts.
 - ``schema``  : self-discovery for the stable contract; lets caller agents
                 read the current `cli_output` shape without docs.
 - ``report``  : render findings + diagnostics into a Markdown report.
 - ``review``  : write a safe final-review draft with hold decisions.
 - ``gate``    : consume final review and emit the external verdict.
 
-Subcommands ``compact``, ``extract``, and ``verify`` are later-phase scope.
+Subcommands ``extract`` and ``verify`` are later-phase scope.
 """
 
 from __future__ import annotations
@@ -25,6 +26,11 @@ from typing import Any
 
 import yaml
 
+from .compacting import (
+    CompactingInputError,
+    compact_validated_candidates,
+    validated_candidate_run_id,
+)
 from .models import HarnessInputError, load_source_snapshot, load_validated, load_policy
 from .report import render_markdown
 from .rules import (
@@ -76,6 +82,11 @@ def _write_json(path: Path, payload: dict[str, Any]) -> None:
     with path.open("w", encoding="utf-8") as fh:
         json.dump(payload, fh, indent=2, sort_keys=False)
         fh.write("\n")
+
+
+def _write_yaml(path: Path, payload: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
 
 
 def _ensure_envelope_valid(envelope: dict[str, Any]) -> None:
@@ -466,11 +477,249 @@ def _check_invalid_input(
 
 
 # ---------------------------------------------------------------------------
+# compact
+# ---------------------------------------------------------------------------
+
+
+def _cmd_compact(args: argparse.Namespace) -> CommandResult:
+    try:
+        candidate_paths = _compact_candidate_paths(args)
+    except HarnessInputError as exc:
+        return _compact_invalid_input(args, str(exc), exc.errors)
+    try:
+        candidate_runs = [
+            load_validated(candidate_path, "candidates")
+            for candidate_path in candidate_paths
+        ]
+        policy_doc = load_policy(Path(args.policy))
+        review_queue = _load_review_queue(
+            Path(args.review_queue_in) if args.review_queue_in else None
+        )
+    except HarnessInputError as exc:
+        return _compact_invalid_input(args, str(exc), exc.errors)
+
+    invalid_run_entries = _invalid_run_review_entries(candidate_runs, candidate_paths)
+    try:
+        compacted = compact_validated_candidates(candidate_runs, policy_doc)
+    except CompactingInputError as exc:
+        return _compact_invalid_input(args, str(exc))
+
+    compacting_errors = validate("compacting", compacted)
+    if compacting_errors:
+        return _compact_invalid_input(
+            args,
+            "generated compacting output failed schema validation",
+            compacting_errors,
+        )
+
+    out_dir = Path(args.out_dir)
+    spec_items_path = out_dir / "spec_items.yaml"
+    rubric_items_path = out_dir / "rubric_items.yaml"
+    trace_links_path = out_dir / "trace_links.yaml"
+    id_map_path = out_dir / "id_map.yaml"
+    review_queue_path = (
+        Path(args.review_queue_out)
+        if args.review_queue_out
+        else out_dir / "review_queue.json"
+    )
+
+    _append_review_queue_entries(review_queue, invalid_run_entries)
+    review_queue["generated_at"] = _now_iso()
+    review_queue_errors = validate("review_queue", review_queue)
+    if review_queue_errors:
+        return _compact_invalid_input(
+            args,
+            "generated review queue failed schema validation",
+            review_queue_errors,
+        )
+
+    _write_yaml(spec_items_path, {"spec_items": compacted["spec_items"]})
+    _write_yaml(rubric_items_path, {"rubric_items": compacted["rubric_items"]})
+    _write_yaml(trace_links_path, {"trace_links": compacted["trace_links"]})
+    _write_yaml(id_map_path, {"id_map": compacted["id_map"]})
+    _write_json(review_queue_path, review_queue)
+
+    valid_run_count = _valid_candidate_run_count(candidate_runs)
+    envelope = _build_envelope(
+        status="success",
+        exit_code=0,
+        command="compact",
+        next_actions=[],
+        compacted_dir=str(out_dir),
+        spec_items_path=str(spec_items_path),
+        rubric_items_path=str(rubric_items_path),
+        trace_links_path=str(trace_links_path),
+        id_map_path=str(id_map_path),
+        review_queue_path=str(review_queue_path),
+        review_queue_count=len(review_queue["review_queue"]),
+        valid_run_count=valid_run_count,
+        excluded_run_count=len(invalid_run_entries),
+    )
+    return CommandResult(envelope=envelope, exit_code=0)
+
+
+def _compact_invalid_input(
+    args: argparse.Namespace,
+    message: str,
+    details: list[str] | None = None,
+) -> CommandResult:
+    sys.stderr.write(f"[assessment-harness] {message}\n")
+    for detail in details or []:
+        sys.stderr.write(f"  - {detail}\n")
+    envelope = _build_envelope(
+        status="invalid_input",
+        exit_code=2,
+        command="compact",
+        next_actions=[{"type": "fix_input", "message": message}],
+        input_error=message,
+    )
+    return CommandResult(envelope=envelope, exit_code=2)
+
+
+def _load_review_queue(path: Path | None) -> dict[str, Any]:
+    if path is None:
+        return {"review_queue": []}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise HarnessInputError(f"cannot read review queue: {exc}") from exc
+    errors = validate("review_queue", payload)
+    if errors:
+        raise HarnessInputError(
+            f"{path}: schema validation failed (review_queue)",
+            errors=errors,
+        )
+    preserved = dict(payload)
+    preserved["review_queue"] = list(payload.get("review_queue", []))
+    return preserved
+
+
+def _compact_candidate_paths(args: argparse.Namespace) -> list[Path]:
+    if args.candidates and args.runs_dir:
+        raise HarnessInputError("compact accepts either --runs-dir or --candidates, not both")
+    if args.runs_dir:
+        runs_dir = Path(args.runs_dir)
+        if not runs_dir.exists():
+            raise HarnessInputError(f"runs directory not found: {runs_dir}")
+        candidate_paths = sorted(runs_dir.glob("*/candidates.yaml"))
+        candidate_paths.extend(sorted(runs_dir.glob("*.candidates.yaml")))
+        if not candidate_paths:
+            raise HarnessInputError(f"no candidate artifacts found in {runs_dir}")
+        return candidate_paths
+    if args.candidates:
+        return [Path(path) for path in args.candidates]
+    raise HarnessInputError("compact requires --runs-dir or --candidates")
+
+
+def _invalid_run_review_entries(
+    candidate_runs: list[dict[str, Any]],
+    candidate_paths: list[Path],
+) -> list[dict[str, Any]]:
+    entries: list[dict[str, Any]] = []
+    for index, (candidate_run, candidate_path) in enumerate(
+        zip(candidate_runs, candidate_paths, strict=True),
+        start=1,
+    ):
+        run_ids = _candidate_run_ids(candidate_run)
+        validated_run_id = validated_candidate_run_id(candidate_run)
+        if validated_run_id is not None:
+            continue
+        statuses = _candidate_run_statuses(candidate_run)
+        run_label = sorted(run_ids)[0] if run_ids else candidate_path.stem
+        entries.append(
+            {
+                "entry_id": f"invalid_run_{index}",
+                "type": "invalid_run",
+                "target": {
+                    "candidate_path": str(candidate_path),
+                    "integrity_statuses": sorted(statuses),
+                },
+                "reason": (
+                    "Candidate run was excluded from compacting because not "
+                    "all candidate entries are validated."
+                ),
+                "related_runs": sorted(run_ids) or [run_label],
+                "status": "open",
+            }
+        )
+    return entries
+
+
+def _append_review_queue_entries(
+    review_queue: dict[str, Any],
+    new_entries: list[dict[str, Any]],
+) -> None:
+    existing_ids = {
+        entry.get("entry_id")
+        for entry in review_queue.get("review_queue", [])
+        if isinstance(entry, dict)
+    }
+    for entry in new_entries:
+        if entry["entry_id"] in existing_ids:
+            continue
+        review_queue["review_queue"].append(entry)
+        existing_ids.add(entry["entry_id"])
+
+
+def _candidate_run_statuses(candidate_run: dict[str, Any]) -> set[str]:
+    statuses: set[str] = set()
+    for section in (
+        "spec_item_candidates",
+        "rubric_item_candidates",
+        "trace_link_candidates",
+    ):
+        for entry in candidate_run.get(section, []):
+            if isinstance(entry, dict):
+                statuses.add(str(entry.get("integrity_status", "<missing>")))
+    return statuses
+
+
+def _candidate_run_ids(candidate_run: dict[str, Any]) -> set[str]:
+    run_ids: set[str] = set()
+    for section in (
+        "spec_item_candidates",
+        "rubric_item_candidates",
+        "trace_link_candidates",
+    ):
+        for entry in candidate_run.get(section, []):
+            if isinstance(entry, dict) and isinstance(entry.get("agent_run_id"), str):
+                run_ids.add(entry["agent_run_id"])
+    return run_ids
+
+
+def _valid_candidate_run_count(candidate_runs: list[dict[str, Any]]) -> int:
+    return sum(
+        1 for candidate_run in candidate_runs if validated_candidate_run_id(candidate_run)
+    )
+
+
+# ---------------------------------------------------------------------------
 # schema
 # ---------------------------------------------------------------------------
 
 
 COMMAND_CONTRACTS: dict[str, dict[str, Any]] = {
+    "compact": {
+        "stable_core": STABLE_CORE_FIELDS,
+        "informational": [
+            "compacted_dir",
+            "spec_items_path",
+            "rubric_items_path",
+            "trace_links_path",
+            "id_map_path",
+            "review_queue_path",
+            "review_queue_count",
+            "valid_run_count",
+            "excluded_run_count",
+            "input_error",
+        ],
+        "exit_codes": {
+            "0": "validated candidate runs compacted into canonical YAML artifacts.",
+            "2": "candidate, policy, or review queue input is invalid.",
+            "3": "internal error.",
+        },
+        "next_actions_types": ["fix_input"],
+    },
     "check": {
         "stable_core": STABLE_CORE_FIELDS,
         "informational": [
@@ -1148,6 +1397,38 @@ def _build_parser() -> argparse.ArgumentParser:
         ),
     )
 
+    p_compact = sub.add_parser(
+        "compact",
+        help="compact validated candidate run artifacts into canonical YAML.",
+    )
+    _add_output_arg(p_compact, root=False)
+    p_compact.add_argument(
+        "--runs-dir",
+        default=None,
+        help=(
+            "directory produced by extract; reads */candidates.yaml and "
+            "*.candidates.yaml files in sorted order"
+        ),
+    )
+    p_compact.add_argument(
+        "--candidates",
+        nargs="+",
+        default=None,
+        help="one or more candidate run artifact YAML files",
+    )
+    p_compact.add_argument("--policy", required=True)
+    p_compact.add_argument("--out-dir", required=True)
+    p_compact.add_argument(
+        "--review-queue-in",
+        default=None,
+        help="existing review_queue.json to preserve and append to",
+    )
+    p_compact.add_argument(
+        "--review-queue-out",
+        default=None,
+        help="review_queue.json output path (defaults to --out-dir/review_queue.json)",
+    )
+
     p_schema = sub.add_parser(
         "schema",
         help="return the stable contract for a CLI subcommand.",
@@ -1199,6 +1480,8 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.subcommand == "check":
             result = _cmd_check(args)
+        elif args.subcommand == "compact":
+            result = _cmd_compact(args)
         elif args.subcommand == "schema":
             result = _cmd_schema(args)
         elif args.subcommand == "report":

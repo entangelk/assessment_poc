@@ -95,13 +95,14 @@ def _identity_policy(policy: Mapping[str, Any]) -> dict[str, str]:
 def _valid_run_ids(candidate_runs: Sequence[Mapping[str, Any]]) -> set[str]:
     run_ids: set[str] = set()
     for candidate_run in candidate_runs:
-        run_id = _validated_run_id(candidate_run)
+        run_id = validated_candidate_run_id(candidate_run)
         if run_id is not None:
             run_ids.add(run_id)
     return run_ids
 
 
-def _validated_run_id(candidate_run: Mapping[str, Any]) -> str | None:
+def validated_candidate_run_id(candidate_run: Mapping[str, Any]) -> str | None:
+    """Return the run ID when the whole candidate-run artifact is validated."""
     seen_run_ids: set[str] = set()
     saw_candidate = False
     for section in (_SPEC_SECTION, _RUBRIC_SECTION, _TRACE_SECTION):

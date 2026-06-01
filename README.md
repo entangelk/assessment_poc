@@ -62,9 +62,10 @@ Phase 0에서 semantic verification 입력이 없으면 `ai_judgement` link는 �
 Rule L1/L6 lint safeguard는 Phase 0 `check`에서도 `review_queue.json`에 기록된다.
 `--review-queue-out`을 생략하면 `--out` 옆에 생성되며, Rule 0 clean 실행에서
 finding이 없으면 빈 queue로 갱신되어 이전 검토 항목이 남지 않는다.
-현재 Phase 0 출력은 lint safeguard 전용이다. 아직 미구현인 `compact` /
-`verify`의 통합 queue와 병합하는 동작은 Phase 2에서 추가되므로, 그 전에는
-기존 통합 queue 경로를 `--review-queue-out`으로 덮어쓰지 않는다.
+Phase 0 `check` 출력은 lint safeguard 전용이다. Phase 2 `compact`는
+`--review-queue-in`으로 기존 queue를 보존하고 invalid run 항목을 추가할 수
+있다. `verify`의 통합 queue는 아직 미구현이므로, 그 전에는 `check`
+`--review-queue-out`을 기존 통합 queue 경로에 직접 쓰지 않는다.
 
 최종 검토가 `final_review.yaml`에 기록된 뒤에는 `gate`가 외부 판정을 낸다.
 final review의 finding decision은 `type` + 생성 식별자(`rubric_id`,
@@ -77,10 +78,12 @@ assessment-harness gate \
   --output json
 ```
 
-### 3. 에이전트 실행 포함 전체 흐름 (Phase 2/3, 설계 목표 — 미구현)
+### 3. 에이전트 실행 포함 전체 흐름 (Phase 2/3, 일부 구현)
 
-> ⚠️ 아래 `extract` / `compact` / `verify`는 **설계된 목표 흐름**이며 아직 구현되지 않았다.
-> 현재 실제로 동작하는 명령은 위 §1·§2의 `check` / `schema` / `report` / `review` / `gate`다.
+> ⚠️ 아래 전체 흐름 중 `compact` CLI는 초기 구현되었지만, `extract` /
+> `verify`와 실제 SDK runner는 아직 미구현이다. 현재 `compact`는
+> `--runs-dir` 아래 run별 `candidates.yaml`을 읽거나, 저수준 입력으로
+> `--candidates` 파일 목록을 받아 canonical YAML을 생성한다.
 
 ```bash
 # 복수 독립 실행
@@ -266,7 +269,8 @@ CLI는 `--policy config/policy.yaml` 하나로 모든 정책을 받는다.
 | Runner artifact normalization | 기반 완료 |
 | Candidate integrity 분류 (structural + staged model) | 기반 완료 |
 | Deep candidate Rule 0 검증 헬퍼 (3-way 격리) | 기반 완료 |
-| `extract` / `compact` / `verify` 오케스트레이션 | 미구현 |
+| `compact` CLI 오케스트레이션 | 초기 구현 완료 |
+| `extract` / `verify` 오케스트레이션 | 미구현 |
 | 실제 SDK runner | 미구현 |
 | 전체 Phase 2/3 E2E 워크플로 | 미구현 |
 

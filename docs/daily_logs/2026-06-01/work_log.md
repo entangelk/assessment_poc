@@ -105,3 +105,61 @@
 - `python3 -m pytest tests/test_agent_runner_contract.py tests/test_models.py tests/test_compacting.py -q` → 53 passed.
 - `python3 -m pytest -q` → full suite passed.
 - `python3 -m pytest --collect-only -q` → 207 tests collected: agent-runner 27, CLI 48, compacting 7, fixtures 8, models 22, rules 95.
+
+## Phase 2 Initial `compact` CLI Orchestration
+
+### Goals
+
+- Put a thin CLI layer around the compacting helper without introducing real SDK runners or `extract` / `verify`.
+- Close the previously deferred standalone `id_map.yaml` wrapper and invalid-run review_queue composition surfaces.
+
+### Completed work
+
+- Added `compact` to `src/assessment_harness/cli.py`.
+  - Inputs: plan-canonical `--runs-dir` (reads `*/candidates.yaml` and `*.candidates.yaml` in sorted order) or low-level `--candidates` explicit files, `--policy`, `--out-dir`, optional `--review-queue-in`, optional `--review-queue-out`.
+  - Outputs: `spec_items.yaml`, `rubric_items.yaml`, `trace_links.yaml`, wrapper-shaped `id_map.yaml`, and `review_queue.json`.
+  - Envelope: `status=success`, exit `0`, and informational paths/counts (`valid_run_count`, `excluded_run_count`, `review_queue_count`, output paths).
+- Added schema self-discovery for `schema --command compact`.
+- Added CLI contract regressions.
+  - Happy path locks canonical YAML output, standalone `id_map` wrapper validation, and remapped trace IDs.
+  - `--runs-dir` path locks the plan §8 command shape; simultaneous `--runs-dir` + `--candidates` is rejected.
+  - Mixed/non-validated run path locks exclusion from compacted artifacts, appended `invalid_run` review_queue entry, preservation of a pre-existing queue entry/top-level metadata from `--review-queue-in`, and no duplicate append when the same `invalid_run` entry already exists.
+  - Grounded smoke locks that `compact` output can feed the existing `check` flow.
+- Updated README, HANDOFF, and CHANGELOG to mark initial `compact` CLI orchestration as live while keeping `extract`, `verify`, real SDK runners, and full E2E pending.
+
+### Issues found
+
+- Problem: README still described `compact` as fully unimplemented.
+  Cause: publication docs are drafts, but public implementation-status facts still need to move with development.
+  Resolution: updated README to describe `compact` as partially implemented and keep the plan-canonical `--runs-dir` input form.
+  Outcome: README no longer contradicts the CLI surface.
+- Problem: follow-up review found the first CLI slice silently implemented `--candidates` while plan §8 specified `compact --runs-dir work/runs`.
+  Cause: `extract` is not implemented yet, so explicit candidate files were practical for the first CLI tests, but the plan-canonical signature was not supported.
+  Resolution: added `--runs-dir` support and made `--candidates` an explicit low-level alternate input; passing both is invalid.
+  Outcome: implementation and README now accept the plan §8 command shape without removing the practical interim file-list path.
+- Problem: review_queue composition had low-risk drift/duplication hazards.
+  Cause: CLI had a local valid-run predicate, copied only `review_queue` from incoming queue documents, and appended deterministic `invalid_run_{index}` entries without checking existing IDs.
+  Resolution: CLI now reuses `validated_candidate_run_id`, preserves incoming queue top-level metadata, and skips `invalid_run` entries whose `entry_id` already exists.
+  Outcome: envelope counts track helper eligibility, queue metadata survives, and repeated compaction with a previous queue does not duplicate the same invalid-run entry.
+
+### Decisions
+
+- **CLI slice boundary:** `compact` now accepts plan-canonical run directories via `--runs-dir` and retains `--candidates` as a low-level explicit artifact input. It does not run agents or perform `extract` / `verify`.
+- **Review queue composition:** `compact` preserves incoming review_queue entries when `--review-queue-in` is provided and appends its own `invalid_run` entries. This closes the Phase 2 "do not overwrite lint safeguard entries" concern for the compacting slice.
+- **Owner confirmation on C1:** support both input modes, but keep plan §8's `--runs-dir` flow as the official contract. `--candidates` remains a practical low-level/manual input path, not the primary documented pipeline.
+
+### Next steps
+
+1. Implement `extract` or mock-runner-driven orchestration that produces candidate artifacts for `compact`.
+2. Implement `verify` / semantic-verification queue entries.
+3. Recompute publication-facing evaluation tables after the next pipeline slice stabilizes.
+
+### Verification
+
+- `python3 -m py_compile src/assessment_harness/cli.py src/assessment_harness/compacting.py`
+- `python3 -m pytest tests/test_cli_output_contract.py::test_schema_command_returns_compact_contract tests/test_cli_output_contract.py::test_compact_cli_writes_canonical_yaml_and_id_map_wrapper tests/test_cli_output_contract.py::test_compact_cli_preserves_existing_queue_and_records_invalid_run -q` → 3 passed.
+- `python3 -m pytest tests/test_cli_output_contract.py::test_compact_cli_accepts_plan_canonical_runs_dir tests/test_cli_output_contract.py::test_compact_cli_preserves_existing_queue_and_records_invalid_run tests/test_cli_output_contract.py::test_compact_cli_does_not_duplicate_existing_invalid_run_entry tests/test_cli_output_contract.py::test_compact_cli_rejects_runs_dir_and_candidates_together -q` → 4 passed.
+- `python3 -m pytest tests/test_cli_output_contract.py tests/test_compacting.py tests/test_models.py -q` → 84 passed.
+- `python3 -m pytest tests/test_cli_output_contract.py::test_compact_output_feeds_existing_check_flow -q` → 1 passed.
+- `python3 -m pytest -q` → full suite passed.
+- `python3 -m pytest --collect-only -q` → 214 tests collected: agent-runner 27, CLI 55, compacting 7, fixtures 8, models 22, rules 95.

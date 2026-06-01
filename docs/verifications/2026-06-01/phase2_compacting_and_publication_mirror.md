@@ -147,3 +147,57 @@ grep -niE 'frozen|stabiliz|안정화' HANDOFF.md docs/publication_plan_v1.md
 - **compacting helper slice: 합격(PASS).** 1라운드 조건(F2 계약단위 reconcile · F3 분모 명문화 · F7 3-lock)이 모두 spec-정합 방향으로 충족되고, 판별력 있는 2방향 회귀로 잠겼다. 코드 자체 검토(결정성·deepcopy 비파괴·redundant-but-harmless per-entry gate·run-uniform 전제)에서 신규 결함 없음. 남은 것은 N1(미사용 def 정리)과 F5/N2 의 CLI-slice 이월뿐 — 모두 비차단.
 - **임의 결정 점검 결과**: F2/F3/F4(reviewed_*)는 spec 명문에 따른 유일 방향, F4(sources 확장)·F7(remap)·F5 이월은 spec/원칙 정합. 유일한 진짜 선택지는 N2(hard-fail vs 격리)였고 합리적 잠정 선택 + 기록 완료. **Owner 권한을 침범한 임의 결정 없음.**
 - **권고**: 커밋 전 N1 1줄 정리 권장(선택). 그 외 합격.
+
+---
+
+## Re-verification (round 3, 2026-06-01) — compact CLI orchestration 부분 검증
+
+- **Requester**: Owner — "다음 작업(compact CLI) 부분 검증. 마음대로 결정한 것·테스트/코드 적합성 봐줘."
+- **Verifier**: Claude (independent). **Source**: working tree, uncommitted (M cli.py, test_cli_output_contract.py, README/HANDOFF/case_study/work_log/CHANGELOG; helper foundation은 88e14bf 로 커밋됨).
+- **Canonical scope**: plan v1.30 §8 CLI 계약(898-1080, compact/check usage 1027-1045), §4 review_queue(141), §5.x compacted 산출물, `review_queue.schema.json`.
+- **Suite**: `211 passed`. 파일별 재집계 — cli 52 / agent-runner 27 / compacting 7 / fixtures 8 / models 22 / rules 95 = 211 (주장과 일치, CLI 48→52 +4).
+
+### PASS 항목 (독립 재현)
+
+- **산출물**: `_cmd_compact`(cli.py:477-)가 `spec_items.yaml` / `rubric_items.yaml` / `trace_links.yaml` / wrapper형 `id_map.yaml` / `review_queue.json` 5종 출력. 출력 전 `validate("compacting", …)` 및 `validate("review_queue", …)` 로 **쓰기 전 스키마 검증**(방어적). envelope 도 `_build_envelope→_ensure_envelope_valid`(1293)로 cli_output 검증. 테스트가 spec_items/trace_links/id_map 스키마 통과를 직접 assert.
+- **통합(가장 중요)**: `test_compact_output_feeds_existing_check_flow` 가 clean_assignment 를 compact→check 로 흘려 `provisional_medium_count==2, blocking 0` 확인. **원본 fixture 를 직접 check 해도 동일(2 medium / 0 blocking)** 임을 재현 — compacting+canonical-ID remap 이 deterministic check 결과를 **변형하지 않음**을 입증. 스모크 단언은 정확.
+- **review_queue**: `--review-queue-in` 보존 후 `invalid_run` append, 출력 순서 `[기존, invalid_run]` 잠금. `invalid_run` 은 `review_queue.schema.json:25` enum 에 **이미 정식 포함**(이번에 스키마 미수정) — 신규 임의 type 아님. 제외 run 의 `related_runs:["run_2"]` 식별 정확. §4(141) "무결성 실패로 제외된 후보" 기록 요구와 정합.
+- **CLI↔helper run 유효성 일관성**: CLI `_candidate_run_statuses/_ids`(느슨) vs helper `_validated_run_id`(엄격) — `load_validated(…, "candidates")` 가 입력단에서 candidate_id/agent_run_id/shape 를 강제하므로 schema-valid 입력에서 두 판정이 일치(silent-drop 없음).
+- **schema --command compact**: 계약·informational 10필드·exit code·next_actions 노출, 테스트로 잠금.
+
+### 신규 지적
+
+- **C1 [MEDIUM — 문서화된 CLI 계약 이탈 + Owner 결정거리]**: 구현은 `compact --candidates <files...>` 인데 **plan §8(1027-1034)은 `compact --runs-dir work/runs`** 로 명시(extract `--out-dir work/runs` → compact `--runs-dir` 흐름). `--review-queue-in/out` 도 §8 에 없음. 프로젝트 원칙은 **plan = SoT**(decisions C2)인데, README 는 `--candidates` 로 갱신되어 **SoT(§8)와 구현/README 가 어긋난다.** extract 미구현이라 runs-dir 생산자가 아직 없어 `--candidates` 가 실용적 잠정값인 건 합리적이나, **문서화된 시그니처를 침묵으로 바꾼 것**이라 surface 대상이다. → §8 을 `--candidates`(+queue 플래그)로 개정하든지, `--runs-dir` 로 맞추든지 Owner 가 확정해야 함. (이번 "마음대로 결정" 점검의 핵심 항목.)
+- **C2 [LOW — 단일 진실원 위반]**: `valid_run_count`/`excluded_run_count`/invalid_run 판정을 CLI 가 helper `_validated_run_id` 재사용 없이 자체 loose 로직으로 **중복 구현**. schema-valid 입력에선 일치하나, 추후 helper 의 run-validity 정의가 바뀌면 envelope 카운트·review_queue 가 helper 실제 compaction 과 **드리프트**할 수 있다. 단일 predicate 재사용 권장.
+- **C3 [LOW]**: compact 를 `--review-queue-in=직전출력` 으로 재실행하면 `entry_id="invalid_run_{index}"` 가 **중복 append**(스키마가 entry_id 유일성 미강제). append 모델은 요청대로지만 재실행 시 중복 entry_id 리스크.
+- **C4 [LOW]**: `_load_review_queue` 가 기존 queue 의 `review_queue` 리스트만 보존하고 다른 top-level 키는 누락(generated_at 은 재생성). additionalProperties 허용 필드의 round-trip 손실.
+
+### 종합 판정 (compact CLI slice)
+
+- **합격(PASS, 부분 범위).** 산출물·스키마·통합(compact→check 무변형)·review_queue 보존/append 가 정확하고 판별력 있는 테스트로 잠겼다. 코드 자체에 기능 결함 없음.
+- **단, C1 은 비차단이나 미해결 계약 이탈**: plan §8 이 SoT 인 프로젝트에서 문서화된 `--runs-dir` 시그니처를 `--candidates` 로 바꾼 것은 Owner 가 §8 개정 또는 플래그 변경으로 확정해야 한다. 나머지 C2~C4 는 정리 권고(비차단).
+
+---
+
+## Re-verification (round 4, 2026-06-01) — C1~C4 수정 독립 재검증
+
+- **Requester**: Owner — "다시 검증해줘 (C1~C4 고쳤음)."
+- **Verifier**: Claude (independent). **Source**: working tree, uncommitted. **Suite**: `214 passed`, 파일별 CLI 55 / agent-runner 27 / compacting 7 / fixtures 8 / models 22 / rules 95 = 214 (주장 일치). `py_compile` OK.
+
+### 항목별 판정
+
+- **C1 (CLI 계약 이탈) — 해결(PASS).** `compact` 이 plan §8 canonical `--runs-dir`(cli.py `_compact_candidate_paths`)를 1차 입력으로 추가, `*/candidates.yaml` + `*.candidates.yaml` 정렬 glob. `--candidates` 는 저수준 보조 입력으로 유지, **동시 지정 시 invalid_input/exit 2** 로 거부. plan §8 은 원래 `--runs-dir` 라 **구현이 이제 SoT 와 일치 — 플랜 수정 불필요**(`git diff` 상 implementation_plan 무변경, 정확). README:85-99 / HANDOFF:30 / work_log 가 "공식=runs-dir, 보조=candidates" 로 일치 갱신. **work_log:149 에 Owner confirmation 기록** → 더 이상 침묵 결정 아님. 테스트 `test_compact_cli_accepts_plan_canonical_runs_dir`(runs/run_001/candidates.yaml glob), `..._rejects_runs_dir_and_candidates_together`(exit 2) 가 잠금. 독립 탐침으로 추가 경계 확인: neither→"requires --runs-dir or --candidates", empty runs-dir→"no candidate artifacts found", both→exit 2 (모두 argparse crash 아닌 구조화 envelope).
+- **C2 (단일 진실원) — 해결(PASS).** helper `_validated_run_id` → public `validated_candidate_run_id`(compacting.py:104, 로직 불변) 로 노출하고 CLI `_invalid_run_review_entries` / `_valid_candidate_run_count` 가 **동일 predicate 재사용**. 이제 envelope `valid_run_count`·`excluded_run_count`·review_queue invalid_run 판정·helper `total_valid_runs` 가 한 정의에서 파생 → 드리프트 제거. (`_candidate_run_statuses/_ids` 는 queue 의 설명용 metadata 로만 잔존, 유효성 결정에는 미사용 — 적절.)
+- **C3 (중복 append) — 해결(PASS).** `_append_review_queue_entries` 가 기존 entry_id 집합과 대조해 중복 entry_id skip. `test_..._does_not_duplicate_existing_invalid_run_entry`(기존 invalid_run_1 재투입 → count 1 유지) 가 잠금. idempotent 재실행에서 정확.
+- **C4 (metadata 보존) — 해결(PASS).** `_load_review_queue` 가 `dict(payload)` 로 top-level 키 전부 보존 후 `review_queue` 만 list 복사로 정규화. (이후 `generated_at` 은 의도적으로 현재시각 재기록 — 정상.)
+
+### 잔여 관찰 (비차단, 신규 1건)
+
+- **R4-1 [LOW, 견고성]**: dedup 키인 `entry_id="invalid_run_{index}"` 가 **위치 기반**이다. 의도된 idempotent 재실행(동일 입력 + 직전 queue)에선 정확하나, *서로 다른 candidate 집합*에 직전 queue 를 재투입하면 같은 index 의 의미상 다른 invalid_run 이 동일 entry_id 충돌로 skip 될 수 있다. 문서화된 파이프라인에선 비현실적 시나리오라 비차단이나, 추후 entry_id 를 candidate_path/run_id 기반 content id 로 바꾸면 더 견고. (선택 개선.)
+- **R4-2 [INFO]**: plan §8 본문은 `--candidates` 를 명시하지 않는다(README/HANDOFF/work_log 에만 보조 입력으로 기술). Owner 가 "보조·비공식" 으로 확정했으므로 모순은 아니나, §8 에 "수동/저수준 대체 입력" 한 줄 추가하면 SoT 자기완결성↑. (선택.)
+
+### 종합 판정
+
+- **compact CLI slice + C1~C4 follow-up: 합격(PASS).** 4개 지적이 모두 spec-정합 방향으로 해결되고 판별력 있는 회귀 + 독립 경계 탐침으로 확인됨. C1 은 Owner confirmation 까지 기록되어 임의 결정 잔존 없음. 코드 자체 신규 결함 없음.
+- **임의 결정 점검**: `--candidates` 보조 유지·동시거부·runs-dir glob 레이아웃 모두 Owner 승인 또는 spec-정합. **Owner 권한 침범한 미기록 결정 없음.**
+- 잔여 R4-1/R4-2 는 선택적 개선이며 커밋을 막지 않는다.

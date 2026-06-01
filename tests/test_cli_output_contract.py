@@ -427,6 +427,32 @@ def test_schema_command_returns_check_contract(
     assert set(contract["informational"]) == expected_informational
 
 
+def test_schema_command_returns_compact_contract(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    code, envelope, _ = _run_main(
+        ["--output", "json", "schema", "--command", "compact"], capsys
+    )
+    _assert_envelope(envelope)
+    assert code == 0
+    contract = envelope["contract"]
+    assert contract["command"] == "compact"
+    assert contract["stable_core"] == STABLE_CORE_FIELDS
+    assert contract["next_actions_types"] == ["fix_input"]
+    assert set(contract["informational"]) == {
+        "compacted_dir",
+        "spec_items_path",
+        "rubric_items_path",
+        "trace_links_path",
+        "id_map_path",
+        "review_queue_path",
+        "review_queue_count",
+        "valid_run_count",
+        "excluded_run_count",
+        "input_error",
+    }
+
+
 def test_schema_command_returns_gate_contract(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -1460,6 +1486,444 @@ def test_schema_documented_form_with_trailing_output(
     _assert_envelope(envelope)
     assert code == 0
     assert envelope["command"] == "schema"
+
+
+def _candidate_artifact(
+    *,
+    run_id: str,
+    spec_id: str,
+    rubric_id: str,
+    integrity_status: str = "validated",
+) -> dict:
+    return {
+        "spec_item_candidates": [
+            {
+                "candidate_id": "SC1",
+                "proposed_item": {
+                    "id": spec_id,
+                    "text": "Implement refund handling for cancelled orders.",
+                    "requirement_level": "must",
+                    "source_ref": {
+                        "document_id": "DOC_SPEC",
+                        "start_line": 1,
+                        "end_line": 1,
+                    },
+                },
+                "agent_runner": "mock_fixture",
+                "agent_run_id": run_id,
+                "integrity_status": integrity_status,
+            }
+        ],
+        "rubric_item_candidates": [
+            {
+                "candidate_id": "RC1",
+                "proposed_item": {
+                    "id": rubric_id,
+                    "title": "Refund policy handling",
+                    "description": "Checks the refund requirement.",
+                    "evaluation_role": "scored",
+                    "source_ref": {
+                        "document_id": "DOC_RUBRIC",
+                        "start_line": 1,
+                        "end_line": 1,
+                    },
+                },
+                "agent_runner": "mock_fixture",
+                "agent_run_id": run_id,
+                "integrity_status": integrity_status,
+            }
+        ],
+        "trace_link_candidates": [
+            {
+                "candidate_id": "TC1",
+                "proposed_item": {
+                    "rubric_id": rubric_id,
+                    "spec_ids": [spec_id],
+                    "evidence_quotes": [
+                        {
+                            "spec_id": spec_id,
+                            "quote": "Implement refund handling for cancelled orders.",
+                            "verification_mode": "token_sequence",
+                        }
+                    ],
+                    "semantic_status": "pending_verification",
+                },
+                "agent_runner": "mock_fixture",
+                "agent_run_id": run_id,
+                "integrity_status": integrity_status,
+            }
+        ],
+    }
+
+
+def _write_candidate_artifact(path: Path, payload: dict) -> Path:
+    path.write_text(yaml.safe_dump(payload), encoding="utf-8")
+    return path
+
+
+def _write_compact_policy(path: Path) -> Path:
+    path.write_text(
+        yaml.safe_dump(
+            {
+                "rules": {"optionality_mismatch": {"weight_threshold": 10}},
+                "compacting": {
+                    "identity_basis": {
+                        "spec_item": "source+section+normalized_text",
+                        "rubric_item": "title+normalized_description",
+                        "trace_link": "rubric_id+sorted(spec_ids)",
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    return path
+
+
+def test_compact_cli_writes_canonical_yaml_and_id_map_wrapper(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    run_1 = _write_candidate_artifact(
+        tmp_path / "run_1.yaml",
+        _candidate_artifact(run_id="run_1", spec_id="S_A", rubric_id="R_A"),
+    )
+    run_2 = _write_candidate_artifact(
+        tmp_path / "run_2.yaml",
+        _candidate_artifact(run_id="run_2", spec_id="S_B", rubric_id="R_B"),
+    )
+    policy = _write_compact_policy(tmp_path / "policy.yaml")
+    out_dir = tmp_path / "compacted"
+
+    code, envelope, _ = _run_main(
+        [
+            "--output",
+            "json",
+            "compact",
+            "--candidates",
+            str(run_1),
+            str(run_2),
+            "--policy",
+            str(policy),
+            "--out-dir",
+            str(out_dir),
+        ],
+        capsys,
+    )
+
+    _assert_envelope(envelope)
+    assert code == 0
+    assert envelope["status"] == "success"
+    assert envelope["valid_run_count"] == 2
+    assert envelope["excluded_run_count"] == 0
+    assert envelope["review_queue_count"] == 0
+
+    spec_doc = yaml.safe_load((out_dir / "spec_items.yaml").read_text(encoding="utf-8"))
+    trace_doc = yaml.safe_load((out_dir / "trace_links.yaml").read_text(encoding="utf-8"))
+    id_map_doc = yaml.safe_load((out_dir / "id_map.yaml").read_text(encoding="utf-8"))
+    assert validate("spec_items", spec_doc) == []
+    assert validate("trace_links", trace_doc) == []
+    assert validate("id_map", id_map_doc) == []
+    assert spec_doc["spec_items"][0]["support"] == {
+        "total_valid_runs": 2,
+        "found_in_runs": ["run_1", "run_2"],
+    }
+    assert trace_doc["trace_links"][0]["rubric_id"] == "R1"
+    assert trace_doc["trace_links"][0]["spec_ids"] == ["S1"]
+
+
+def test_compact_cli_accepts_plan_canonical_runs_dir(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    run_dir = tmp_path / "runs" / "run_001"
+    run_dir.mkdir(parents=True)
+    _write_candidate_artifact(
+        run_dir / "candidates.yaml",
+        _candidate_artifact(run_id="run_1", spec_id="S_A", rubric_id="R_A"),
+    )
+    policy = _write_compact_policy(tmp_path / "policy.yaml")
+    out_dir = tmp_path / "compacted"
+
+    code, envelope, _ = _run_main(
+        [
+            "--output",
+            "json",
+            "compact",
+            "--runs-dir",
+            str(tmp_path / "runs"),
+            "--policy",
+            str(policy),
+            "--out-dir",
+            str(out_dir),
+        ],
+        capsys,
+    )
+
+    _assert_envelope(envelope)
+    assert code == 0
+    assert envelope["valid_run_count"] == 1
+    assert validate(
+        "id_map",
+        yaml.safe_load((out_dir / "id_map.yaml").read_text(encoding="utf-8")),
+    ) == []
+
+
+def test_compact_cli_preserves_existing_queue_and_records_invalid_run(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    valid_run = _write_candidate_artifact(
+        tmp_path / "run_1.yaml",
+        _candidate_artifact(run_id="run_1", spec_id="S_A", rubric_id="R_A"),
+    )
+    mixed_payload = _candidate_artifact(run_id="run_2", spec_id="S_B", rubric_id="R_B")
+    mixed_payload["trace_link_candidates"][0]["integrity_status"] = "invalid_reference"
+    mixed_run = _write_candidate_artifact(tmp_path / "run_2.yaml", mixed_payload)
+    policy = _write_compact_policy(tmp_path / "policy.yaml")
+    queue_in = tmp_path / "review_queue_in.json"
+    queue_in.write_text(
+        json.dumps(
+            {
+                "generated_at": "2026-06-01T00:00:00Z",
+                "source": "preexisting",
+                "review_queue": [
+                    {
+                        "entry_id": "existing_double_scoring",
+                        "type": "double_scoring_review",
+                        "target": {"spec_id": "S1"},
+                        "reason": "pre-existing lint safeguard",
+                        "related_runs": [],
+                        "status": "open",
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    out_dir = tmp_path / "compacted"
+
+    code, envelope, _ = _run_main(
+        [
+            "--output",
+            "json",
+            "compact",
+            "--candidates",
+            str(valid_run),
+            str(mixed_run),
+            "--policy",
+            str(policy),
+            "--out-dir",
+            str(out_dir),
+            "--review-queue-in",
+            str(queue_in),
+        ],
+        capsys,
+    )
+
+    _assert_envelope(envelope)
+    assert code == 0
+    assert envelope["valid_run_count"] == 1
+    assert envelope["excluded_run_count"] == 1
+    assert envelope["review_queue_count"] == 2
+    queue_doc = json.loads((out_dir / "review_queue.json").read_text(encoding="utf-8"))
+    assert validate("review_queue", queue_doc) == []
+    assert queue_doc["source"] == "preexisting"
+    assert [entry["type"] for entry in queue_doc["review_queue"]] == [
+        "double_scoring_review",
+        "invalid_run",
+    ]
+    assert queue_doc["review_queue"][1]["related_runs"] == ["run_2"]
+
+
+def test_compact_cli_does_not_duplicate_existing_invalid_run_entry(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    mixed_payload = _candidate_artifact(run_id="run_2", spec_id="S_B", rubric_id="R_B")
+    mixed_payload["trace_link_candidates"][0]["integrity_status"] = "invalid_reference"
+    mixed_run = _write_candidate_artifact(tmp_path / "run_2.yaml", mixed_payload)
+    policy = _write_compact_policy(tmp_path / "policy.yaml")
+    queue_in = tmp_path / "review_queue_in.json"
+    queue_in.write_text(
+        json.dumps(
+            {
+                "review_queue": [
+                    {
+                        "entry_id": "invalid_run_1",
+                        "type": "invalid_run",
+                        "target": {"candidate_path": str(mixed_run)},
+                        "reason": "already recorded",
+                        "related_runs": ["run_2"],
+                        "status": "open",
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    out_dir = tmp_path / "compacted"
+
+    code, envelope, _ = _run_main(
+        [
+            "--output",
+            "json",
+            "compact",
+            "--candidates",
+            str(mixed_run),
+            "--policy",
+            str(policy),
+            "--out-dir",
+            str(out_dir),
+            "--review-queue-in",
+            str(queue_in),
+        ],
+        capsys,
+    )
+
+    _assert_envelope(envelope)
+    assert code == 0
+    assert envelope["review_queue_count"] == 1
+    queue_doc = json.loads((out_dir / "review_queue.json").read_text(encoding="utf-8"))
+    assert [entry["entry_id"] for entry in queue_doc["review_queue"]] == [
+        "invalid_run_1"
+    ]
+
+
+def test_compact_cli_rejects_runs_dir_and_candidates_together(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    candidate = _write_candidate_artifact(
+        tmp_path / "run.yaml",
+        _candidate_artifact(run_id="run_1", spec_id="S_A", rubric_id="R_A"),
+    )
+    policy = _write_compact_policy(tmp_path / "policy.yaml")
+
+    code, envelope, _ = _run_main(
+        [
+            "--output",
+            "json",
+            "compact",
+            "--runs-dir",
+            str(tmp_path),
+            "--candidates",
+            str(candidate),
+            "--policy",
+            str(policy),
+            "--out-dir",
+            str(tmp_path / "out"),
+        ],
+        capsys,
+    )
+
+    _assert_envelope(envelope)
+    assert code == 2
+    assert envelope["status"] == "invalid_input"
+    assert "either --runs-dir or --candidates" in envelope["input_error"]
+
+
+def _candidate_artifact_from_fixture(fixture_path: Path, run_id: str) -> dict:
+    spec_doc = yaml.safe_load((fixture_path / "spec_items.yaml").read_text(encoding="utf-8"))
+    rubric_doc = yaml.safe_load(
+        (fixture_path / "rubric_items.yaml").read_text(encoding="utf-8")
+    )
+    trace_doc = yaml.safe_load(
+        (fixture_path / "trace_links.yaml").read_text(encoding="utf-8")
+    )
+
+    return {
+        "spec_item_candidates": [
+            {
+                "candidate_id": f"SC{index}",
+                "proposed_item": item,
+                "agent_runner": "fixture",
+                "agent_run_id": run_id,
+                "integrity_status": "validated",
+            }
+            for index, item in enumerate(spec_doc["spec_items"], start=1)
+        ],
+        "rubric_item_candidates": [
+            {
+                "candidate_id": f"RC{index}",
+                "proposed_item": item,
+                "agent_runner": "fixture",
+                "agent_run_id": run_id,
+                "integrity_status": "validated",
+            }
+            for index, item in enumerate(rubric_doc["rubric_items"], start=1)
+        ],
+        "trace_link_candidates": [
+            {
+                "candidate_id": f"TC{index}",
+                "proposed_item": item,
+                "agent_runner": "fixture",
+                "agent_run_id": run_id,
+                "integrity_status": "validated",
+            }
+            for index, item in enumerate(trace_doc["trace_links"], start=1)
+        ],
+    }
+
+
+def test_compact_output_feeds_existing_check_flow(
+    fixture_dir: Path,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    fixture_path = fixture_dir / "clean_assignment"
+    candidates = _write_candidate_artifact(
+        tmp_path / "candidates.yaml",
+        _candidate_artifact_from_fixture(fixture_path, "run_1"),
+    )
+    compacted_dir = tmp_path / "compacted"
+    compact_code, compact_envelope, _ = _run_main(
+        [
+            "--output",
+            "json",
+            "compact",
+            "--candidates",
+            str(candidates),
+            "--policy",
+            str(fixture_path / "policy.yaml"),
+            "--out-dir",
+            str(compacted_dir),
+        ],
+        capsys,
+    )
+    _assert_envelope(compact_envelope)
+    assert compact_code == 0
+
+    findings = tmp_path / "findings.json"
+    diagnostics = tmp_path / "diagnostics.json"
+    check_code, check_envelope, _ = _run_main(
+        [
+            "--output",
+            "json",
+            "check",
+            "--spec-items",
+            str(compacted_dir / "spec_items.yaml"),
+            "--rubric-items",
+            str(compacted_dir / "rubric_items.yaml"),
+            "--trace-links",
+            str(compacted_dir / "trace_links.yaml"),
+            "--source-manifest",
+            str(fixture_path / "source_manifest.yaml"),
+            "--policy",
+            str(fixture_path / "policy.yaml"),
+            "--out",
+            str(findings),
+            "--diagnostics-out",
+            str(diagnostics),
+        ],
+        capsys,
+    )
+
+    _assert_envelope(check_envelope)
+    assert check_code == 0
+    assert check_envelope["status"] == "provisional_findings"
+    assert check_envelope["provisional_medium_count"] == 2
+    assert check_envelope["review_queue_count"] == 0
 
 
 def _write_minimal_grounded_fixture(
