@@ -80,17 +80,20 @@ assessment-harness gate \
 
 ### 3. 에이전트 실행 포함 전체 흐름 (Phase 2/3, 일부 구현)
 
-> ⚠️ 아래 전체 흐름 중 `compact` CLI는 초기 구현되었지만, `extract` /
-> `verify`와 실제 SDK runner는 아직 미구현이다. 현재 `compact`는
-> `--runs-dir` 아래 run별 `candidates.yaml`을 읽거나, 저수준 입력으로
-> `--candidates` 파일 목록을 받아 canonical YAML을 생성한다.
+> ⚠️ 아래 전체 흐름 중 `extract` / `compact` CLI는 초기 구현되었지만,
+> `verify`와 실제 SDK runner는 아직 미구현이다. 현재 `extract`는
+> `mock_fixture` runner로 fixture를 재생해 run별 `candidates.yaml`과
+> raw/audit trace를 만들고, `compact`는 `--runs-dir` 아래 run별
+> `candidates.yaml`을 읽거나 저수준 입력으로 `--candidates` 파일 목록을
+> 받아 canonical YAML을 생성한다.
 
 ```bash
 # 복수 독립 실행
 assessment-harness extract \
-  --spec assignment/README.md \
-  --rubric assignment/rubric.md \
-  --runner claude_sdk \
+  --spec fixtures/clean_assignment/source/spec.md \
+  --rubric fixtures/clean_assignment/source/rubric.md \
+  --runner mock_fixture \
+  --fixture-dir fixtures/clean_assignment \
   --runs 3 \
   --out-dir work/runs
 
@@ -159,7 +162,7 @@ assessment-harness gate \
 flowchart TB
     SNAP["Immutable source snapshot<br/>(sha256 + line/span source_ref)"]
 
-    subgraph EXTRACT["Agent extraction (foundation only)"]
+    subgraph EXTRACT["Agent extraction (mock initial / SDK pending)"]
         direction LR
         RUNS["AgentRunner x N<br/>framework-agnostic"] --> CANDS["candidates<br/>+ raw/audit trace"] --> COMPACT["compact<br/>union, no auto-merge"] --> VERIFY["verify<br/>semantic, multi-run"]
     end
@@ -269,8 +272,9 @@ CLI는 `--policy config/policy.yaml` 하나로 모든 정책을 받는다.
 | Runner artifact normalization | 기반 완료 |
 | Candidate integrity 분류 (structural + staged model) | 기반 완료 |
 | Deep candidate Rule 0 검증 헬퍼 (3-way 격리) | 기반 완료 |
+| `extract` CLI 오케스트레이션 (`mock_fixture`) | 초기 구현 완료 |
 | `compact` CLI 오케스트레이션 | 초기 구현 완료 |
-| `extract` / `verify` 오케스트레이션 | 미구현 |
+| `verify` 오케스트레이션 | 미구현 |
 | 실제 SDK runner | 미구현 |
 | 전체 Phase 2/3 E2E 워크플로 | 미구현 |
 

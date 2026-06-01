@@ -453,6 +453,30 @@ def test_schema_command_returns_compact_contract(
     }
 
 
+def test_schema_command_returns_extract_contract(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    code, envelope, _ = _run_main(
+        ["--output", "json", "schema", "--command", "extract"], capsys
+    )
+    _assert_envelope(envelope)
+    assert code == 0
+    contract = envelope["contract"]
+    assert contract["command"] == "extract"
+    assert contract["stable_core"] == STABLE_CORE_FIELDS
+    assert contract["next_actions_types"] == ["fix_input"]
+    assert set(contract["informational"]) == {
+        "runs_dir",
+        "run_dirs",
+        "run_count",
+        "valid_run_count",
+        "invalid_run_count",
+        "runner",
+        "source_manifest_path",
+        "input_error",
+    }
+
+
 def test_schema_command_returns_gate_contract(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -1486,6 +1510,322 @@ def test_schema_documented_form_with_trailing_output(
     _assert_envelope(envelope)
     assert code == 0
     assert envelope["command"] == "schema"
+
+
+def _read_jsonl(path: Path) -> list[dict]:
+    return [
+        json.loads(line)
+        for line in path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+
+
+def test_extract_mock_fixture_writes_validated_candidate_runs(
+    fixture_dir: Path,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    out_dir = tmp_path / "runs"
+
+    code, envelope, _ = _run_main(
+        [
+            "--output",
+            "json",
+            "extract",
+            "--spec",
+            str(fixture_dir / "clean_assignment" / "source" / "spec.md"),
+            "--rubric",
+            str(fixture_dir / "clean_assignment" / "source" / "rubric.md"),
+            "--runner",
+            "mock_fixture",
+            "--fixture-dir",
+            str(fixture_dir / "clean_assignment"),
+            "--runs",
+            "2",
+            "--out-dir",
+            str(out_dir),
+        ],
+        capsys,
+    )
+
+    _assert_envelope(envelope)
+    assert code == 0
+    assert envelope["status"] == "success"
+    assert envelope["command"] == "extract"
+    assert envelope["run_count"] == 2
+    assert envelope["valid_run_count"] == 2
+    assert envelope["invalid_run_count"] == 0
+    assert envelope["source_manifest_path"].endswith(
+        "clean_assignment/source_manifest.yaml"
+    )
+
+    for run_id in ("run_001", "run_002"):
+        run_dir = out_dir / run_id
+        candidates = yaml.safe_load(
+            (run_dir / "candidates.yaml").read_text(encoding="utf-8")
+        )
+        audit_trace = _read_jsonl(run_dir / "agent_trace.audit.jsonl")
+        raw_trace = _read_jsonl(run_dir / "agent_trace.raw.jsonl")
+        assert validate("candidates", candidates) == []
+        assert all(validate("agent_trace", event) == [] for event in audit_trace)
+        assert {
+            candidate["integrity_status"]
+            for section in candidates.values()
+            for candidate in section
+        } == {"validated"}
+        assert {
+            candidate["agent_run_id"]
+            for section in candidates.values()
+            for candidate in section
+        } == {run_id}
+        assert {event["run_id"] for event in audit_trace} == {run_id}
+        assert {event["run_id"] for event in raw_trace} == {run_id}
+
+
+def test_extract_mock_fixture_output_feeds_compact_runs_dir(
+    fixture_dir: Path,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    runs_dir = tmp_path / "runs"
+    code, extract_envelope, _ = _run_main(
+        [
+            "--output",
+            "json",
+            "extract",
+            "--spec",
+            str(fixture_dir / "clean_assignment" / "source" / "spec.md"),
+            "--rubric",
+            str(fixture_dir / "clean_assignment" / "source" / "rubric.md"),
+            "--runner",
+            "mock_fixture",
+            "--fixture-dir",
+            str(fixture_dir / "clean_assignment"),
+            "--runs",
+            "2",
+            "--out-dir",
+            str(runs_dir),
+        ],
+        capsys,
+    )
+    assert code == 0
+    assert extract_envelope["valid_run_count"] == 2
+
+    out_dir = tmp_path / "compacted"
+    code, compact_envelope, _ = _run_main(
+        [
+            "--output",
+            "json",
+            "compact",
+            "--runs-dir",
+            str(runs_dir),
+            "--policy",
+            str(fixture_dir / "clean_assignment" / "policy.yaml"),
+            "--out-dir",
+            str(out_dir),
+        ],
+        capsys,
+    )
+
+    _assert_envelope(compact_envelope)
+    assert code == 0
+    assert compact_envelope["status"] == "success"
+    assert compact_envelope["valid_run_count"] == 2
+    spec_doc = yaml.safe_load((out_dir / "spec_items.yaml").read_text(encoding="utf-8"))
+    assert spec_doc["spec_items"][0]["support"]["found_in_runs"] == [
+        "run_001",
+        "run_002",
+    ]
+
+
+def test_extract_mock_fixture_isolates_invalid_run_with_diagnostics(
+    fixture_dir: Path,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    out_dir = tmp_path / "runs"
+
+    code, envelope, _ = _run_main(
+        [
+            "--output",
+            "json",
+            "extract",
+            "--spec",
+            str(fixture_dir / "reference_integrity" / "source" / "spec.md"),
+            "--rubric",
+            str(fixture_dir / "reference_integrity" / "source" / "rubric.md"),
+            "--runner",
+            "mock_fixture",
+            "--fixture-dir",
+            str(fixture_dir / "reference_integrity"),
+            "--runs",
+            "1",
+            "--out-dir",
+            str(out_dir),
+        ],
+        capsys,
+    )
+
+    _assert_envelope(envelope)
+    assert code == 0
+    assert envelope["valid_run_count"] == 0
+    assert envelope["invalid_run_count"] == 1
+
+    run_dir = out_dir / "run_001"
+    candidates = yaml.safe_load((run_dir / "candidates.yaml").read_text(encoding="utf-8"))
+    diagnostics = json.loads(
+        (run_dir / "integrity_diagnostics.json").read_text(encoding="utf-8")
+    )
+    assert validate("candidates", candidates) == []
+    assert validate("integrity_diagnostics", diagnostics) == []
+    assert {
+        candidate["integrity_status"]
+        for section in candidates.values()
+        for candidate in section
+    } != {"validated"}
+    assert diagnostics["run_id"] == "run_001"
+    assert diagnostics["summary"]["high"] > 0
+    assert diagnostics["diagnostics"]
+    assert not (run_dir / "integrity_errors.json").exists()
+
+
+def test_extract_validates_generated_candidates_before_write(
+    fixture_dir: Path,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    fixture = tmp_path / "bad_fixture"
+    fixture.mkdir()
+    (fixture / "spec_items.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "spec_items": [
+                    {
+                        "text": "Missing an id on purpose.",
+                        "requirement_level": "must",
+                        "source_ref": {
+                            "document_id": "DOC_SPEC",
+                            "start_line": 1,
+                            "end_line": 1,
+                        },
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    (fixture / "rubric_items.yaml").write_text(
+        (fixture_dir / "clean_assignment" / "rubric_items.yaml").read_text(
+            encoding="utf-8"
+        ),
+        encoding="utf-8",
+    )
+    (fixture / "trace_links.yaml").write_text(
+        (fixture_dir / "clean_assignment" / "trace_links.yaml").read_text(
+            encoding="utf-8"
+        ),
+        encoding="utf-8",
+    )
+    out_dir = tmp_path / "runs"
+
+    code, envelope, _ = _run_main(
+        [
+            "--output",
+            "json",
+            "extract",
+            "--spec",
+            str(fixture_dir / "clean_assignment" / "source" / "spec.md"),
+            "--rubric",
+            str(fixture_dir / "clean_assignment" / "source" / "rubric.md"),
+            "--source-manifest",
+            str(fixture_dir / "clean_assignment" / "source_manifest.yaml"),
+            "--runner",
+            "mock_fixture",
+            "--fixture-dir",
+            str(fixture),
+            "--runs",
+            "1",
+            "--out-dir",
+            str(out_dir),
+        ],
+        capsys,
+    )
+
+    _assert_envelope(envelope)
+    assert code == 2
+    assert envelope["status"] == "invalid_input"
+    assert (
+        "generated candidate output failed schema validation"
+        in envelope["input_error"]
+    )
+    assert not (out_dir / "run_001" / "candidates.yaml").exists()
+
+
+def test_extract_mock_fixture_rejects_unknown_runner(
+    fixture_dir: Path,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    code, envelope, stderr = _run_main(
+        [
+            "--output",
+            "json",
+            "extract",
+            "--spec",
+            str(fixture_dir / "clean_assignment" / "source" / "spec.md"),
+            "--rubric",
+            str(fixture_dir / "clean_assignment" / "source" / "rubric.md"),
+            "--source-manifest",
+            str(fixture_dir / "clean_assignment" / "source_manifest.yaml"),
+            "--runner",
+            "claude_sdk",
+            "--runs",
+            "1",
+            "--out-dir",
+            str(tmp_path / "runs"),
+        ],
+        capsys,
+    )
+
+    _assert_envelope(envelope)
+    assert code == 2
+    assert envelope["status"] == "invalid_input"
+    assert "real SDK runners are deferred" in envelope["input_error"]
+    assert "real SDK runners are deferred" in stderr
+
+
+def test_extract_rejects_runs_outside_plan_limit(
+    fixture_dir: Path,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    code, envelope, _ = _run_main(
+        [
+            "--output",
+            "json",
+            "extract",
+            "--spec",
+            str(fixture_dir / "clean_assignment" / "source" / "spec.md"),
+            "--rubric",
+            str(fixture_dir / "clean_assignment" / "source" / "rubric.md"),
+            "--source-manifest",
+            str(fixture_dir / "clean_assignment" / "source_manifest.yaml"),
+            "--runner",
+            "mock_fixture",
+            "--fixture-dir",
+            str(fixture_dir / "clean_assignment"),
+            "--runs",
+            "8",
+            "--out-dir",
+            str(tmp_path / "runs"),
+        ],
+        capsys,
+    )
+
+    _assert_envelope(envelope)
+    assert code == 2
+    assert envelope["status"] == "invalid_input"
+    assert "--runs must be between 1 and 7" in envelope["input_error"]
 
 
 def _candidate_artifact(

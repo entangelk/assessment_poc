@@ -163,3 +163,64 @@
 - `python3 -m pytest tests/test_cli_output_contract.py::test_compact_output_feeds_existing_check_flow -q` → 1 passed.
 - `python3 -m pytest -q` → full suite passed.
 - `python3 -m pytest --collect-only -q` → 214 tests collected: agent-runner 27, CLI 55, compacting 7, fixtures 8, models 22, rules 95.
+
+## Phase 2 Initial `extract` CLI Orchestration (`mock_fixture`)
+
+### Goals
+
+- Add the smallest `extract` producer that can feed the plan-canonical `compact --runs-dir` path.
+- Keep real SDK runner work deferred until a real sample is ready, per Owner direction.
+
+### Completed work
+
+- Added `extract` to `src/assessment_harness/cli.py` for `--runner mock_fixture`.
+  - Inputs: `--spec`, `--rubric`, `--runner mock_fixture`, `--fixture-dir`, `--runs`, optional `--source-manifest`, optional `--policy`, and `--out-dir`.
+  - Output layout: `run_###/candidates.yaml`, `run_###/agent_trace.audit.jsonl`, and `run_###/agent_trace.raw.jsonl`.
+  - Behavior: replays fixture artifacts through `MockFixtureRunner`, rewrites run IDs per pass, normalizes candidates, and runs deep candidate Rule 0 so clean fixture runs become `validated`.
+- Added schema self-discovery for `schema --command extract`.
+- Added CLI regressions for extract.
+  - Locks `mock_fixture` candidate/trace output, candidate schema validity, audit trace schema validity, per-run provenance, and default fixture `source_manifest.yaml` discovery.
+  - Locks invalid-run isolation with `reference_integrity`: invalid candidate status is preserved, `valid_run_count=0`, `invalid_run_count=1`, and run-local `integrity_diagnostics.json` is written.
+  - Locks extract write-before-validate parity with compact: generated candidates, audit trace events, and run-local integrity diagnostics are schema-validated before write.
+  - Locks `extract -> compact --runs-dir` compatibility.
+  - Locks unsupported runner rejection so `claude_sdk` remains explicitly deferred rather than silently stubbed.
+  - Locks the plan run-count boundary (`1..7`).
+- Updated README, HANDOFF, CHANGELOG, and case study status text to mark mock-only `extract` as initially live while keeping `verify`, real SDK runners, and production snapshot generation pending.
+
+### Issues found
+
+- Problem: the first implementation made `--source-manifest` required for `extract`, while plan §8's official `extract` command does not include that flag.
+  Cause: mock fixture deep-validation needs a source snapshot, and the existing fixture already carries `source_manifest.yaml`.
+  Resolution: made `--source-manifest` optional; when omitted for `mock_fixture`, `extract` reads `source_manifest.yaml` from `--fixture-dir`.
+  Outcome: the mock path can validate candidates without changing the plan-canonical command shape.
+- Problem: follow-up review found the invalid-run branch was functional but lacked a regression, and its first debug artifact name (`integrity_errors.json`) did not match the plan's `integrity_diagnostics.json` vocabulary.
+  Cause: the happy-path slice focused on producing compactable runs and only surfaced invalid runs through counts.
+  Resolution: added a `reference_integrity` extract regression and changed the run-local failure artifact to schema-valid `integrity_diagnostics.json`.
+  Outcome: failure isolation is now locked and uses the canonical diagnostics name.
+- Problem: follow-up review noted `_with_extract_run_id` would overwrite real SDK runner provenance once non-mock runners exist.
+  Cause: deterministic mock replay needs synthetic per-pass run IDs, but the first helper was not explicitly mock-scoped.
+  Resolution: renamed and scoped the rewrite to `MockFixtureRunner` only.
+  Outcome: future real runners can preserve their own run IDs.
+- Problem: final follow-up review noted extract wrote candidates/trace/diagnostics without the validate-before-write parity already used by `compact`.
+  Cause: tests validated output after write, but the CLI did not fail loud before writing malformed generated artifacts.
+  Resolution: added pre-write validation for generated candidates, audit trace events, and integrity diagnostics, plus a malformed mock fixture regression.
+  Outcome: extract now matches compact's fail-loud output discipline.
+
+### Decisions
+
+- **Owner direction:** implement `mock_fixture` extract first and defer real SDK runner work until a real sample is ready.
+- **CLI slice boundary:** `extract` currently proves orchestration with the existing mock runner only. It does not implement SDK credentials, framework tools, source-snapshot generation from arbitrary assignment files, runner failure recovery, or semantic `verify`.
+
+### Next steps
+
+1. Implement `verify` / semantic-verification queue entries.
+2. Add real SDK runner support when a runnable sample assignment is ready.
+3. Recompute publication-facing evaluation tables after the next pipeline slice stabilizes.
+
+### Verification
+
+- `python3 -m py_compile src/assessment_harness/cli.py`
+- `python3 -m pytest tests/test_cli_output_contract.py::test_schema_command_returns_extract_contract tests/test_cli_output_contract.py::test_extract_mock_fixture_writes_validated_candidate_runs tests/test_cli_output_contract.py::test_extract_mock_fixture_output_feeds_compact_runs_dir tests/test_cli_output_contract.py::test_extract_mock_fixture_isolates_invalid_run_with_diagnostics tests/test_cli_output_contract.py::test_extract_validates_generated_candidates_before_write tests/test_cli_output_contract.py::test_extract_mock_fixture_rejects_unknown_runner tests/test_cli_output_contract.py::test_extract_rejects_runs_outside_plan_limit -q` → 7 passed.
+- `python3 -m pytest tests/test_cli_output_contract.py tests/test_agent_runner_contract.py tests/test_compacting.py tests/test_models.py -q` → 118 passed.
+- `python3 -m pytest -q` → full suite passed.
+- `python3 -m pytest --collect-only -q` → 221 tests collected: agent-runner 27, CLI 62, compacting 7, fixtures 8, models 22, rules 95.

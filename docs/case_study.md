@@ -119,10 +119,11 @@ Implemented and tested:
   audit-trace attribution, runner normalization, and a **staged candidate
   integrity model** with deep Rule 0 classification.
 
-Contract / foundation only (deliberately deferred): `extract` / `verify`
-orchestration, real SDK runners, the Phase 1 manual run, and the full
-end-to-end workflow. Initial `compact` CLI orchestration now exists for
-already-produced candidate artifacts. See the [implementation status
+Contract / foundation only (deliberately deferred): `verify` orchestration,
+real SDK runners, the Phase 1 manual run, and the full end-to-end workflow.
+Initial `extract` orchestration exists for the deterministic `mock_fixture`
+runner, and initial `compact` orchestration exists for produced candidate
+artifacts. See the [implementation status
 table](../README.md) for the honest area-by-area state.
 
 ## How it's verified
@@ -141,9 +142,9 @@ dated moving snapshot; it should be recomputed before publication.)
 
 ## Limitations / deliberately deferred
 
-- The full agent extraction pipeline (`extract` / `verify`, real runners) is not
-  built. Initial `compact` exists for candidate artifacts, but no real runner
-  produces those artifacts yet.
+- The full agent extraction pipeline (`verify`, real runners) is not built.
+  Initial `extract` can produce run directories from `mock_fixture`, but no real
+  SDK runner produces those artifacts yet.
 - The tool holds **no opinion on threshold values**; they are caller-tunable
   policy, not authoritative defaults.
 - Raw-trace retention/redaction policy is deferred; only the audit trace is
@@ -154,8 +155,9 @@ dated moving snapshot; it should be recomputed before publication.)
 ## What's next
 
 1. Recompute `docs/evaluation.md` from real test/smoke output before publication.
-2. The remaining agent extraction pipeline (`extract` / `verify`) on top of the
-   existing runner-protocol, candidate-integrity, and compacting foundations.
+2. The remaining agent extraction pipeline (`verify` + real SDK runner) on top
+   of the existing runner-protocol, candidate-integrity, and compacting
+   foundations.
 3. A first real-assignment manual run (Phase 1).
 
 ---

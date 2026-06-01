@@ -2,6 +2,7 @@
 
 | Date | Change | Detail |
 |---|---|---|
+| 2026-06-01 | Initial `extract` CLI orchestration for `mock_fixture`: writes isolated run directories with candidate artifacts plus raw/audit traces, isolates invalid runs with `integrity_diagnostics.json`, locks the `--runs` 1..7 boundary, and feeds the plan-canonical `compact --runs-dir` path. Real SDK runners remain deferred until a real sample is ready. | [Work log](docs/daily_logs/2026-06-01/work_log.md) |
 | 2026-06-01 | Initial `compact` CLI orchestration: supports plan-canonical `--runs-dir` plus explicit `--candidates`, writes canonical compacted YAML plus wrapper-shaped `id_map.yaml`, preserves incoming review_queue metadata/entries, and appends non-duplicate `invalid_run` entries for excluded mixed/non-validated runs. | [Work log](docs/daily_logs/2026-06-01/work_log.md) |
 | 2026-06-01 | Phase 2 compacting schema/helper foundation: registers `compacting.schema.json` and adds deterministic union compacting for fully `validated` runs, preserving `support` / `identity_basis` / `variants`, canonical `id_map`, and trace-link remapping without implementing the `compact` CLI or real runners yet. | [Work log](docs/daily_logs/2026-06-01/work_log.md) |
 | 2026-05-29 | Plan v1.30 + source-grounding integrity status: adds `source_grounding_mismatch`, narrows `quote_mismatch` to token-sequence evidence quote substring failures, and locks deep Rule 0 precedence as `invalid_reference > source_grounding_mismatch > quote_mismatch`. | [Work log](docs/daily_logs/2026-05-29/work_log.md) |

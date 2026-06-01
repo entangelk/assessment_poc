@@ -201,3 +201,89 @@ grep -niE 'frozen|stabiliz|안정화' HANDOFF.md docs/publication_plan_v1.md
 - **compact CLI slice + C1~C4 follow-up: 합격(PASS).** 4개 지적이 모두 spec-정합 방향으로 해결되고 판별력 있는 회귀 + 독립 경계 탐침으로 확인됨. C1 은 Owner confirmation 까지 기록되어 임의 결정 잔존 없음. 코드 자체 신규 결함 없음.
 - **임의 결정 점검**: `--candidates` 보조 유지·동시거부·runs-dir glob 레이아웃 모두 Owner 승인 또는 spec-정합. **Owner 권한 침범한 미기록 결정 없음.**
 - 잔여 R4-1/R4-2 는 선택적 개선이며 커밋을 막지 않는다.
+
+---
+
+## Re-verification (round 5, 2026-06-01) — extract CLI (mock_fixture) 슬라이스 검증
+
+- **Requester**: Owner — "다음 작업(extract) 검증. Option A(mock_fixture 전용)대로 구현."
+- **Verifier**: Claude (independent). **Source**: working tree, uncommitted (M cli.py 외 8파일; 직전 compact slice 는 4fe9f92 로 커밋됨).
+- **Canonical scope**: plan v1.30 §8 extract usage(1020-1028), §5.4 integrity 모델, §5.4.1 agent_trace(426-433), §9 Phase 2 작업/완료기준(1136-1158), §13(1292). 스키마: `candidates`, `agent_trace`.
+- **Suite**: `219 passed`, CLI 60 / 나머지 일치. `py_compile` OK.
+
+### PASS 항목 (독립 재현)
+
+- **무결성 우회 없음(핵심)**: extract 가 `normalize_result_candidates` → `classify_deep_candidate_run_integrity(candidates, audit_trace, snapshot)` 를 **실제로 실행**해 분류 결과(`integrity.candidates`)를 기록 — `validated` 를 블라인드 스탬프하지 않는다. §5.4 staged 모델 준수.
+- **end-to-end 파이프라인**: 직접 `extract(clean_assignment, runs=3) → compact --runs-dir → check` 실행 → compact `total_valid_runs:3, found_in_runs:[run_001,002,003]`, check `blocking 0 / medium 2` (원본 fixture 직접 check 와 동일). **구현된 전 구간이 의미 보존하며 일관 동작.**
+- **산출물 레이아웃**: `run_###/candidates.yaml` + `agent_trace.audit.jsonl` + `agent_trace.raw.jsonl`. 테스트가 candidates→`candidates` 스키마, audit event 각각→`agent_trace` 스키마 통과를 assert. compact `*/candidates.yaml` glob 과 호환(테스트 + 수동 확인).
+- **run_id 재작성 정합**: mock 은 결정적이라 동일 산출 → `_with_extract_run_id` 가 candidates 와 audit/raw trace 의 run_id 를 `run_{index}` 로 **일괄 재작성 후** 분류 → 귀속(candidate.agent_run_id ↔ audit run_id) 일치 유지, N-run support 정확. 테스트로 잠금.
+- **§8 시그니처 보존**: `--spec/--rubric/--runner/--runs/--out-dir` 유지(§8 그대로), `--source-manifest/--fixture-dir/--policy` 는 **additive**. compact C1 식 치환-이탈 아님.
+- **fail-loud 경계(독립 탐침 전부 invalid_input/exit 2, argparse crash 아님)**: `--runs 8/0`→"between 1 and 7", `--runner claude_sdk`→"real SDK runners are deferred"(조용한 stub 아님), mock+`--fixture-dir` 누락→거부, spec 파일 부재→거부, fixture 에 source_manifest 없고 `--source-manifest` 미지정→명확 거부. `--runs` 1..7 은 §9(최대 7) 정합, 기본 3 정합.
+- **--source-manifest optional 결정**: deep 분류는 snapshot grounding 이 필요한데 §8 예시엔 `--source-manifest` 가 없다 → 필수로 만들면 계약 drift. optional 로 두고 mock 은 `--fixture-dir/source_manifest.yaml` 기본 사용. **유일하게 합리적 방향이고 Owner 가 인지·기록함 → 임의 결정 아님.**
+- `schema --command extract` 계약(informational 8필드·exit 0/2/3·fix_input) 테스트로 잠금.
+
+### 지적
+
+- **E1 [MEDIUM — boundary 미충족]: extract 의 invalid-run 분기에 회귀 lock 부재.** invalid_run_count 단언은 happy-path `== 0`(test:1557) 뿐이다. 직접 reference_integrity 를 mock extract 하면 **valid 0 / invalid 1 + `integrity_errors.json` 생성**(기능 정상 확인)이지만, 이 "실패 격리" 경로 — 무결성 모델의 존재 이유 — 를 잠그는 테스트가 없다. 실패 fixture 로 `invalid_run_count>0` / `integrity_status != validated` / `integrity_errors.json` 산출을 단언하는 회귀 추가 필요(under-strict guard).
+- **E2 [LOW — 계약 명칭]**: 실패 run 에 `integrity_errors.json`(ad-hoc) 을 쓴다. plan 의 canonical 무결성 산출물은 `integrity_diagnostics.json`(§5.4:422)이고 제외 사유는 compact 가 review_queue `invalid_run` 으로 이미 기록. `integrity_errors.json` 을 extract-local 디버그 산출물로 문서화하거나 integrity_diagnostics 계약에 맞출지 정리 권장.
+- **E3 [LOW — forward-looking 부채]**: `_with_extract_run_id` 가 **모든 runner** 에 대해 run_id 를 `run_{index}` 로 덮어쓴다. 결정적 mock 엔 필수·정확하나, 실제 SDK runner 도입 시 real run 의 고유 run_id(SDK trace 상관·provenance)를 파괴하므로 **mock 전용으로 분기해야 한다.** 현재 mock 만 허용이라 latent.
+- **E4 [INFO — 해석 주의]**: mock 은 동일 fixture 를 N회 replay → support 가 인위적 N/N(found_in_runs run_001..N). 파이프라인 배선/데모용으로 타당하나 실제 agent 합의가 아님. 실제 divergence 는 real runner 필요(이미 deferral·문서화됨).
+- **E5 [INFO]**: plan §8 본문이 mock_fixture/`--fixture-dir`/`--source-manifest` 경로를 명시하지 않음(README/HANDOFF/work_log 에만). R4-2 와 동일하게 §8 한 줄 보강 시 SoT 자기완결성↑(선택).
+
+### 종합 판정
+
+- **extract CLI(mock_fixture) 슬라이스: 합격(PASS).** 무결성 분류를 실제 수행하고 end-to-end 파이프라인이 의미 보존하며, 모든 거부 경계가 fail-loud 로 독립 확인됨. Option A·`--source-manifest` optional·claude_sdk 거부 모두 합의/§8-정합/기록됨 → **임의 결정 없음.**
+- **단 E1(실패-격리 경로 무테스트)은 비차단이나 커밋 전 보강 권장** — CLAUDE.md 기준 "untested fire branch". E2~E5 는 선택 정리/주의.
+- 다음 선택지(verify 를 mock 먼저 닫기 vs 여기서 커밋)는 Owner 결정 사항. 커밋 시 E1 회귀 1개 추가를 권한다.
+
+---
+
+## Re-verification (round 6, 2026-06-01) — E1~E3 수정 독립 재검증
+
+- **Requester**: Owner — "E1~E3 고쳤대, 다시 검증."
+- **Verifier**: Claude (independent). **Source**: working tree, uncommitted (M cli.py / integrity_diagnostics.schema.json 외). **Suite**: `220 passed`, CLI 61. `py_compile` OK.
+
+### 항목별 판정
+
+- **E1 (invalid-run 회귀) — 해결(PASS).** `test_extract_mock_fixture_isolates_invalid_run_with_diagnostics`(test:1641) 가 reference_integrity 를 mock extract → `valid_run_count==0`, `invalid_run_count==1`, candidates 의 integrity_status 가 `!= {"validated"}`, `summary.high>0`, diagnostics 非빈, **그리고 `validate("integrity_diagnostics", diagnostics)==[]` 로 생성 payload 의 스키마 통과까지 잠금**. under-strict guard 성립.
+- **E2 (canonical 무결성 산출물) — 해결(PASS).** 실패 run 이 `integrity_diagnostics.json`(ad-hoc `integrity_errors.json` 제거; 테스트가 `not integrity_errors.json.exists()` 단언) 을 쓰고, payload(`diagnostics[]`+`summary{total,high,…}`)가 `integrity_diagnostics.schema.json` 구조와 부합. `candidate_run_integrity_error` 를 enum 에 추가(스키마 diff 확인)하여 비-rule_zero 에러 fallback 을 정식화. **독립 탐침**: reference_integrity extract 의 실제 diagnostics 코드가 `duplicate_spec_id`/`dangling_rubric_reference`/`evidence_quote_*` 등 8종으로 정확히 추출되고 전부 enum 에 존재(`_extract_integrity_error_code` 가 `rule_zero/<code>:` 에서 `<code>` 분리). emitted rule_zero 코드 ⊆ enum (MISSING none).
+- **E3 (run_id rewrite mock 전용) — 해결(PASS).** `_with_extract_run_id`→`_with_mock_extract_run_id`, 호출부가 `if isinstance(runner, MockFixtureRunner):` 로 gate. 현재 mock 만 허용이라 동작 동일하나, 실제 SDK runner 도입 시 고유 run_id 보존 — latent debt 해소. candidate.agent_run_id ↔ audit run_id 귀속 일치는 유지(round 5 확인分 불변).
+
+### E4/E5 — Owner 정보성 유보 (타당)
+
+- E4(mock N회 replay = 인위적 N/N support)·E5(plan §8 mock 경로 미기재)는 구현 변경 없이 정보성 유지. mock 한정·SDK pending 이 이미 문서화돼 있고 §8 보강은 별도 SoT 개정 작업으로 미루는 판단 — 합리적, 기록됨.
+
+### 잔여 관찰 (비차단·선택)
+
+- **R6-1 [LOW, parity]**: extract 는 candidates.yaml / agent_trace.*.jsonl / integrity_diagnostics.json 을 **쓰기 전 스키마 검증 없이** 기록한다(compact 는 compacting/review_queue 를 쓰기 전 validate). E1 이 reference_integrity 의 diagnostics 를 사후 검증하고 enum+fallback 설계로 invalid code 가 사실상 불가능하므로 위험은 미미하나, fail-loud parity 를 위해 extract 도 산출물 validate-before-write 를 두면 일관적. (선택.)
+
+### 종합 판정
+
+- **extract CLI(mock_fixture) 슬라이스 + E1~E3 follow-up: 합격(PASS).** 3개 지적이 모두 해결되고, E1 은 스키마 검증까지 포함한 판별력 있는 회귀로 잠겼으며, E2 의 diagnostics 코드 granularity·enum 정합을 독립 탐침으로 확인. E3 은 forward debt 해소. **임의 결정 잔존 없음** (E4/E5 유보는 Owner 기록).
+- 커밋 가능 상태. R6-1 만 선택적 후속이며 차단 아님.
+- 본 검증 문서는 라운드 1~6 누적 audit trail 로, round 5 의 E1~E3 지적은 본 라운드에서 "해결"로 종결됨 — 커밋 시 이 문서를 함께 포함하면 follow-up note 가 이미 반영된 상태다.
+
+---
+
+## Re-verification (round 7, 2026-06-01) — R6-1 parity follow-up
+
+- **Requester**: Owner — "R6-1만 남았는데 어떻게 생각하니." Owner accepted the fail-loud parity cleanup.
+- **Verifier**: Codex follow-up. **Source**: working tree, uncommitted.
+- **Scope**: extract-generated artifact validation before write: `candidates.yaml`, `agent_trace.audit.jsonl`, and run-local `integrity_diagnostics.json`.
+
+### 판정
+
+- **R6-1 — 해결(PASS).** `extract` now validates generated candidates with `validate("candidates", ...)`, audit trace events with `validate("agent_trace", ...)`, and run-local diagnostics with `validate("integrity_diagnostics", ...)` before writing artifacts. On generated candidate schema failure it returns structured `invalid_input` / exit `2` and does not write `run_###/candidates.yaml`.
+- Added `test_extract_validates_generated_candidates_before_write`, which builds a malformed mock fixture, verifies the structured rejection, and asserts `candidates.yaml` was not written.
+
+### Verification
+
+- `python3 -m py_compile src/assessment_harness/cli.py src/assessment_harness/__init__.py`
+- `python3 -m pytest tests/test_cli_output_contract.py::test_schema_command_returns_extract_contract tests/test_cli_output_contract.py::test_extract_mock_fixture_writes_validated_candidate_runs tests/test_cli_output_contract.py::test_extract_mock_fixture_output_feeds_compact_runs_dir tests/test_cli_output_contract.py::test_extract_mock_fixture_isolates_invalid_run_with_diagnostics tests/test_cli_output_contract.py::test_extract_validates_generated_candidates_before_write tests/test_cli_output_contract.py::test_extract_mock_fixture_rejects_unknown_runner tests/test_cli_output_contract.py::test_extract_rejects_runs_outside_plan_limit -q` → 7 passed.
+- `python3 -m pytest tests/test_cli_output_contract.py tests/test_agent_runner_contract.py tests/test_compacting.py tests/test_models.py -q` → 118 passed.
+- `python3 -m pytest -q` → full suite passed.
+- `python3 -m pytest --collect-only -q` → 221 tests collected: agent-runner 27, CLI 62, compacting 7, fixtures 8, models 22, rules 95.
+
+### Final Verdict
+
+- **extract CLI(mock_fixture) slice: 합격(PASS).** E1~E3 and R6-1 are closed. E4/E5 remain informational/optional only. No blocking or conditional items remain for this slice.

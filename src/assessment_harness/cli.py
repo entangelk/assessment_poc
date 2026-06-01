@@ -5,13 +5,14 @@ Subcommands implemented in Phase 0:
 - ``check``   : run deterministic rules over the supplied compacted YAML and
                 emit JSON findings + integrity diagnostics.
 - ``compact`` : compact validated candidate runs into canonical YAML artifacts.
+- ``extract`` : run fixture-backed candidate extraction into isolated run dirs.
 - ``schema``  : self-discovery for the stable contract; lets caller agents
                 read the current `cli_output` shape without docs.
 - ``report``  : render findings + diagnostics into a Markdown report.
 - ``review``  : write a safe final-review draft with hold decisions.
 - ``gate``    : consume final review and emit the external verdict.
 
-Subcommands ``extract`` and ``verify`` are later-phase scope.
+Subcommand ``verify`` is later-phase scope.
 """
 
 from __future__ import annotations
@@ -20,12 +21,17 @@ import argparse
 import datetime as _dt
 import json
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping, Sequence
 
 import yaml
 
+from .agent_runners import (
+    MockFixtureRunner,
+    classify_deep_candidate_run_integrity,
+    normalize_result_candidates,
+)
 from .compacting import (
     CompactingInputError,
     compact_validated_candidates,
@@ -87,6 +93,13 @@ def _write_json(path: Path, payload: dict[str, Any]) -> None:
 def _write_yaml(path: Path, payload: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
+
+
+def _write_jsonl(path: Path, events: Sequence[Mapping[str, Any]]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8") as fh:
+        for event in events:
+            fh.write(json.dumps(event, sort_keys=False) + "\n")
 
 
 def _ensure_envelope_valid(envelope: dict[str, Any]) -> None:
@@ -477,6 +490,225 @@ def _check_invalid_input(
 
 
 # ---------------------------------------------------------------------------
+# extract
+# ---------------------------------------------------------------------------
+
+
+def _cmd_extract(args: argparse.Namespace) -> CommandResult:
+    try:
+        _validate_extract_paths(args)
+        runner = _extract_runner(args)
+        source_manifest_path = _extract_source_manifest_path(args)
+        snapshot = load_source_snapshot(source_manifest_path)
+        policy_doc = load_policy(Path(args.policy)) if args.policy else {}
+        run_count = _extract_run_count(args.runs)
+    except HarnessInputError as exc:
+        return _extract_invalid_input(args, str(exc), exc.errors)
+
+    out_dir = Path(args.out_dir)
+    run_dirs: list[str] = []
+    valid_run_count = 0
+    invalid_run_count = 0
+
+    for index in range(1, run_count + 1):
+        run_id = f"run_{index:03d}"
+        run_dir = out_dir / run_id
+        result = runner.run(
+            spec_path=Path(args.spec),
+            rubric_path=Path(args.rubric),
+            tools=[],
+            max_turns=1,
+            policy=policy_doc,
+        )
+        if isinstance(runner, MockFixtureRunner):
+            result = _with_mock_extract_run_id(result, run_id)
+        candidates = normalize_result_candidates(result)
+        integrity = classify_deep_candidate_run_integrity(
+            candidates,
+            result.audit_trace,
+            snapshot,
+        )
+        if integrity.integrity_status == "validated":
+            valid_run_count += 1
+        else:
+            invalid_run_count += 1
+
+        candidate_errors = validate("candidates", integrity.candidates)
+        if candidate_errors:
+            return _extract_invalid_input(
+                args,
+                "generated candidate output failed schema validation",
+                candidate_errors,
+            )
+        _write_yaml(run_dir / "candidates.yaml", integrity.candidates)
+        audit_trace_errors = _agent_trace_errors(result.audit_trace)
+        if audit_trace_errors:
+            return _extract_invalid_input(
+                args,
+                "generated audit trace failed schema validation",
+                audit_trace_errors,
+            )
+        _write_jsonl(run_dir / "agent_trace.audit.jsonl", tuple(result.audit_trace))
+        _write_jsonl(run_dir / "agent_trace.raw.jsonl", tuple(result.raw_trace))
+        if integrity.errors:
+            diagnostics_payload = _extract_integrity_diagnostics_payload(
+                run_id,
+                integrity,
+            )
+            diagnostics_errors = validate(
+                "integrity_diagnostics",
+                diagnostics_payload,
+            )
+            if diagnostics_errors:
+                return _extract_invalid_input(
+                    args,
+                    "generated integrity diagnostics failed schema validation",
+                    diagnostics_errors,
+                )
+            _write_json(
+                run_dir / "integrity_diagnostics.json",
+                diagnostics_payload,
+            )
+        run_dirs.append(str(run_dir))
+
+    envelope = _build_envelope(
+        status="success",
+        exit_code=0,
+        command="extract",
+        next_actions=[],
+        runs_dir=str(out_dir),
+        run_dirs=run_dirs,
+        run_count=run_count,
+        valid_run_count=valid_run_count,
+        invalid_run_count=invalid_run_count,
+        runner=args.runner,
+        source_manifest_path=str(source_manifest_path),
+    )
+    return CommandResult(envelope=envelope, exit_code=0)
+
+
+def _validate_extract_paths(args: argparse.Namespace) -> None:
+    for label in ("spec", "rubric"):
+        path = Path(getattr(args, label))
+        if not path.exists():
+            raise HarnessInputError(f"{label} file not found: {path}")
+
+
+def _extract_runner(args: argparse.Namespace) -> MockFixtureRunner:
+    if args.runner != "mock_fixture":
+        raise HarnessInputError(
+            "only --runner mock_fixture is implemented; real SDK runners are deferred"
+        )
+    if not args.fixture_dir:
+        raise HarnessInputError("--fixture-dir is required when --runner mock_fixture")
+    fixture_dir = Path(args.fixture_dir)
+    if not fixture_dir.exists():
+        raise HarnessInputError(f"fixture directory not found: {fixture_dir}")
+    return MockFixtureRunner(fixture_dir)
+
+
+def _extract_source_manifest_path(args: argparse.Namespace) -> Path:
+    if args.source_manifest:
+        return Path(args.source_manifest)
+    if args.runner == "mock_fixture" and args.fixture_dir:
+        fixture_manifest = Path(args.fixture_dir) / "source_manifest.yaml"
+        if fixture_manifest.exists():
+            return fixture_manifest
+    raise HarnessInputError(
+        "--source-manifest is required unless --runner mock_fixture can read "
+        "source_manifest.yaml from --fixture-dir"
+    )
+
+
+def _extract_run_count(runs: int) -> int:
+    if runs < 1 or runs > 7:
+        raise HarnessInputError("--runs must be between 1 and 7")
+    return runs
+
+
+def _with_mock_extract_run_id(result: Any, run_id: str) -> Any:
+    # MockFixtureRunner is deterministic; rewrite run IDs per extract pass so
+    # each isolated run can be compacted with distinct provenance.
+    return replace(
+        result,
+        run_id=run_id,
+        audit_trace=[_event_with_run_id(event, run_id) for event in result.audit_trace],
+        raw_trace=[_event_with_run_id(event, run_id) for event in result.raw_trace],
+    )
+
+
+def _extract_integrity_diagnostics_payload(
+    run_id: str,
+    integrity: Any,
+) -> dict[str, Any]:
+    diagnostics = [
+        {
+            "code": _extract_integrity_error_code(error),
+            "severity": "high",
+            "message": error,
+            "location": {
+                "run_id": run_id,
+                "integrity_status": integrity.integrity_status,
+            },
+        }
+        for error in integrity.errors
+    ]
+    return {
+        "diagnostics": diagnostics,
+        "summary": {
+            "total": len(diagnostics),
+            "high": len(diagnostics),
+            "medium": 0,
+            "low": 0,
+            "informational": 0,
+        },
+        "generated_at": _now_iso(),
+        "run_id": run_id,
+        "integrity_status": integrity.integrity_status,
+    }
+
+
+def _extract_integrity_error_code(error: str) -> str:
+    if error.startswith("rule_zero/") and ":" in error:
+        return error.split(":", 1)[0].split("/", 1)[1]
+    return "candidate_run_integrity_error"
+
+
+def _event_with_run_id(event: Mapping[str, Any], run_id: str) -> dict[str, Any]:
+    updated = dict(event)
+    updated["run_id"] = run_id
+    return updated
+
+
+def _agent_trace_errors(events: Sequence[Mapping[str, Any]]) -> list[str]:
+    errors: list[str] = []
+    for index, event in enumerate(events):
+        errors.extend(
+            f"agent_trace/{index}: {error}"
+            for error in validate("agent_trace", event)
+        )
+    return errors
+
+
+def _extract_invalid_input(
+    args: argparse.Namespace,
+    message: str,
+    details: list[str] | None = None,
+) -> CommandResult:
+    sys.stderr.write(f"[assessment-harness] {message}\n")
+    for detail in details or []:
+        sys.stderr.write(f"  - {detail}\n")
+    envelope = _build_envelope(
+        status="invalid_input",
+        exit_code=2,
+        command="extract",
+        next_actions=[{"type": "fix_input", "message": message}],
+        input_error=message,
+    )
+    return CommandResult(envelope=envelope, exit_code=2)
+
+
+# ---------------------------------------------------------------------------
 # compact
 # ---------------------------------------------------------------------------
 
@@ -699,6 +931,25 @@ def _valid_candidate_run_count(candidate_runs: list[dict[str, Any]]) -> int:
 
 
 COMMAND_CONTRACTS: dict[str, dict[str, Any]] = {
+    "extract": {
+        "stable_core": STABLE_CORE_FIELDS,
+        "informational": [
+            "runs_dir",
+            "run_dirs",
+            "run_count",
+            "valid_run_count",
+            "invalid_run_count",
+            "runner",
+            "source_manifest_path",
+            "input_error",
+        ],
+        "exit_codes": {
+            "0": "candidate runs and agent traces were written under --out-dir.",
+            "2": "extract input or runner configuration is invalid.",
+            "3": "internal error.",
+        },
+        "next_actions_types": ["fix_input"],
+    },
     "compact": {
         "stable_core": STABLE_CORE_FIELDS,
         "informational": [
@@ -1397,6 +1648,28 @@ def _build_parser() -> argparse.ArgumentParser:
         ),
     )
 
+    p_extract = sub.add_parser(
+        "extract",
+        help="run candidate extraction into isolated run directories.",
+    )
+    _add_output_arg(p_extract, root=False)
+    p_extract.add_argument("--spec", required=True)
+    p_extract.add_argument("--rubric", required=True)
+    p_extract.add_argument(
+        "--source-manifest",
+        default=None,
+        help="immutable source snapshot manifest used for candidate grounding checks",
+    )
+    p_extract.add_argument("--runner", required=True)
+    p_extract.add_argument(
+        "--fixture-dir",
+        default=None,
+        help="fixture directory to replay when --runner mock_fixture is used",
+    )
+    p_extract.add_argument("--runs", type=int, default=3)
+    p_extract.add_argument("--policy", default=None)
+    p_extract.add_argument("--out-dir", required=True)
+
     p_compact = sub.add_parser(
         "compact",
         help="compact validated candidate run artifacts into canonical YAML.",
@@ -1480,6 +1753,8 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.subcommand == "check":
             result = _cmd_check(args)
+        elif args.subcommand == "extract":
+            result = _cmd_extract(args)
         elif args.subcommand == "compact":
             result = _cmd_compact(args)
         elif args.subcommand == "schema":

@@ -53,7 +53,8 @@
             "evidence_quote_token_sequence_mismatch",
             "source_document_missing",
             "source_document_hash_mismatch",
-            "source_manifest_required"
+            "source_manifest_required",
+            "candidate_run_integrity_error"
           ]
         },
         "severity": {
