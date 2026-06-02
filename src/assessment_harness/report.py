@@ -9,7 +9,12 @@ from __future__ import annotations
 from typing import Any
 
 
-def render_markdown(findings_doc: dict[str, Any], diagnostics_doc: dict[str, Any]) -> str:
+def render_markdown(
+    findings_doc: dict[str, Any],
+    diagnostics_doc: dict[str, Any],
+    semantic_verifications_doc: dict[str, Any] | None = None,
+    review_queue_doc: dict[str, Any] | None = None,
+) -> str:
     lines: list[str] = []
     lines.append("# Assessment Harness Report")
     lines.append("")
@@ -55,6 +60,34 @@ def render_markdown(findings_doc: dict[str, Any], diagnostics_doc: dict[str, Any
                 f"- **[{finding.get('severity', '?')}/{finding.get('decision_status', '?')}] "
                 f"{finding.get('type', '?')}** — {finding.get('message', '').strip()}"
             )
+
+    if semantic_verifications_doc is not None:
+        lines.append("")
+        lines.append("## Semantic Verifications")
+        proposals = semantic_verifications_doc.get("semantic_verifications", [])
+        if not proposals:
+            lines.append("- No semantic verification proposals.")
+        else:
+            for proposal in proposals:
+                lines.append(
+                    f"- **{proposal.get('trace_link_id', '?')}** — "
+                    f"{proposal.get('status_proposal', '?')}: "
+                    f"{proposal.get('rationale', '').strip()}"
+                )
+
+    if review_queue_doc is not None:
+        lines.append("")
+        lines.append("## Review Queue")
+        entries = review_queue_doc.get("review_queue", [])
+        if not entries:
+            lines.append("- No review queue entries.")
+        else:
+            for entry in entries:
+                lines.append(
+                    f"- **{entry.get('entry_id', '?')}** "
+                    f"({entry.get('type', '?')}/{entry.get('status', '?')}) — "
+                    f"{entry.get('reason', '').strip()}"
+                )
 
     lines.append("")
     return "\n".join(lines)

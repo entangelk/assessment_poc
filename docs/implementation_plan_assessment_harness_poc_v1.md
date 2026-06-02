@@ -933,7 +933,7 @@ Rule L1/L6 lint safeguard entry가 발화할 수 있는 입력에서 `--review-q
 `--out`과 같은 디렉터리의 `review_queue.json`을 생성한다. lint finding이
 없을 때에도 빈 queue를 기록해 이전 실행의 stale review 항목이 재사용되지 않게 한다.
 
-Phase 0에서 `--semantic-verifications`가 생략된 경우 `token_sequence` evidence만 결정적으로 검사하며, `ai_judgement` trace link는 `pending_verification`으로 취급한다. Phase 2 이후 agent-assisted 흐름에서는 `verify` 산출물을 `check`/`report`/`review`에 명시적으로 전달한다.
+Phase 0에서 `--semantic-verifications`가 생략된 경우 `token_sequence` evidence만 결정적으로 검사하며, `ai_judgement` trace link는 `pending_verification`으로 취급한다. Phase 2 이후 agent-assisted 흐름에서는 `verify` 산출물을 `check`/`report`/`review`에 명시적으로 전달한다. Compacting lineage(`variants`)가 있는 trace에 `--semantic-verifications`를 전달할 때는 `check --id-map work/compacted/id_map.yaml`도 함께 전달해야 한다. 그렇지 않으면 trace 순서 기반 fallback이 canonical ID lineage와 어긋날 수 있으므로 구현은 fail-loud해야 한다.
 
 `policy.yaml` 예시:
 
@@ -1043,6 +1043,7 @@ assessment-harness check \
   --rubric-items work/compacted/rubric_items.yaml \
   --trace-links work/compacted/trace_links.yaml \
   --semantic-verifications work/semantic_verification/semantic_verifications.yaml \
+  --id-map work/compacted/id_map.yaml \
   --policy work/compacted/policy.yaml \
   --out work/findings.json \
   --diagnostics-out work/integrity_diagnostics.json

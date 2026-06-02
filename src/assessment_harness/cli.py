@@ -20,6 +20,7 @@ Real SDK runners for ``extract`` / ``verify`` are later-phase scope.
 from __future__ import annotations
 
 import argparse
+import copy
 import datetime as _dt
 import json
 import sys
@@ -42,6 +43,7 @@ from .compacting import (
 from .models import HarnessInputError, load_source_snapshot, load_validated, load_policy
 from .report import render_markdown
 from .rules import (
+    HUMAN_ACCEPTED_SEMANTIC_STATUSES,
     finding_severity_counts,
     run_rule_l1,
     run_rule_l5,
@@ -144,6 +146,29 @@ def _cmd_check(args: argparse.Namespace) -> CommandResult:
         return _check_invalid_input(args, exc, next_actions)
 
     try:
+        semantic_doc = _load_optional_validated(
+            args.semantic_verifications,
+            "semantic_verifications",
+        )
+        id_map_doc = _load_optional_validated(args.id_map, "id_map")
+    except HarnessInputError as exc:
+        return _check_invalid_input(args, exc, next_actions)
+
+    if (
+        semantic_doc is not None
+        and id_map_doc is None
+        and _trace_doc_has_compacting_variants(trace_doc)
+    ):
+        return _check_invalid_input(
+            args,
+            HarnessInputError(
+                "check --semantic-verifications requires --id-map when trace links "
+                "contain compacting lineage variants"
+            ),
+            next_actions,
+        )
+
+    try:
         policy_doc = load_policy(Path(args.policy))
         _validate_check_policy(policy_doc, Path(args.policy))
     except HarnessInputError as exc:
@@ -199,7 +224,15 @@ def _cmd_check(args: argparse.Namespace) -> CommandResult:
 
     # Rule 0 clean. Run subsequent provisional rules; check never emits
     # blocking verdicts (that is gate's job).
-    rule_one_findings = run_rule_one(rubric_doc, trace_doc)
+    try:
+        effective_trace_doc = _trace_doc_with_semantic_verifications(
+            trace_doc,
+            semantic_doc,
+            id_map_doc,
+        )
+    except HarnessInputError as exc:
+        return _check_invalid_input(args, exc, next_actions)
+    rule_one_findings = run_rule_one(rubric_doc, effective_trace_doc)
     rule_two_findings = run_rule_two(spec_doc, rubric_doc, trace_doc)
     rule_three_findings = run_rule_three(spec_doc, rubric_doc, trace_doc, policy_doc)
     lint_findings, review_queue = run_rule_l1(rubric_doc, trace_doc)
@@ -225,6 +258,10 @@ def _cmd_check(args: argparse.Namespace) -> CommandResult:
         "review_queue_path": str(review_queue_path),
         "review_queue_count": len(review_queue),
     }
+    if args.semantic_verifications:
+        envelope_fields["semantic_verifications_path"] = str(args.semantic_verifications)
+    if args.id_map:
+        envelope_fields["id_map_path"] = str(args.id_map)
 
     if provisional_findings:
         for f in provisional_findings:
@@ -442,6 +479,70 @@ def _validate_check_policy(policy_doc: dict[str, Any], policy_path: Path) -> Non
                 "rules.optionality_mismatch.weight_threshold"
             )
         )
+
+
+def _load_optional_validated(
+    path_value: str | None,
+    schema_name: str,
+) -> dict[str, Any] | None:
+    if path_value is None:
+        return None
+    return load_validated(Path(path_value), schema_name)
+
+
+def _trace_doc_with_semantic_verifications(
+    trace_doc: dict[str, Any],
+    semantic_doc: dict[str, Any] | None,
+    id_map_doc: dict[str, Any] | None,
+) -> dict[str, Any]:
+    if semantic_doc is None:
+        return trace_doc
+    status_by_trace_id = _semantic_status_by_trace_link_id(semantic_doc)
+    if not status_by_trace_id:
+        return trace_doc
+    updated = copy.deepcopy(trace_doc)
+    trace_links = updated.get("trace_links", [])
+    for index, trace_link in enumerate(trace_links, start=1):
+        if not isinstance(trace_link, dict):
+            continue
+        trace_link_id = _trace_link_id(trace_link, index, id_map_doc)
+        status = status_by_trace_id.get(trace_link_id)
+        if status is not None:
+            if _is_post_review_semantic_status(trace_link.get("semantic_status")):
+                continue
+            trace_link["semantic_status"] = status
+    return updated
+
+
+def _semantic_status_by_trace_link_id(semantic_doc: dict[str, Any]) -> dict[str, str]:
+    statuses: dict[str, str] = {}
+    for proposal in semantic_doc.get("semantic_verifications", []):
+        trace_link_id = proposal.get("trace_link_id")
+        status = proposal.get("status_proposal")
+        if not isinstance(trace_link_id, str) or not isinstance(status, str):
+            continue
+        if trace_link_id in statuses:
+            raise HarnessInputError(
+                f"duplicate semantic verification proposal for trace_link_id {trace_link_id!r}"
+            )
+        statuses[trace_link_id] = status
+    return statuses
+
+
+def _is_post_review_semantic_status(status: Any) -> bool:
+    return status in HUMAN_ACCEPTED_SEMANTIC_STATUSES or status in {
+        "human_rejected",
+        "rerun_requested",
+    }
+
+
+def _trace_doc_has_compacting_variants(trace_doc: Mapping[str, Any]) -> bool:
+    for trace_link in trace_doc.get("trace_links", []):
+        if isinstance(trace_link, Mapping) and _trace_link_has_compacting_variants(
+            trace_link
+        ):
+            return True
+    return False
 
 
 def _check_invalid_input(
@@ -1294,6 +1395,8 @@ COMMAND_CONTRACTS: dict[str, dict[str, Any]] = {
         "informational": [
             "findings_path",
             "diagnostics_path",
+            "semantic_verifications_path",
+            "id_map_path",
             "blocking_count",
             "high_integrity_count",
             "provisional_high_count",
@@ -1330,20 +1433,34 @@ COMMAND_CONTRACTS: dict[str, dict[str, Any]] = {
     },
     "report": {
         "stable_core": STABLE_CORE_FIELDS,
-        "informational": ["report_path"],
+        "informational": [
+            "report_path",
+            "semantic_verifications_path",
+            "review_queue_path",
+        ],
         "exit_codes": {
             "0": "report rendered.",
-            "2": "input findings/diagnostics could not be read.",
+            "2": "input findings, diagnostics, semantic verifications, or review queue could not be read.",
             "3": "internal error.",
         },
         "next_actions_types": [],
     },
     "review": {
         "stable_core": STABLE_CORE_FIELDS,
-        "informational": ["review_path", "decision_count", "input_error"],
+        "informational": [
+            "review_path",
+            "decision_count",
+            "semantic_verifications_path",
+            "review_queue_path",
+            "input_error",
+        ],
         "exit_codes": {
             "0": "draft final review record written.",
-            "2": "findings input could not be read, overwritten, or converted to review keys.",
+            "2": (
+                "findings, semantic verifications, review queue, or generated "
+                "review input could not be read, validated, overwritten, or "
+                "converted to review keys."
+            ),
             "3": "internal error.",
         },
         "next_actions_types": [],
@@ -1422,6 +1539,11 @@ def _cmd_report(args: argparse.Namespace) -> CommandResult:
     try:
         findings_doc = json.loads(Path(args.findings).read_text(encoding="utf-8"))
         diagnostics_doc = json.loads(Path(args.diagnostics).read_text(encoding="utf-8"))
+        semantic_doc = _load_optional_validated(
+            args.semantic_verifications,
+            "semantic_verifications",
+        )
+        review_queue_doc = _load_optional_validated(args.review_queue, "review_queue")
     except (OSError, json.JSONDecodeError) as exc:
         sys.stderr.write(f"[assessment-harness] cannot read inputs: {exc}\n")
         envelope = _build_envelope(
@@ -1431,18 +1553,40 @@ def _cmd_report(args: argparse.Namespace) -> CommandResult:
             next_actions=[{"type": "fix_input", "message": str(exc)}],
         )
         return CommandResult(envelope=envelope, exit_code=2)
+    except HarnessInputError as exc:
+        sys.stderr.write(f"[assessment-harness] {exc}\n")
+        for err in exc.errors:
+            sys.stderr.write(f"  - {err}\n")
+        envelope = _build_envelope(
+            status="invalid_input",
+            exit_code=2,
+            command="report",
+            next_actions=[{"type": "fix_input", "message": str(exc)}],
+        )
+        return CommandResult(envelope=envelope, exit_code=2)
 
-    text = render_markdown(findings_doc, diagnostics_doc)
+    text = render_markdown(
+        findings_doc,
+        diagnostics_doc,
+        semantic_verifications_doc=semantic_doc,
+        review_queue_doc=review_queue_doc,
+    )
     out_path = Path(args.out)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(text, encoding="utf-8")
 
+    informational: dict[str, Any] = {}
+    if args.semantic_verifications:
+        informational["semantic_verifications_path"] = str(args.semantic_verifications)
+    if args.review_queue:
+        informational["review_queue_path"] = str(args.review_queue)
     envelope = _build_envelope(
         status="success",
         exit_code=0,
         command="report",
         next_actions=[],
         report_path=str(out_path),
+        **informational,
     )
     return CommandResult(envelope=envelope, exit_code=0)
 
@@ -1511,6 +1655,11 @@ def _cmd_review(args: argparse.Namespace) -> CommandResult:
                 "provisional_findings"
             ),
         )
+    try:
+        _load_optional_validated(args.semantic_verifications, "semantic_verifications")
+        _load_optional_validated(args.review_queue, "review_queue")
+    except HarnessInputError as exc:
+        return _review_invalid_input(args, str(exc), exc.errors)
 
     decisions: list[dict[str, Any]] = []
     try:
@@ -1575,6 +1724,13 @@ def _cmd_review(args: argparse.Namespace) -> CommandResult:
         yaml.safe_dump(review_doc, sort_keys=False),
         encoding="utf-8",
     )
+    informational: dict[str, Any] = {}
+    if args.semantic_verifications:
+        informational["semantic_verifications_path"] = str(
+            Path(args.semantic_verifications).resolve()
+        )
+    if args.review_queue:
+        informational["review_queue_path"] = str(Path(args.review_queue).resolve())
     envelope = _build_envelope(
         status="success",
         exit_code=0,
@@ -1582,6 +1738,7 @@ def _cmd_review(args: argparse.Namespace) -> CommandResult:
         next_actions=[],
         review_path=str(review_path),
         decision_count=len(decisions),
+        **informational,
     )
     return CommandResult(envelope=envelope, exit_code=0)
 
@@ -1951,6 +2108,8 @@ def _build_parser() -> argparse.ArgumentParser:
         ),
     )
     p_check.add_argument("--policy", default=None)
+    p_check.add_argument("--semantic-verifications", default=None)
+    p_check.add_argument("--id-map", default=None)
     p_check.add_argument("--out", required=True, help="findings.json output path")
     p_check.add_argument(
         "--diagnostics-out",
@@ -2056,6 +2215,8 @@ def _build_parser() -> argparse.ArgumentParser:
     _add_output_arg(p_report, root=False)
     p_report.add_argument("--findings", required=True)
     p_report.add_argument("--diagnostics", required=True)
+    p_report.add_argument("--semantic-verifications", default=None)
+    p_report.add_argument("--review-queue", default=None)
     p_report.add_argument("--out", required=True)
 
     p_review = sub.add_parser(

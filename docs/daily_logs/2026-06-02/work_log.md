@@ -137,3 +137,158 @@
 - `python3 -m pytest tests/test_cli_output_contract.py tests/test_compacting.py tests/test_models.py -q` → 98 passed.
 - `python3 -m pytest -q` → full suite passed.
 - `python3 -m pytest --collect-only -q` → 228 tests collected: agent-runner 27, CLI 69, compacting 7, fixtures 8, models 22, rules 95.
+
+## Phase 2 Initial Semantic-Verification Consumption
+
+### Goals
+
+- Wire the new `semantic_verifications.yaml` artifact into downstream commands without rewriting compacted trace links.
+- Keep final authority with human review/gate: verifier proposals may affect provisional Rule 1 evidence, but do not create final coverage.
+
+### Completed work
+
+- Added `check --semantic-verifications`.
+  - Key change: valid semantic verification proposals are applied to an in-memory copy of `trace_links` as effective `semantic_status` for Rule 1 evidence only.
+  - Effect: `findings.json` can show `agent_supported` / `agent_uncertain` in Rule 1 evidence while the input `trace_links.yaml` remains unchanged.
+- Added optional semantic/review queue consumption to `report`.
+  - Key change: `report --semantic-verifications ... --review-queue ...` schema-validates those artifacts and renders separate "Semantic Verifications" / "Review Queue" sections.
+  - Effect: human-facing reports can include verifier proposals and queued review work in the same document.
+- Strengthened `review` optional input handling.
+  - Key change: `review --semantic-verifications ... --review-queue ...` now validates those artifacts before writing `review.yaml`.
+  - Effect: final-review drafts cannot silently record malformed semantic/review queue inputs.
+- Updated CLI schema self-discovery for `check`, `report`, and `review`.
+- Added CLI regressions covering semantic proposal application, unrelated proposal suppression, report rendering/invalid input, and review validation/path recording.
+
+### Issues found
+
+- Problem: `check` previously accepted no `--semantic-verifications` argument even though the plan flow already included it.
+  Cause: the mock `verify` producer landed first; downstream consumption had remained pending.
+  Resolution: added the argument and in-memory effective status application.
+  Outcome: the plan-canonical `verify -> check` path is now connected at the artifact level.
+- Problem: `report` and `review` could not validate or render/record semantic verification and unified queue artifacts.
+  Cause: earlier implementations were Phase 0 finding/diagnostic only, while optional arguments existed only on `review` as path metadata.
+  Resolution: added schema validation and report rendering for those optional artifacts.
+  Outcome: downstream commands fail loud on malformed semantic/review queue inputs.
+
+### Decisions
+
+- **No trace rewrite:** semantic proposals are applied only to an in-memory copy for Rule 1 evidence. The compacted trace link remains unchanged, preserving the plan's "proposal, not rewrite" boundary.
+- **Rule scope:** Rule 2, Rule 3, and lint family remain structural and continue to use the original trace document rather than effective semantic status.
+
+### Next steps
+
+1. Implement final-review handling for review_queue entries beyond finding-level hold drafts.
+2. Add real SDK verifier runner support when a runnable sample assignment and credential path are ready.
+3. Recompute publication-facing evaluation tables after the semantic-consumption path is stable.
+
+### Verification
+
+- `python3 -m pytest tests/test_cli_output_contract.py::test_check_applies_semantic_verification_proposals_without_rewriting_trace_links tests/test_cli_output_contract.py::test_check_token_sequence_links_not_changed_by_unrelated_semantic_verification tests/test_cli_output_contract.py::test_report_command_includes_semantic_verifications_and_review_queue tests/test_cli_output_contract.py::test_report_command_rejects_invalid_semantic_verifications tests/test_cli_output_contract.py::test_review_command_validates_and_records_semantic_review_inputs tests/test_cli_output_contract.py::test_review_command_rejects_invalid_review_queue_input tests/test_cli_output_contract.py::test_schema_command_returns_check_contract tests/test_cli_output_contract.py::test_schema_command_returns_report_contract tests/test_cli_output_contract.py::test_schema_command_returns_review_contract -q` → 9 passed.
+- `python3 -m py_compile src/assessment_harness/cli.py src/assessment_harness/report.py`
+- `python3 -m pytest tests/test_cli_output_contract.py tests/test_models.py -q` → 98 passed.
+- `python3 -m pytest -q` → full suite passed.
+- `python3 -m pytest --collect-only -q` → 235 tests collected: agent-runner 27, CLI 76, compacting 7, fixtures 8, models 22, rules 95.
+
+## External Verification Follow-up: Semantic Consumption F1'/F2' Closure
+
+### Goals
+
+- Close the check-side trace-link identity asymmetry found after the initial semantic-consumption slice.
+- Guard the boundary that agent proposals must not downgrade human-finalized semantic statuses.
+
+### Completed work
+
+- Added `check --id-map`.
+  - Key change: when `id_map.yaml` is provided, `check` resolves trace-link IDs with the same variant/run-ref lineage resolver used by `verify`.
+  - Effect: semantic proposals remain attached to the canonical trace link even if compacted `trace_links.yaml` order changes.
+- Updated semantic proposal application.
+  - Key change: agent proposals are skipped for `human_accepted` and `human_overridden` trace links.
+  - Effect: post-human-review semantic statuses cannot be downgraded by later or accidentally replayed verifier proposals.
+- Added CLI regressions.
+  - `test_check_uses_id_map_for_semantic_verification_when_trace_order_changes` locks the lineage join by compacting, reordering trace links, verifying, then checking with `--id-map`.
+  - `test_check_semantic_verification_does_not_downgrade_human_final_status` locks the human-finalized status guard.
+- Updated `README.md`, `HANDOFF.md`, and `CHANGELOG.md` for the new `--id-map` check input and preserved-human-status behavior.
+
+### Issues found
+
+- Problem: `check` initially applied semantic proposals by explicit trace-link `id` or fallback `T{index}`, while `verify` already used `id_map.yaml` lineage when available.
+  Cause: the downstream consumption slice did not expose an id-map input, so it could not reuse the lineage resolver.
+  Resolution: add optional `--id-map`, schema-validate it, expose `id_map_path` in the check envelope/schema contract, and resolve effective semantic status with the shared trace-link ID helper.
+  Outcome: the F1 identity fix is symmetric across `verify` and `check` when compacted lineage is supplied.
+- Problem: agent proposals could overwrite an existing human-finalized semantic status in the in-memory effective trace document.
+  Cause: semantic proposal application treated every matched trace link as pre-human-review.
+  Resolution: skip proposal application when the current status is `human_accepted` or `human_overridden`.
+  Outcome: semantic verifier output remains advisory and cannot demote human final decisions.
+
+### Decisions
+
+- `--id-map` is optional for backward compatibility, but plan-canonical `verify -> check` flows should pass `work/compacted/id_map.yaml` so proposal joins are lineage-based rather than order-based.
+- Human-finalized semantic statuses are authoritative over agent proposals in `check` effective-status application.
+
+### Next steps
+
+1. Implement final-review handling for review_queue entries beyond finding-level hold drafts.
+2. Add real SDK verifier runner support when a runnable sample assignment and credential path are ready.
+3. Recompute publication-facing evaluation tables after the semantic-consumption path is stable.
+
+### Verification
+
+> Superseded by the later "Semantic Consumption Low-Risk Residual Closure" verification below, which broadens the status guard and updates the final suite count to 241.
+
+- `python3 -m pytest tests/test_cli_output_contract.py::test_check_uses_id_map_for_semantic_verification_when_trace_order_changes tests/test_cli_output_contract.py::test_check_semantic_verification_does_not_downgrade_human_final_status tests/test_cli_output_contract.py::test_schema_command_returns_check_contract -q` → 3 passed.
+- `python3 -m py_compile src/assessment_harness/cli.py`
+- `python3 -m pytest tests/test_cli_output_contract.py tests/test_models.py -q` → related suite passed.
+- `python3 -m py_compile src/assessment_harness/cli.py src/assessment_harness/report.py`
+- `python3 -m pytest -q` → full suite passed.
+- `python3 -m pytest --collect-only -q` → 237 tests collected: agent-runner 27, CLI 78, compacting 7, fixtures 8, models 22, rules 95.
+- `PYTHONPATH=src python3 -m assessment_harness.cli schema --command check --output json` → check contract exposes `id_map_path`.
+
+## Semantic Consumption Low-Risk Residual Closure
+
+### Goals
+
+- Remove the remaining silent-misattribution path when semantic proposals are supplied to compacted lineage traces without `--id-map`.
+- Clarify and broaden the proposal overwrite guard for post-review semantic statuses.
+
+### Completed work
+
+- Made `check --semantic-verifications` fail loud when trace links contain compacting lineage variants but `--id-map` is omitted.
+  - Effect: compacted outputs can no longer silently fall back to order-based `T{index}` proposal joins.
+- Broadened the overwrite guard from final-coverage-only statuses to all post-review statuses: `human_accepted`, `human_rejected`, `human_overridden`, and `rerun_requested`.
+  - Effect: agent proposals remain pre-review advice and cannot rewrite reviewer outcomes, including non-coverage outcomes.
+- Updated plan §8, `README.md`, `HANDOFF.md`, and `CHANGELOG.md` to state that compacted lineage flows pass `--id-map` with `--semantic-verifications`.
+- Added regressions for missing `--id-map` on lineage traces and for all four post-review semantic statuses.
+
+### Issues found
+
+- Problem: `--id-map` was optional even for compacted lineage traces, leaving a silent order-based fallback if callers passed reordered trace links.
+  Cause: backward-compatible optional input did not distinguish simple non-lineage fixtures from compacted lineage output.
+  Resolution: detect trace-link `variants` and require `--id-map` when semantic proposals are supplied.
+  Outcome: lineage-bearing compacted traces either join proposals by canonical id_map lineage or fail with `invalid_input`.
+- Problem: the previous helper name and behavior protected only final-coverage statuses (`human_accepted`, `human_overridden`).
+  Cause: it reused the Rule 1 coverage boundary rather than the broader post-review lifecycle boundary.
+  Resolution: rename behavior around post-review status and protect `human_rejected` / `rerun_requested` as well.
+  Outcome: no human review outcome is overwritten by an agent proposal in check's effective trace copy.
+
+### Decisions
+
+- Simple non-lineage inputs may still use the explicit trace-link `id` / `T{index}` fallback for compatibility.
+- Compacting lineage traces are stricter: `--semantic-verifications` without `--id-map` is invalid input.
+- Post-review statuses are authoritative over verifier proposals regardless of whether they contribute Rule 1 coverage.
+
+### Next steps
+
+1. Implement final-review handling for review_queue entries beyond finding-level hold drafts.
+2. Add real SDK verifier runner support when a runnable sample assignment and credential path are ready.
+3. Recompute publication-facing evaluation tables after the semantic-consumption path is stable.
+
+### Verification
+
+- `python3 -m pytest tests/test_cli_output_contract.py::test_check_uses_id_map_for_semantic_verification_when_trace_order_changes tests/test_cli_output_contract.py::test_check_rejects_semantic_verifications_for_lineage_trace_without_id_map tests/test_cli_output_contract.py::test_check_semantic_verification_does_not_downgrade_post_review_status tests/test_cli_output_contract.py::test_schema_command_returns_check_contract -q` → 7 passed.
+- `python3 -m py_compile src/assessment_harness/cli.py`
+- `python3 -m pytest tests/test_cli_output_contract.py tests/test_models.py -q` → related suite passed.
+- `python3 -m py_compile src/assessment_harness/cli.py src/assessment_harness/report.py`
+- `python3 -m pytest -q` → full suite passed.
+- `python3 -m pytest --collect-only -q` → 241 tests collected: agent-runner 27, CLI 82, compacting 7, fixtures 8, models 22, rules 95.
+- `git diff --check`
+- `PYTHONPATH=src python3 -m assessment_harness.cli schema --command check --output json` → check contract still exposes `id_map_path`.

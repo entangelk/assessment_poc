@@ -91,7 +91,10 @@ assessment-harness gate \
 > `semantic_verifications.yaml` 및 review queue 항목으로 기록하지만,
 > compacted link를 수정하거나 의미 판정을 확정하지 않는다. `id_map.yaml`이
 > 있으면 trace link canonical ID는 파일 순서가 아니라 id_map lineage에서
-> 가져온다.
+> 가져온다. `check`는 이 제안을 원본 link에 쓰지 않고 in-memory effective
+> `semantic_status`로만 반영한다. compacted lineage가 있는 trace에
+> `--semantic-verifications`를 줄 때는 `--id-map`도 함께 전달해야 하며,
+> 그래야 `check`가 `verify`와 같은 lineage 기준으로 제안을 적용한다.
 
 ```bash
 # 복수 독립 실행
@@ -125,6 +128,7 @@ assessment-harness check \
   --trace-links work/compacted/trace_links.yaml \
   --source-manifest work/source_snapshot/manifest.yaml \
   --semantic-verifications work/semantic_verification/semantic_verifications.yaml \
+  --id-map work/compacted/id_map.yaml \
   --policy config/policy.yaml \
   --out work/findings.json \
   --diagnostics-out work/integrity_diagnostics.json
@@ -207,7 +211,7 @@ flowchart TB
 - **trace_links.evidence_quotes**: `verification_mode` 별 분기
   - `token_sequence`: strict substring 매칭 (정량 marker 검증)
   - `ai_judgement` (default): reference integrity만, 의미는 read-only verifier-agent 제안과 최종 human review로 확인
-- **semantic_verifications.yaml**: verifier-agent 복수 run의 `supported` / `rejected` / `uncertain` 제안 취합. compacted link는 수정하지 않음
+- **semantic_verifications.yaml**: verifier-agent 복수 run의 `supported` / `rejected` / `uncertain` 제안 취합. compacted link는 수정하지 않으며, `check`는 이를 Rule 1 evidence의 effective status로만 사용. compacted lineage가 있는 trace에 `--semantic-verifications`를 줄 때는 `--id-map`도 함께 전달해야 하며, trace 순서가 아니라 canonical lineage로 proposal을 조인
 - **verify mock path**: `ai_judgement` evidence는 보수적으로 `agent_uncertain` proposal을 남긴다. quote-level `source_ref`가 없으면 `source_refs: []`로 불확실성을 드러내고 review queue에도 남긴다
 - **integrity_diagnostics.json**: Rule 0 위반 기록
 - **review_queue.json**: 기존 검토 entry 5종과 lint safeguard `double_scoring_review` / `mandatory_spec_bonus_review`. Phase 0에서는 Rule L1/L6가 각각 paired queue entry를 생성하며, Rule L5는 finding/action만 생성

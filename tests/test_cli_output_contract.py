@@ -370,6 +370,399 @@ def test_check_policy_missing_rule_three_threshold_returns_invalid_input(
     assert "rules.optionality_mismatch.weight_threshold" in envelope["input_error"]
 
 
+def test_check_applies_semantic_verification_proposals_without_rewriting_trace_links(
+    fixture_dir: Path,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    semantic_path = tmp_path / "semantic_verifications.yaml"
+    semantic_path.write_text(
+        yaml.safe_dump(
+            {
+                "semantic_verifications": [
+                    {
+                        "trace_link_id": "T2",
+                        "status_proposal": "agent_supported",
+                        "rationale": "Verifier supports this link.",
+                        "source_refs": [],
+                        "support": {
+                            "total_valid_runs": 1,
+                            "found_in_runs": ["verify_001"],
+                        },
+                        "variants": [],
+                    }
+                ]
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    trace_path = fixture_dir / "clean_assignment/trace_links.yaml"
+    before = trace_path.read_text(encoding="utf-8")
+    out = tmp_path / "findings.json"
+    diag = tmp_path / "integrity_diagnostics.json"
+
+    code, envelope, _ = _run_main(
+        [
+            "--output",
+            "json",
+            "check",
+            "--spec-items",
+            str(fixture_dir / "clean_assignment/spec_items.yaml"),
+            "--rubric-items",
+            str(fixture_dir / "clean_assignment/rubric_items.yaml"),
+            "--trace-links",
+            str(trace_path),
+            "--source-manifest",
+            str(fixture_dir / "clean_assignment/source_manifest.yaml"),
+            "--semantic-verifications",
+            str(semantic_path),
+            "--policy",
+            str(fixture_dir / "clean_assignment/policy.yaml"),
+            "--out",
+            str(out),
+            "--diagnostics-out",
+            str(diag),
+        ],
+        capsys,
+    )
+
+    _assert_envelope(envelope)
+    assert code == 0
+    assert envelope["semantic_verifications_path"] == str(semantic_path)
+    findings_doc = json.loads(out.read_text(encoding="utf-8"))
+    by_rubric = {finding["rubric_id"]: finding for finding in findings_doc["findings"]}
+    assert by_rubric["R2"]["evidence"]["semantic_statuses"] == ["agent_supported"]
+    assert by_rubric["R1"]["evidence"]["semantic_statuses"] == ["pending_verification"]
+    assert trace_path.read_text(encoding="utf-8") == before
+
+
+def test_check_uses_id_map_for_semantic_verification_when_trace_order_changes(
+    fixture_dir: Path,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    fixture_path = fixture_dir / "clean_assignment"
+    candidates = _write_candidate_artifact(
+        tmp_path / "candidates.yaml",
+        _candidate_artifact_from_fixture(fixture_path, "run_1"),
+    )
+    compacted_dir = tmp_path / "compacted"
+    compact_code, compact_envelope, _ = _run_main(
+        [
+            "--output",
+            "json",
+            "compact",
+            "--candidates",
+            str(candidates),
+            "--policy",
+            str(fixture_path / "policy.yaml"),
+            "--out-dir",
+            str(compacted_dir),
+        ],
+        capsys,
+    )
+    _assert_envelope(compact_envelope)
+    assert compact_code == 0
+
+    trace_doc = yaml.safe_load(
+        (compacted_dir / "trace_links.yaml").read_text(encoding="utf-8")
+    )
+    trace_doc["trace_links"] = [
+        trace_doc["trace_links"][1],
+        trace_doc["trace_links"][0],
+        trace_doc["trace_links"][2],
+    ]
+    (compacted_dir / "trace_links.yaml").write_text(
+        yaml.safe_dump(trace_doc, sort_keys=False),
+        encoding="utf-8",
+    )
+
+    verify_dir = tmp_path / "semantic_verification"
+    verify_code, verify_envelope, _ = _run_main(
+        [
+            "--output",
+            "json",
+            "verify",
+            "--compacted-dir",
+            str(compacted_dir),
+            "--source-manifest",
+            str(fixture_path / "source_manifest.yaml"),
+            "--runner",
+            "mock_fixture",
+            "--runs",
+            "1",
+            "--policy",
+            str(fixture_path / "policy.yaml"),
+            "--out-dir",
+            str(verify_dir),
+        ],
+        capsys,
+    )
+    _assert_envelope(verify_envelope)
+    assert verify_code == 0
+
+    out = tmp_path / "findings.json"
+    diag = tmp_path / "integrity_diagnostics.json"
+    code, envelope, _ = _run_main(
+        [
+            "--output",
+            "json",
+            "check",
+            "--spec-items",
+            str(compacted_dir / "spec_items.yaml"),
+            "--rubric-items",
+            str(compacted_dir / "rubric_items.yaml"),
+            "--trace-links",
+            str(compacted_dir / "trace_links.yaml"),
+            "--source-manifest",
+            str(fixture_path / "source_manifest.yaml"),
+            "--semantic-verifications",
+            str(verify_dir / "semantic_verifications.yaml"),
+            "--id-map",
+            str(compacted_dir / "id_map.yaml"),
+            "--policy",
+            str(fixture_path / "policy.yaml"),
+            "--out",
+            str(out),
+            "--diagnostics-out",
+            str(diag),
+        ],
+        capsys,
+    )
+
+    _assert_envelope(envelope)
+    assert code == 0
+    assert envelope["id_map_path"] == str(compacted_dir / "id_map.yaml")
+    findings_doc = json.loads(out.read_text(encoding="utf-8"))
+    by_rubric = {finding["rubric_id"]: finding for finding in findings_doc["findings"]}
+    assert by_rubric["R2"]["evidence"]["semantic_statuses"] == ["agent_uncertain"]
+    assert by_rubric["R1"]["evidence"]["semantic_statuses"] == ["pending_verification"]
+
+
+def test_check_rejects_semantic_verifications_for_lineage_trace_without_id_map(
+    fixture_dir: Path,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    fixture_path = fixture_dir / "clean_assignment"
+    candidates = _write_candidate_artifact(
+        tmp_path / "candidates.yaml",
+        _candidate_artifact_from_fixture(fixture_path, "run_1"),
+    )
+    compacted_dir = tmp_path / "compacted"
+    compact_code, compact_envelope, _ = _run_main(
+        [
+            "--output",
+            "json",
+            "compact",
+            "--candidates",
+            str(candidates),
+            "--policy",
+            str(fixture_path / "policy.yaml"),
+            "--out-dir",
+            str(compacted_dir),
+        ],
+        capsys,
+    )
+    _assert_envelope(compact_envelope)
+    assert compact_code == 0
+    semantic_path = tmp_path / "semantic_verifications.yaml"
+    semantic_path.write_text(
+        yaml.safe_dump(
+            {
+                "semantic_verifications": [
+                    {
+                        "trace_link_id": "T2",
+                        "status_proposal": "agent_supported",
+                        "rationale": "Verifier supports this link.",
+                        "source_refs": [],
+                        "support": {
+                            "total_valid_runs": 1,
+                            "found_in_runs": ["verify_001"],
+                        },
+                        "variants": [],
+                    }
+                ]
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    out = tmp_path / "findings.json"
+    diag = tmp_path / "integrity_diagnostics.json"
+
+    code, envelope, _ = _run_main(
+        [
+            "--output",
+            "json",
+            "check",
+            "--spec-items",
+            str(compacted_dir / "spec_items.yaml"),
+            "--rubric-items",
+            str(compacted_dir / "rubric_items.yaml"),
+            "--trace-links",
+            str(compacted_dir / "trace_links.yaml"),
+            "--source-manifest",
+            str(fixture_path / "source_manifest.yaml"),
+            "--semantic-verifications",
+            str(semantic_path),
+            "--policy",
+            str(fixture_path / "policy.yaml"),
+            "--out",
+            str(out),
+            "--diagnostics-out",
+            str(diag),
+        ],
+        capsys,
+    )
+
+    _assert_envelope(envelope)
+    assert code == 2
+    assert envelope["status"] == "invalid_input"
+    assert envelope["next_actions"][0]["type"] == "fix_input"
+    assert "requires --id-map" in envelope["input_error"]
+
+
+@pytest.mark.parametrize(
+    "semantic_status",
+    ["human_accepted", "human_rejected", "human_overridden", "rerun_requested"],
+)
+def test_check_semantic_verification_does_not_downgrade_post_review_status(
+    fixture_dir: Path,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    semantic_status: str,
+) -> None:
+    trace_path = tmp_path / "trace_links.yaml"
+    trace_doc = yaml.safe_load(
+        (fixture_dir / "clean_assignment/trace_links.yaml").read_text(encoding="utf-8")
+    )
+    trace_doc["trace_links"][1]["semantic_status"] = semantic_status
+    trace_path.write_text(yaml.safe_dump(trace_doc, sort_keys=False), encoding="utf-8")
+    semantic_path = tmp_path / "semantic_verifications.yaml"
+    semantic_path.write_text(
+        yaml.safe_dump(
+            {
+                "semantic_verifications": [
+                    {
+                        "trace_link_id": "T2",
+                        "status_proposal": "agent_rejected",
+                        "rationale": "Verifier rejects this link.",
+                        "source_refs": [],
+                        "support": {
+                            "total_valid_runs": 1,
+                            "found_in_runs": ["verify_001"],
+                        },
+                        "variants": [],
+                    }
+                ]
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    out = tmp_path / "findings.json"
+    diag = tmp_path / "integrity_diagnostics.json"
+
+    code, envelope, _ = _run_main(
+        [
+            "--output",
+            "json",
+            "check",
+            "--spec-items",
+            str(fixture_dir / "clean_assignment/spec_items.yaml"),
+            "--rubric-items",
+            str(fixture_dir / "clean_assignment/rubric_items.yaml"),
+            "--trace-links",
+            str(trace_path),
+            "--source-manifest",
+            str(fixture_dir / "clean_assignment/source_manifest.yaml"),
+            "--semantic-verifications",
+            str(semantic_path),
+            "--policy",
+            str(fixture_dir / "clean_assignment/policy.yaml"),
+            "--out",
+            str(out),
+            "--diagnostics-out",
+            str(diag),
+        ],
+        capsys,
+    )
+
+    _assert_envelope(envelope)
+    assert code == 0
+    findings_doc = json.loads(out.read_text(encoding="utf-8"))
+    by_rubric = {finding["rubric_id"]: finding for finding in findings_doc["findings"]}
+    if semantic_status in {"human_accepted", "human_overridden"}:
+        assert "R2" not in by_rubric
+    else:
+        assert by_rubric["R2"]["evidence"]["semantic_statuses"] == [semantic_status]
+    assert by_rubric["R1"]["evidence"]["semantic_statuses"] == ["pending_verification"]
+
+
+def test_check_token_sequence_links_not_changed_by_unrelated_semantic_verification(
+    fixture_dir: Path,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    semantic_path = tmp_path / "semantic_verifications.yaml"
+    semantic_path.write_text(
+        yaml.safe_dump(
+            {
+                "semantic_verifications": [
+                    {
+                        "trace_link_id": "T_NOT_PRESENT",
+                        "status_proposal": "agent_supported",
+                        "rationale": "Unrelated proposal.",
+                        "source_refs": [],
+                        "support": {
+                            "total_valid_runs": 1,
+                            "found_in_runs": ["verify_001"],
+                        },
+                        "variants": [],
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    out = tmp_path / "findings.json"
+    diag = tmp_path / "integrity_diagnostics.json"
+
+    code, envelope, _ = _run_main(
+        [
+            "--output",
+            "json",
+            "check",
+            "--spec-items",
+            str(fixture_dir / "clean_assignment/spec_items.yaml"),
+            "--rubric-items",
+            str(fixture_dir / "clean_assignment/rubric_items.yaml"),
+            "--trace-links",
+            str(fixture_dir / "clean_assignment/trace_links.yaml"),
+            "--source-manifest",
+            str(fixture_dir / "clean_assignment/source_manifest.yaml"),
+            "--semantic-verifications",
+            str(semantic_path),
+            "--policy",
+            str(fixture_dir / "clean_assignment/policy.yaml"),
+            "--out",
+            str(out),
+            "--diagnostics-out",
+            str(diag),
+        ],
+        capsys,
+    )
+
+    _assert_envelope(envelope)
+    assert code == 0
+    findings_doc = json.loads(out.read_text(encoding="utf-8"))
+    by_rubric = {finding["rubric_id"]: finding for finding in findings_doc["findings"]}
+    assert by_rubric["R1"]["evidence"]["semantic_statuses"] == ["pending_verification"]
+    assert by_rubric["R2"]["evidence"]["semantic_statuses"] == ["pending_verification"]
+
+
 def test_schema_command_returns_check_contract(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -415,6 +808,8 @@ def test_schema_command_returns_check_contract(
     expected_informational = {
         "findings_path",
         "diagnostics_path",
+        "semantic_verifications_path",
+        "id_map_path",
         "blocking_count",
         "high_integrity_count",
         "provisional_high_count",
@@ -524,6 +919,23 @@ def test_schema_command_returns_gate_contract(
     assert "blocking_findings" in contract["informational"]
 
 
+def test_schema_command_returns_report_contract(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    code, envelope, _ = _run_main(
+        ["--output", "json", "schema", "--command", "report"], capsys
+    )
+    _assert_envelope(envelope)
+    assert code == 0
+    contract = envelope["contract"]
+    assert contract["command"] == "report"
+    assert set(contract["informational"]) == {
+        "report_path",
+        "semantic_verifications_path",
+        "review_queue_path",
+    }
+
+
 def test_schema_command_returns_review_contract(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -536,9 +948,13 @@ def test_schema_command_returns_review_contract(
     assert contract["command"] == "review"
     assert contract["stable_core"] == STABLE_CORE_FIELDS
     assert contract["exit_codes"]["0"] == "draft final review record written."
+    assert "semantic verifications" in contract["exit_codes"]["2"]
+    assert "review queue" in contract["exit_codes"]["2"]
     assert set(contract["informational"]) == {
         "review_path",
         "decision_count",
+        "semantic_verifications_path",
+        "review_queue_path",
         "input_error",
     }
 
@@ -775,6 +1191,114 @@ def test_review_command_writes_hold_draft_with_minimal_finding_keys(
     assert gate_code == 0
     assert gate_envelope["status"] == "pending_review"
     assert gate_envelope["pending_decision_count"] == 2
+
+
+def test_review_command_validates_and_records_semantic_review_inputs(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    findings_path = tmp_path / "findings.json"
+    semantic_path = tmp_path / "semantic_verifications.yaml"
+    queue_path = tmp_path / "review_queue.json"
+    _write_findings(findings_path, [])
+    semantic_path.write_text(
+        yaml.safe_dump(
+            {
+                "semantic_verifications": [
+                    {
+                        "trace_link_id": "T2",
+                        "status_proposal": "agent_uncertain",
+                        "rationale": "Needs review.",
+                        "source_refs": [],
+                        "support": {
+                            "total_valid_runs": 1,
+                            "found_in_runs": ["verify_001"],
+                        },
+                        "variants": [],
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    queue_path.write_text(
+        json.dumps(
+            {
+                "review_queue": [
+                    {
+                        "entry_id": "ai_judgement_pending_T2_0",
+                        "type": "ai_judgement_pending",
+                        "target": {"trace_link_id": "T2"},
+                        "reason": "verification_mode=ai_judgement; semantic disclosure check required.",
+                        "related_runs": ["run_1"],
+                        "status": "open",
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    code, envelope, _ = _run_main(
+        [
+            "--output",
+            "json",
+            "review",
+            "--findings",
+            str(findings_path),
+            "--semantic-verifications",
+            str(semantic_path),
+            "--review-queue",
+            str(queue_path),
+            "--out-dir",
+            str(tmp_path / "final_review"),
+            "--reviewer",
+            "tester",
+        ],
+        capsys,
+    )
+
+    _assert_envelope(envelope)
+    assert code == 0
+    assert envelope["semantic_verifications_path"] == str(semantic_path.resolve())
+    assert envelope["review_queue_path"] == str(queue_path.resolve())
+    review_doc = yaml.safe_load(Path(envelope["review_path"]).read_text(encoding="utf-8"))
+    assert review_doc["inputs"]["semantic_verifications_path"] == str(
+        semantic_path.resolve()
+    )
+    assert review_doc["inputs"]["review_queue_path"] == str(queue_path.resolve())
+
+
+def test_review_command_rejects_invalid_review_queue_input(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    findings_path = tmp_path / "findings.json"
+    queue_path = tmp_path / "bad_review_queue.json"
+    _write_findings(findings_path, [])
+    queue_path.write_text(json.dumps({"review_queue": [{}]}), encoding="utf-8")
+
+    code, envelope, _ = _run_main(
+        [
+            "--output",
+            "json",
+            "review",
+            "--findings",
+            str(findings_path),
+            "--review-queue",
+            str(queue_path),
+            "--out-dir",
+            str(tmp_path / "final_review"),
+            "--reviewer",
+            "tester",
+        ],
+        capsys,
+    )
+
+    _assert_envelope(envelope)
+    assert code == 2
+    assert envelope["status"] == "invalid_input"
+    assert "review_queue" in envelope["input_error"]
 
 
 def test_review_command_empty_findings_draft_gates_success(
@@ -1520,6 +2044,147 @@ def test_report_command_writes_markdown(
     text = report_path.read_text(encoding="utf-8")
     assert "Assessment Harness Report" in text
     assert "Integrity Diagnostics" in text
+
+
+def test_report_command_includes_semantic_verifications_and_review_queue(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    findings_path = tmp_path / "findings.json"
+    diagnostics_path = tmp_path / "diagnostics.json"
+    semantic_path = tmp_path / "semantic_verifications.yaml"
+    queue_path = tmp_path / "review_queue.json"
+    _write_findings(findings_path, [])
+    diagnostics_path.write_text(
+        json.dumps(
+            {
+                "diagnostics": [],
+                "summary": {
+                    "total": 0,
+                    "high": 0,
+                    "medium": 0,
+                    "low": 0,
+                    "informational": 0,
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    semantic_path.write_text(
+        yaml.safe_dump(
+            {
+                "semantic_verifications": [
+                    {
+                        "trace_link_id": "T2",
+                        "status_proposal": "agent_uncertain",
+                        "rationale": "Needs review.",
+                        "source_refs": [],
+                        "support": {
+                            "total_valid_runs": 1,
+                            "found_in_runs": ["verify_001"],
+                        },
+                        "variants": [],
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    queue_path.write_text(
+        json.dumps(
+            {
+                "review_queue": [
+                    {
+                        "entry_id": "ai_judgement_pending_T2_0",
+                        "type": "ai_judgement_pending",
+                        "target": {"trace_link_id": "T2"},
+                        "reason": "verification_mode=ai_judgement; semantic disclosure check required.",
+                        "related_runs": ["run_1"],
+                        "status": "open",
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    report_path = tmp_path / "report.md"
+
+    code, envelope, _ = _run_main(
+        [
+            "--output",
+            "json",
+            "report",
+            "--findings",
+            str(findings_path),
+            "--diagnostics",
+            str(diagnostics_path),
+            "--semantic-verifications",
+            str(semantic_path),
+            "--review-queue",
+            str(queue_path),
+            "--out",
+            str(report_path),
+        ],
+        capsys,
+    )
+
+    _assert_envelope(envelope)
+    assert code == 0
+    assert envelope["semantic_verifications_path"] == str(semantic_path)
+    assert envelope["review_queue_path"] == str(queue_path)
+    text = report_path.read_text(encoding="utf-8")
+    assert "Semantic Verifications" in text
+    assert "T2" in text
+    assert "Review Queue" in text
+    assert "ai_judgement_pending" in text
+
+
+def test_report_command_rejects_invalid_semantic_verifications(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    findings_path = tmp_path / "findings.json"
+    diagnostics_path = tmp_path / "diagnostics.json"
+    semantic_path = tmp_path / "bad_semantic.yaml"
+    _write_findings(findings_path, [])
+    diagnostics_path.write_text(
+        json.dumps(
+            {
+                "diagnostics": [],
+                "summary": {
+                    "total": 0,
+                    "high": 0,
+                    "medium": 0,
+                    "low": 0,
+                    "informational": 0,
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    semantic_path.write_text(yaml.safe_dump({"semantic_verifications": [{}]}), encoding="utf-8")
+
+    code, envelope, _ = _run_main(
+        [
+            "--output",
+            "json",
+            "report",
+            "--findings",
+            str(findings_path),
+            "--diagnostics",
+            str(diagnostics_path),
+            "--semantic-verifications",
+            str(semantic_path),
+            "--out",
+            str(tmp_path / "report.md"),
+        ],
+        capsys,
+    )
+
+    _assert_envelope(envelope)
+    assert code == 2
+    assert envelope["status"] == "invalid_input"
+    assert "semantic_verifications" in envelope["next_actions"][0]["message"]
 
 
 def test_schema_documented_form_with_trailing_output(
