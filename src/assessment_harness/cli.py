@@ -6,13 +6,15 @@ Subcommands implemented in Phase 0:
                 emit JSON findings + integrity diagnostics.
 - ``compact`` : compact validated candidate runs into canonical YAML artifacts.
 - ``extract`` : run fixture-backed candidate extraction into isolated run dirs.
+- ``verify``  : create read-only semantic verification proposals for compacted
+                trace links.
 - ``schema``  : self-discovery for the stable contract; lets caller agents
                 read the current `cli_output` shape without docs.
 - ``report``  : render findings + diagnostics into a Markdown report.
 - ``review``  : write a safe final-review draft with hold decisions.
 - ``gate``    : consume final review and emit the external verdict.
 
-Subcommand ``verify`` is later-phase scope.
+Real SDK runners for ``extract`` / ``verify`` are later-phase scope.
 """
 
 from __future__ import annotations
@@ -73,7 +75,13 @@ def _emit(envelope: dict[str, Any], *, output: str) -> None:
     # Default human-readable summary.
     sys.stdout.write(f"status: {envelope.get('status')}\n")
     sys.stdout.write(f"exit_code: {envelope.get('exit_code')}\n")
-    for key in ("findings_path", "diagnostics_path", "report_path", "blocking_count"):
+    for key in (
+        "findings_path",
+        "diagnostics_path",
+        "semantic_verifications_path",
+        "report_path",
+        "blocking_count",
+    ):
         if key in envelope:
             sys.stdout.write(f"{key}: {envelope[key]}\n")
     actions = envelope.get("next_actions") or []
@@ -926,6 +934,296 @@ def _valid_candidate_run_count(candidate_runs: list[dict[str, Any]]) -> int:
 
 
 # ---------------------------------------------------------------------------
+# verify
+# ---------------------------------------------------------------------------
+
+
+def _cmd_verify(args: argparse.Namespace) -> CommandResult:
+    try:
+        run_count = _extract_run_count(args.runs)
+        compacted_dir = Path(args.compacted_dir)
+        load_validated(compacted_dir / "spec_items.yaml", "spec_items")
+        load_validated(compacted_dir / "rubric_items.yaml", "rubric_items")
+        trace_doc = load_validated(compacted_dir / "trace_links.yaml", "trace_links")
+        id_map_doc = _load_verify_id_map(compacted_dir)
+        load_source_snapshot(Path(args.source_manifest))
+        load_policy(Path(args.policy))
+        review_queue = _load_review_queue(
+            Path(args.review_queue_in) if args.review_queue_in else None
+        )
+        _validate_verify_runner(args.runner)
+    except HarnessInputError as exc:
+        return _verify_invalid_input(args, str(exc), exc.errors)
+
+    try:
+        trace_link_ids = _resolve_verify_trace_link_ids(trace_doc, id_map_doc)
+    except HarnessInputError as exc:
+        return _verify_invalid_input(args, str(exc), exc.errors)
+
+    semantic_doc = _mock_semantic_verifications(trace_doc, trace_link_ids, run_count)
+    semantic_errors = validate("semantic_verifications", semantic_doc)
+    if semantic_errors:
+        return _verify_invalid_input(
+            args,
+            "generated semantic verifications failed schema validation",
+            semantic_errors,
+        )
+
+    pending_entries = _ai_judgement_pending_entries(trace_doc, trace_link_ids)
+    _append_review_queue_entries(review_queue, pending_entries)
+    review_queue["generated_at"] = _now_iso()
+    review_queue_errors = validate("review_queue", review_queue)
+    if review_queue_errors:
+        return _verify_invalid_input(
+            args,
+            "generated review queue failed schema validation",
+            review_queue_errors,
+        )
+
+    out_dir = Path(args.out_dir)
+    semantic_path = out_dir / "semantic_verifications.yaml"
+    review_queue_path = (
+        Path(args.review_queue_out)
+        if args.review_queue_out
+        else out_dir / "review_queue.json"
+    )
+    _write_yaml(semantic_path, semantic_doc)
+    _write_json(review_queue_path, review_queue)
+
+    envelope = _build_envelope(
+        status="success",
+        exit_code=0,
+        command="verify",
+        next_actions=[],
+        compacted_dir=str(compacted_dir),
+        semantic_verifications_path=str(semantic_path),
+        semantic_verification_count=len(semantic_doc["semantic_verifications"]),
+        review_queue_path=str(review_queue_path),
+        review_queue_count=len(review_queue["review_queue"]),
+        run_count=run_count,
+        runner=args.runner,
+        source_manifest_path=str(args.source_manifest),
+    )
+    return CommandResult(envelope=envelope, exit_code=0)
+
+
+def _validate_verify_runner(runner: str) -> None:
+    if runner != "mock_fixture":
+        raise HarnessInputError(
+            "only --runner mock_fixture is implemented for verify; "
+            "real SDK verifier runners are deferred"
+        )
+
+
+def _load_verify_id_map(compacted_dir: Path) -> dict[str, Any] | None:
+    id_map_path = compacted_dir / "id_map.yaml"
+    if not id_map_path.exists():
+        return None
+    return load_validated(id_map_path, "id_map")
+
+
+def _mock_semantic_verifications(
+    trace_doc: Mapping[str, Any],
+    trace_link_ids: Sequence[str],
+    run_count: int,
+) -> dict[str, Any]:
+    verify_run_ids = [f"verify_{index:03d}" for index in range(1, run_count + 1)]
+    proposals: list[dict[str, Any]] = []
+    for trace_index, trace_link in enumerate(trace_doc.get("trace_links", [])):
+        if not isinstance(trace_link, Mapping):
+            continue
+        if not _has_ai_judgement_evidence(trace_link):
+            continue
+        source_refs = _ai_judgement_source_refs(trace_link)
+        proposals.append(
+            {
+                "trace_link_id": trace_link_ids[trace_index],
+                "status_proposal": "agent_uncertain",
+                "rationale": _mock_semantic_rationale(source_refs),
+                "source_refs": source_refs,
+                "support": {
+                    "total_valid_runs": run_count,
+                    "found_in_runs": verify_run_ids,
+                },
+                "variants": [],
+            }
+        )
+    return {"semantic_verifications": proposals}
+
+
+def _has_ai_judgement_evidence(trace_link: Mapping[str, Any]) -> bool:
+    for quote in trace_link.get("evidence_quotes", []):
+        if isinstance(quote, Mapping) and quote.get("verification_mode") == "ai_judgement":
+            return True
+    return False
+
+
+def _mock_semantic_rationale(source_refs: Sequence[Mapping[str, Any]]) -> str:
+    if source_refs:
+        return (
+            "Mock verifier records ai_judgement evidence for human review "
+            "without rewriting the compacted trace link."
+        )
+    return (
+        "No quote-level source_ref was available for this ai_judgement evidence; "
+        "mock verifier leaves the link agent_uncertain for human review."
+    )
+
+
+def _ai_judgement_source_refs(trace_link: Mapping[str, Any]) -> list[dict[str, Any]]:
+    refs: list[dict[str, Any]] = []
+    for quote in trace_link.get("evidence_quotes", []):
+        if not isinstance(quote, Mapping):
+            continue
+        if quote.get("verification_mode") != "ai_judgement":
+            continue
+        source_ref = quote.get("source_ref")
+        if isinstance(source_ref, Mapping):
+            ref = dict(source_ref)
+            if isinstance(quote.get("quote"), str) and "quote" not in ref:
+                ref["quote"] = quote["quote"]
+            refs.append(ref)
+    return refs
+
+
+def _ai_judgement_pending_entries(
+    trace_doc: Mapping[str, Any],
+    trace_link_ids: Sequence[str],
+) -> list[dict[str, Any]]:
+    entries: list[dict[str, Any]] = []
+    for trace_index, trace_link in enumerate(trace_doc.get("trace_links", [])):
+        if not isinstance(trace_link, Mapping):
+            continue
+        trace_link_id = trace_link_ids[trace_index]
+        related_runs = _trace_related_runs(trace_link)
+        for quote_index, quote in enumerate(trace_link.get("evidence_quotes", [])):
+            if not isinstance(quote, Mapping):
+                continue
+            if quote.get("verification_mode") != "ai_judgement":
+                continue
+            entries.append(
+                {
+                    "entry_id": f"ai_judgement_pending_{trace_link_id}_{quote_index}",
+                    "type": "ai_judgement_pending",
+                    "target": {
+                        "trace_link_id": trace_link_id,
+                        "rubric_id": trace_link.get("rubric_id"),
+                        "spec_ids": list(trace_link.get("spec_ids", [])),
+                        "evidence_quote_index": quote_index,
+                    },
+                    "reason": (
+                        "verification_mode=ai_judgement; semantic disclosure "
+                        "check required."
+                    ),
+                    "related_runs": related_runs,
+                    "status": "open",
+                }
+            )
+    return entries
+
+
+def _resolve_verify_trace_link_ids(
+    trace_doc: Mapping[str, Any],
+    id_map_doc: Mapping[str, Any] | None,
+) -> list[str]:
+    trace_links = trace_doc.get("trace_links", [])
+    if not isinstance(trace_links, list):
+        return []
+    return [
+        _trace_link_id(trace_link, index, id_map_doc)
+        for index, trace_link in enumerate(trace_links, start=1)
+        if isinstance(trace_link, Mapping)
+    ]
+
+
+def _trace_link_id(
+    trace_link: Mapping[str, Any],
+    trace_index: int,
+    id_map_doc: Mapping[str, Any] | None,
+) -> str:
+    if id_map_doc is not None:
+        id_from_map = _trace_link_id_from_id_map(trace_link, id_map_doc)
+        if id_from_map is not None:
+            return id_from_map
+        if _trace_link_has_compacting_variants(trace_link):
+            raise HarnessInputError(
+                "cannot resolve trace_link_id from id_map.yaml for trace link "
+                f"at index {trace_index}"
+            )
+    trace_id = trace_link.get("id")
+    if isinstance(trace_id, str) and trace_id:
+        return trace_id
+    return f"T{trace_index}"
+
+
+def _trace_link_id_from_id_map(
+    trace_link: Mapping[str, Any],
+    id_map_doc: Mapping[str, Any],
+) -> str | None:
+    variant_refs = _trace_variant_refs(trace_link)
+    if not variant_refs:
+        return None
+    for entry in id_map_doc.get("id_map", []):
+        if not isinstance(entry, Mapping) or entry.get("entity_type") != "trace_link":
+            continue
+        canonical_id = entry.get("canonical_id")
+        if not isinstance(canonical_id, str):
+            continue
+        for run_ref in entry.get("run_refs", []):
+            if not isinstance(run_ref, Mapping):
+                continue
+            ref = (str(run_ref.get("run_id")), str(run_ref.get("local_id")))
+            if ref in variant_refs:
+                return canonical_id
+    return None
+
+
+def _trace_variant_refs(trace_link: Mapping[str, Any]) -> set[tuple[str, str]]:
+    refs: set[tuple[str, str]] = set()
+    for variant in trace_link.get("variants", []):
+        if not isinstance(variant, Mapping):
+            continue
+        run_id = variant.get("run_id")
+        candidate_id = variant.get("candidate_id")
+        if isinstance(run_id, str) and isinstance(candidate_id, str):
+            refs.add((run_id, candidate_id))
+    return refs
+
+
+def _trace_link_has_compacting_variants(trace_link: Mapping[str, Any]) -> bool:
+    return bool(_trace_variant_refs(trace_link))
+
+
+def _trace_related_runs(trace_link: Mapping[str, Any]) -> list[str]:
+    support = trace_link.get("support")
+    if isinstance(support, Mapping) and isinstance(support.get("found_in_runs"), list):
+        return [str(run_id) for run_id in support["found_in_runs"]]
+    related: set[str] = set()
+    for source in trace_link.get("sources", []):
+        if isinstance(source, Mapping) and isinstance(source.get("run_id"), str):
+            related.add(source["run_id"])
+    return sorted(related)
+
+
+def _verify_invalid_input(
+    args: argparse.Namespace,
+    message: str,
+    details: list[str] | None = None,
+) -> CommandResult:
+    sys.stderr.write(f"[assessment-harness] {message}\n")
+    for detail in details or []:
+        sys.stderr.write(f"  - {detail}\n")
+    envelope = _build_envelope(
+        status="invalid_input",
+        exit_code=2,
+        command="verify",
+        next_actions=[{"type": "fix_input", "message": message}],
+        input_error=message,
+    )
+    return CommandResult(envelope=envelope, exit_code=2)
+
+
+# ---------------------------------------------------------------------------
 # schema
 # ---------------------------------------------------------------------------
 
@@ -967,6 +1265,26 @@ COMMAND_CONTRACTS: dict[str, dict[str, Any]] = {
         "exit_codes": {
             "0": "validated candidate runs compacted into canonical YAML artifacts.",
             "2": "candidate, policy, or review queue input is invalid.",
+            "3": "internal error.",
+        },
+        "next_actions_types": ["fix_input"],
+    },
+    "verify": {
+        "stable_core": STABLE_CORE_FIELDS,
+        "informational": [
+            "compacted_dir",
+            "semantic_verifications_path",
+            "semantic_verification_count",
+            "review_queue_path",
+            "review_queue_count",
+            "run_count",
+            "runner",
+            "source_manifest_path",
+            "input_error",
+        ],
+        "exit_codes": {
+            "0": "semantic verification proposals and review queue entries were written.",
+            "2": "compacted inputs, source manifest, policy, or runner is invalid.",
             "3": "internal error.",
         },
         "next_actions_types": ["fix_input"],
@@ -1702,6 +2020,28 @@ def _build_parser() -> argparse.ArgumentParser:
         help="review_queue.json output path (defaults to --out-dir/review_queue.json)",
     )
 
+    p_verify = sub.add_parser(
+        "verify",
+        help="write read-only semantic verification proposals for compacted trace links.",
+    )
+    _add_output_arg(p_verify, root=False)
+    p_verify.add_argument("--compacted-dir", required=True)
+    p_verify.add_argument("--source-manifest", required=True)
+    p_verify.add_argument("--runner", required=True)
+    p_verify.add_argument("--runs", type=int, default=3)
+    p_verify.add_argument("--policy", required=True)
+    p_verify.add_argument("--out-dir", required=True)
+    p_verify.add_argument(
+        "--review-queue-in",
+        default=None,
+        help="existing review_queue.json to preserve and append to",
+    )
+    p_verify.add_argument(
+        "--review-queue-out",
+        default=None,
+        help="review_queue.json output path (defaults to --out-dir/review_queue.json)",
+    )
+
     p_schema = sub.add_parser(
         "schema",
         help="return the stable contract for a CLI subcommand.",
@@ -1757,6 +2097,8 @@ def main(argv: list[str] | None = None) -> int:
             result = _cmd_extract(args)
         elif args.subcommand == "compact":
             result = _cmd_compact(args)
+        elif args.subcommand == "verify":
+            result = _cmd_verify(args)
         elif args.subcommand == "schema":
             result = _cmd_schema(args)
         elif args.subcommand == "report":

@@ -477,6 +477,31 @@ def test_schema_command_returns_extract_contract(
     }
 
 
+def test_schema_command_returns_verify_contract(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    code, envelope, _ = _run_main(
+        ["--output", "json", "schema", "--command", "verify"], capsys
+    )
+    _assert_envelope(envelope)
+    assert code == 0
+    contract = envelope["contract"]
+    assert contract["command"] == "verify"
+    assert contract["stable_core"] == STABLE_CORE_FIELDS
+    assert contract["next_actions_types"] == ["fix_input"]
+    assert set(contract["informational"]) == {
+        "compacted_dir",
+        "semantic_verifications_path",
+        "semantic_verification_count",
+        "review_queue_path",
+        "review_queue_count",
+        "run_count",
+        "runner",
+        "source_manifest_path",
+        "input_error",
+    }
+
+
 def test_schema_command_returns_gate_contract(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -1826,6 +1851,374 @@ def test_extract_rejects_runs_outside_plan_limit(
     assert code == 2
     assert envelope["status"] == "invalid_input"
     assert "--runs must be between 1 and 7" in envelope["input_error"]
+
+
+def test_verify_mock_fixture_writes_semantic_verifications_and_queue(
+    fixture_dir: Path,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    fixture_path = fixture_dir / "clean_assignment"
+    candidates = _write_candidate_artifact(
+        tmp_path / "candidates.yaml",
+        _candidate_artifact_from_fixture(fixture_path, "run_1"),
+    )
+    compacted_dir = tmp_path / "compacted"
+    compact_code, compact_envelope, _ = _run_main(
+        [
+            "--output",
+            "json",
+            "compact",
+            "--candidates",
+            str(candidates),
+            "--policy",
+            str(fixture_path / "policy.yaml"),
+            "--out-dir",
+            str(compacted_dir),
+        ],
+        capsys,
+    )
+    _assert_envelope(compact_envelope)
+    assert compact_code == 0
+
+    verify_dir = tmp_path / "semantic_verification"
+    code, envelope, _ = _run_main(
+        [
+            "--output",
+            "json",
+            "verify",
+            "--compacted-dir",
+            str(compacted_dir),
+            "--source-manifest",
+            str(fixture_path / "source_manifest.yaml"),
+            "--runner",
+            "mock_fixture",
+            "--runs",
+            "2",
+            "--policy",
+            str(fixture_path / "policy.yaml"),
+            "--out-dir",
+            str(verify_dir),
+        ],
+        capsys,
+    )
+
+    _assert_envelope(envelope)
+    assert code == 0
+    assert envelope["status"] == "success"
+    assert envelope["command"] == "verify"
+    assert envelope["semantic_verification_count"] == 1
+    assert envelope["review_queue_count"] == 1
+    semantic_doc = yaml.safe_load(
+        (verify_dir / "semantic_verifications.yaml").read_text(encoding="utf-8")
+    )
+    queue_doc = json.loads((verify_dir / "review_queue.json").read_text(encoding="utf-8"))
+    assert validate("semantic_verifications", semantic_doc) == []
+    assert validate("review_queue", queue_doc) == []
+    assert semantic_doc["semantic_verifications"][0]["trace_link_id"] == "T2"
+    assert semantic_doc["semantic_verifications"][0]["status_proposal"] == (
+        "agent_uncertain"
+    )
+    assert semantic_doc["semantic_verifications"][0]["support"] == {
+        "total_valid_runs": 2,
+        "found_in_runs": ["verify_001", "verify_002"],
+    }
+    assert queue_doc["review_queue"][0]["type"] == "ai_judgement_pending"
+    assert queue_doc["review_queue"][0]["target"] == {
+        "trace_link_id": "T2",
+        "rubric_id": "R2",
+        "spec_ids": ["S2"],
+        "evidence_quote_index": 0,
+    }
+    assert queue_doc["review_queue"][0]["related_runs"] == ["run_1"]
+
+
+def test_verify_uses_id_map_trace_link_canonical_id_when_trace_order_changes(
+    fixture_dir: Path,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    fixture_path = fixture_dir / "clean_assignment"
+    candidates = _write_candidate_artifact(
+        tmp_path / "candidates.yaml",
+        _candidate_artifact_from_fixture(fixture_path, "run_1"),
+    )
+    compacted_dir = tmp_path / "compacted"
+    compact_code, compact_envelope, _ = _run_main(
+        [
+            "--output",
+            "json",
+            "compact",
+            "--candidates",
+            str(candidates),
+            "--policy",
+            str(fixture_path / "policy.yaml"),
+            "--out-dir",
+            str(compacted_dir),
+        ],
+        capsys,
+    )
+    _assert_envelope(compact_envelope)
+    assert compact_code == 0
+
+    trace_doc = yaml.safe_load(
+        (compacted_dir / "trace_links.yaml").read_text(encoding="utf-8")
+    )
+    trace_doc["trace_links"] = [
+        trace_doc["trace_links"][1],
+        trace_doc["trace_links"][0],
+        trace_doc["trace_links"][2],
+    ]
+    (compacted_dir / "trace_links.yaml").write_text(
+        yaml.safe_dump(trace_doc, sort_keys=False),
+        encoding="utf-8",
+    )
+
+    verify_dir = tmp_path / "semantic_verification"
+    code, envelope, _ = _run_main(
+        [
+            "--output",
+            "json",
+            "verify",
+            "--compacted-dir",
+            str(compacted_dir),
+            "--source-manifest",
+            str(fixture_path / "source_manifest.yaml"),
+            "--runner",
+            "mock_fixture",
+            "--runs",
+            "1",
+            "--policy",
+            str(fixture_path / "policy.yaml"),
+            "--out-dir",
+            str(verify_dir),
+        ],
+        capsys,
+    )
+
+    _assert_envelope(envelope)
+    assert code == 0
+    semantic_doc = yaml.safe_load(
+        (verify_dir / "semantic_verifications.yaml").read_text(encoding="utf-8")
+    )
+    queue_doc = json.loads((verify_dir / "review_queue.json").read_text(encoding="utf-8"))
+    assert semantic_doc["semantic_verifications"][0]["trace_link_id"] == "T2"
+    assert queue_doc["review_queue"][0]["target"]["trace_link_id"] == "T2"
+
+
+def test_verify_ai_judgement_without_source_ref_still_records_uncertain_proposal(
+    fixture_dir: Path,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    compacted_dir = tmp_path / "compacted"
+    compacted_dir.mkdir()
+    for filename in ("spec_items.yaml", "rubric_items.yaml", "trace_links.yaml"):
+        (compacted_dir / filename).write_text(
+            (fixture_dir / "clean_assignment" / filename).read_text(encoding="utf-8"),
+            encoding="utf-8",
+        )
+    trace_doc = yaml.safe_load(
+        (compacted_dir / "trace_links.yaml").read_text(encoding="utf-8")
+    )
+    del trace_doc["trace_links"][1]["evidence_quotes"][0]["source_ref"]
+    (compacted_dir / "trace_links.yaml").write_text(
+        yaml.safe_dump(trace_doc, sort_keys=False),
+        encoding="utf-8",
+    )
+
+    verify_dir = tmp_path / "verify"
+    code, envelope, _ = _run_main(
+        [
+            "--output",
+            "json",
+            "verify",
+            "--compacted-dir",
+            str(compacted_dir),
+            "--source-manifest",
+            str(fixture_dir / "clean_assignment" / "source_manifest.yaml"),
+            "--runner",
+            "mock_fixture",
+            "--runs",
+            "1",
+            "--policy",
+            str(fixture_dir / "clean_assignment" / "policy.yaml"),
+            "--out-dir",
+            str(verify_dir),
+        ],
+        capsys,
+    )
+
+    _assert_envelope(envelope)
+    assert code == 0
+    assert envelope["semantic_verification_count"] == 1
+    assert envelope["review_queue_count"] == 1
+    semantic_doc = yaml.safe_load(
+        (verify_dir / "semantic_verifications.yaml").read_text(encoding="utf-8")
+    )
+    proposal = semantic_doc["semantic_verifications"][0]
+    assert proposal["status_proposal"] == "agent_uncertain"
+    assert proposal["source_refs"] == []
+    assert "No quote-level source_ref was available" in proposal["rationale"]
+
+
+def test_verify_token_sequence_only_links_do_not_create_semantic_proposals(
+    fixture_dir: Path,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    compacted_dir = tmp_path / "compacted"
+    compacted_dir.mkdir()
+    for filename in ("spec_items.yaml", "rubric_items.yaml", "trace_links.yaml"):
+        (compacted_dir / filename).write_text(
+            (fixture_dir / "clean_assignment" / filename).read_text(encoding="utf-8"),
+            encoding="utf-8",
+        )
+    trace_doc = yaml.safe_load(
+        (compacted_dir / "trace_links.yaml").read_text(encoding="utf-8")
+    )
+    for trace_link in trace_doc["trace_links"]:
+        for quote in trace_link["evidence_quotes"]:
+            quote["verification_mode"] = "token_sequence"
+    (compacted_dir / "trace_links.yaml").write_text(
+        yaml.safe_dump(trace_doc, sort_keys=False),
+        encoding="utf-8",
+    )
+
+    verify_dir = tmp_path / "verify"
+    code, envelope, _ = _run_main(
+        [
+            "--output",
+            "json",
+            "verify",
+            "--compacted-dir",
+            str(compacted_dir),
+            "--source-manifest",
+            str(fixture_dir / "clean_assignment" / "source_manifest.yaml"),
+            "--runner",
+            "mock_fixture",
+            "--runs",
+            "1",
+            "--policy",
+            str(fixture_dir / "clean_assignment" / "policy.yaml"),
+            "--out-dir",
+            str(verify_dir),
+        ],
+        capsys,
+    )
+
+    _assert_envelope(envelope)
+    assert code == 0
+    assert envelope["semantic_verification_count"] == 0
+    assert envelope["review_queue_count"] == 0
+
+
+def test_verify_preserves_existing_queue_and_does_not_duplicate_pending_entry(
+    fixture_dir: Path,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    compacted_dir = tmp_path / "compacted"
+    compacted_dir.mkdir()
+    for filename in ("spec_items.yaml", "rubric_items.yaml", "trace_links.yaml"):
+        (compacted_dir / filename).write_text(
+            (fixture_dir / "clean_assignment" / filename).read_text(encoding="utf-8"),
+            encoding="utf-8",
+        )
+    queue_in = tmp_path / "review_queue_in.json"
+    queue_in.write_text(
+        json.dumps(
+            {
+                "source": "preexisting",
+                "review_queue": [
+                    {
+                        "entry_id": "ai_judgement_pending_T2_0",
+                        "type": "ai_judgement_pending",
+                        "target": {"trace_link_id": "T2"},
+                        "reason": "already queued",
+                        "related_runs": ["manual"],
+                        "status": "open",
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    code, envelope, _ = _run_main(
+        [
+            "--output",
+            "json",
+            "verify",
+            "--compacted-dir",
+            str(compacted_dir),
+            "--source-manifest",
+            str(fixture_dir / "clean_assignment" / "source_manifest.yaml"),
+            "--runner",
+            "mock_fixture",
+            "--runs",
+            "1",
+            "--policy",
+            str(fixture_dir / "clean_assignment" / "policy.yaml"),
+            "--out-dir",
+            str(tmp_path / "verify"),
+            "--review-queue-in",
+            str(queue_in),
+        ],
+        capsys,
+    )
+
+    _assert_envelope(envelope)
+    assert code == 0
+    assert envelope["review_queue_count"] == 1
+    queue_doc = json.loads(
+        (tmp_path / "verify" / "review_queue.json").read_text(encoding="utf-8")
+    )
+    assert queue_doc["source"] == "preexisting"
+    assert [entry["entry_id"] for entry in queue_doc["review_queue"]] == [
+        "ai_judgement_pending_T2_0"
+    ]
+
+
+def test_verify_rejects_unknown_runner(
+    fixture_dir: Path,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    compacted_dir = tmp_path / "compacted"
+    compacted_dir.mkdir()
+    for filename in ("spec_items.yaml", "rubric_items.yaml", "trace_links.yaml"):
+        (compacted_dir / filename).write_text(
+            (fixture_dir / "clean_assignment" / filename).read_text(encoding="utf-8"),
+            encoding="utf-8",
+        )
+
+    code, envelope, stderr = _run_main(
+        [
+            "--output",
+            "json",
+            "verify",
+            "--compacted-dir",
+            str(compacted_dir),
+            "--source-manifest",
+            str(fixture_dir / "clean_assignment" / "source_manifest.yaml"),
+            "--runner",
+            "claude_sdk",
+            "--runs",
+            "1",
+            "--policy",
+            str(fixture_dir / "clean_assignment" / "policy.yaml"),
+            "--out-dir",
+            str(tmp_path / "verify"),
+        ],
+        capsys,
+    )
+
+    _assert_envelope(envelope)
+    assert code == 2
+    assert envelope["status"] == "invalid_input"
+    assert "real SDK verifier runners are deferred" in envelope["input_error"]
+    assert "real SDK verifier runners are deferred" in stderr
 
 
 def _candidate_artifact(

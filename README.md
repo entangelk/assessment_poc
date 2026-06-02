@@ -64,8 +64,10 @@ Rule L1/L6 lint safeguard는 Phase 0 `check`에서도 `review_queue.json`에 기
 finding이 없으면 빈 queue로 갱신되어 이전 검토 항목이 남지 않는다.
 Phase 0 `check` 출력은 lint safeguard 전용이다. Phase 2 `compact`는
 `--review-queue-in`으로 기존 queue를 보존하고 invalid run 항목을 추가할 수
-있다. `verify`의 통합 queue는 아직 미구현이므로, 그 전에는 `check`
-`--review-queue-out`을 기존 통합 queue 경로에 직접 쓰지 않는다.
+있다. Phase 2 `verify`도 `--review-queue-in`으로 기존 queue를 보존하고
+`ai_judgement_pending` 항목을 중복 없이 추가한다. `check`
+`--review-queue-out`은 여전히 lint safeguard 단독 출력이므로 기존 통합 queue
+경로에 직접 쓰지 않는다.
 
 최종 검토가 `final_review.yaml`에 기록된 뒤에는 `gate`가 외부 판정을 낸다.
 final review의 finding decision은 `type` + 생성 식별자(`rubric_id`,
@@ -80,12 +82,16 @@ assessment-harness gate \
 
 ### 3. 에이전트 실행 포함 전체 흐름 (Phase 2/3, 일부 구현)
 
-> ⚠️ 아래 전체 흐름 중 `extract` / `compact` CLI는 초기 구현되었지만,
-> `verify`와 실제 SDK runner는 아직 미구현이다. 현재 `extract`는
-> `mock_fixture` runner로 fixture를 재생해 run별 `candidates.yaml`과
-> raw/audit trace를 만들고, `compact`는 `--runs-dir` 아래 run별
-> `candidates.yaml`을 읽거나 저수준 입력으로 `--candidates` 파일 목록을
-> 받아 canonical YAML을 생성한다.
+> ⚠️ 아래 전체 흐름 중 `extract` / `compact` / `verify` CLI는 초기
+> `mock_fixture` 경로만 구현되었다. 실제 SDK runner는 아직 미구현이다. 현재
+> `extract`는 fixture를 재생해 run별 `candidates.yaml`과 raw/audit trace를
+> 만들고, `compact`는 `--runs-dir` 아래 run별 `candidates.yaml`을 읽거나
+> 저수준 입력으로 `--candidates` 파일 목록을 받아 canonical YAML을 생성한다.
+> `verify`는 compacted trace link의 `ai_judgement` evidence를 별도
+> `semantic_verifications.yaml` 및 review queue 항목으로 기록하지만,
+> compacted link를 수정하거나 의미 판정을 확정하지 않는다. `id_map.yaml`이
+> 있으면 trace link canonical ID는 파일 순서가 아니라 id_map lineage에서
+> 가져온다.
 
 ```bash
 # 복수 독립 실행
@@ -106,8 +112,8 @@ assessment-harness compact \
 # 의미 검증 agent 복수 실행 (원문/link read-only, 제안 별도 저장)
 assessment-harness verify \
   --compacted-dir work/compacted \
-  --source-manifest work/source_snapshot/manifest.yaml \
-  --runner claude_sdk \
+  --source-manifest fixtures/clean_assignment/source_manifest.yaml \
+  --runner mock_fixture \
   --runs 3 \
   --policy config/policy.yaml \
   --out-dir work/semantic_verification
@@ -179,7 +185,7 @@ flowchart TB
 
     SNAP --> RUNS
     SNAP -->|"manual / fixture inputs today"| R0
-    VERIFY -.->|"compacted + verified artifacts (when built)"| R0
+    VERIFY -.->|"compacted + verified artifacts (mock initial)"| R0
     FINDINGS --> CHECK
 
     classDef done fill:#e6ffed,stroke:#22863a,color:#111827;
@@ -202,6 +208,7 @@ flowchart TB
   - `token_sequence`: strict substring 매칭 (정량 marker 검증)
   - `ai_judgement` (default): reference integrity만, 의미는 read-only verifier-agent 제안과 최종 human review로 확인
 - **semantic_verifications.yaml**: verifier-agent 복수 run의 `supported` / `rejected` / `uncertain` 제안 취합. compacted link는 수정하지 않음
+- **verify mock path**: `ai_judgement` evidence는 보수적으로 `agent_uncertain` proposal을 남긴다. quote-level `source_ref`가 없으면 `source_refs: []`로 불확실성을 드러내고 review queue에도 남긴다
 - **integrity_diagnostics.json**: Rule 0 위반 기록
 - **review_queue.json**: 기존 검토 entry 5종과 lint safeguard `double_scoring_review` / `mandatory_spec_bonus_review`. Phase 0에서는 Rule L1/L6가 각각 paired queue entry를 생성하며, Rule L5는 finding/action만 생성
 - **findings.json**: Rule 1~3 위반 (Rule 0는 별도 diagnostic)
@@ -274,7 +281,7 @@ CLI는 `--policy config/policy.yaml` 하나로 모든 정책을 받는다.
 | Deep candidate Rule 0 검증 헬퍼 (3-way 격리) | 기반 완료 |
 | `extract` CLI 오케스트레이션 (`mock_fixture`) | 초기 구현 완료 |
 | `compact` CLI 오케스트레이션 | 초기 구현 완료 |
-| `verify` 오케스트레이션 | 미구현 |
+| `verify` 오케스트레이션 (`mock_fixture`) | 초기 구현 완료 |
 | 실제 SDK runner | 미구현 |
 | 전체 Phase 2/3 E2E 워크플로 | 미구현 |
 
