@@ -533,7 +533,12 @@ finding별 canonical `target_key`:
 finding에 위 key로 매칭한다. 매칭되지 않는 decision, 같은 finding에 대한 중복
 decision, 또는 `findings.json` 내부의 같은 canonical key 중복은 최종 판정 입력을
 신뢰할 수 없으므로 `invalid_input`/exit `2`다. 아직 decision이 없는 provisional
-finding, `hold`, `rerun_requested`는 `pending_review`/exit `0`이다.
+finding, `hold`, `rerun_requested`는 `pending_review`/exit `0`이다. `inputs`에
+`review_queue_path`가 있으면 `gate`는 `target_type: review_queue_entry` decision도
+`target_key: {entry_id}`로 매칭한다. `status: resolved`가 아닌 queue entry에
+decision이 없거나 decision action이 `hold` / `rerun_requested`이면
+`pending_review`/exit `0`이다. `accept` / `override`된 queue entry는 gate 외부
+blocking 판정을 만들지 않고 닫힌 review work item으로 취급한다.
 
 finding decision의 `accept`는 finding을 confirmed로 닫는다. 단,
 `possible_orphan_scored_rubric_item`과 `unconfirmed_trace_coverage`는 Rule 1의
@@ -550,13 +555,18 @@ Phase 0 `review` 명령은 final review record의 **draft writer**다. 최종 �
 자동으로 내리지 않는다. `review --findings <findings.json> --out-dir <dir>
 --reviewer <name>`은 `findings.json`의 각 provisional finding을 위 canonical
 `target_key`로 변환하고 `action: hold` decision을 생성한 뒤 `<dir>/review.yaml`에
-기록한다. reviewer는 이 draft를 열어 각 finding을 `accept`, `override`, `hold`,
-`rerun_requested` 중 하나로 수정한다. draft 그대로 `gate`에 전달하면 finding이
-있는 경우 `pending_review`가 정상 결과다.
+기록한다. `--review-queue <review_queue.json>`이 주어지면 `status: resolved`가
+아닌 queue entry도 `target_type: review_queue_entry`, `target_key: {entry_id}`로
+draft decision을 생성한다. `open` / `held` entry는 `hold`, `rerun_pending` entry는
+`rerun_requested`로 보존한다. reviewer는 이 draft를 열어 각 finding / queue entry를
+`accept`, `override`, `hold`, `rerun_requested` 중 하나로 수정한다. draft 그대로
+`gate`에 전달하면 미결 finding 또는 queue entry가 있는 경우 `pending_review`가
+정상 결과다.
 
 `review` draft 생성 규칙:
 
 - `target_key`는 §5.6의 finding별 canonical key만 포함한다.
+- review queue entry의 `target_key`는 `{entry_id}`만 포함한다.
 - `message`, `evidence`, rubric/spec 본문, title/description은 복사하지 않는다.
 - 알 수 없는 finding type이거나 canonical key field가 누락된 finding은
   `invalid_input`/exit `2`다.

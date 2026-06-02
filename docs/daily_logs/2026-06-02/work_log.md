@@ -292,3 +292,85 @@
 - `python3 -m pytest --collect-only -q` → 241 tests collected: agent-runner 27, CLI 82, compacting 7, fixtures 8, models 22, rules 95.
 - `git diff --check`
 - `PYTHONPATH=src python3 -m assessment_harness.cli schema --command check --output json` → check contract still exposes `id_map_path`.
+
+## Review Queue Final-Review Handling
+
+### Goals
+
+- Teach the final review draft/gate flow to handle `review_queue` work items, not only finding-level decisions.
+- Preserve the minimal-key final review contract: queue decisions should identify entries by `entry_id`, not by copying target payloads.
+
+### Completed work
+
+- Added queue decision drafting to `review --review-queue`.
+  - Key change: unresolved queue entries become `target_type: review_queue_entry` decisions with `target_key: {entry_id}`.
+  - Key change: `open` / `held` entries draft as `hold`; `rerun_pending` drafts as `rerun_requested`; `resolved` entries are skipped.
+  - Effect: final reviewers now see queue work in the same `review.yaml` draft as finding decisions.
+- Added review_queue handling to `gate`.
+  - Key change: when `inputs.review_queue_path` is present, `gate` validates the queue and matches `review_queue_entry` decisions by minimal `{entry_id}`.
+  - Key change: unresolved queue entries with no decision, `hold`, or `rerun_requested` keep the verdict at `pending_review`; accepted/overridden queue entries close without creating blocking findings.
+  - Effect: queue work is no longer silently ignored by the final verdict path.
+- Updated plan §5.6, `HANDOFF.md`, and `CHANGELOG.md`.
+- Added CLI regressions for review draft generation, resolved-entry skipping, missing queue decision pending behavior, and accepted queue decision closure.
+
+### Issues found
+
+- Problem: `review --review-queue` validated and recorded the queue path but did not draft decisions for queue entries.
+  Cause: the first semantic-consumption slice stopped at input validation/path metadata.
+  Resolution: generate `review_queue_entry` decisions for unresolved queue entries.
+  Outcome: review queue items now appear in the human-editable final review draft.
+- Problem: `gate` ignored non-finding decisions, so queue holds could not affect the final verdict.
+  Cause: initial `gate` was deliberately finding-level only.
+  Resolution: load `inputs.review_queue_path` and treat unresolved queue work as pending unless accepted/overridden.
+  Outcome: final verdicts now respect unresolved queue work without converting queue entries into blocking findings.
+
+### Decisions
+
+- Queue decision keys are minimal: `{entry_id}` only.
+- Queue `accept` / `override` closes review work but does not contribute to `confirmed_finding_count`, `dismissed_finding_count`, or `blocking_count`.
+- Queue status materialization back into `review_queue.json` remains out of scope for this slice; the final review record captures the decision.
+
+### Next steps
+
+1. Implement trace-link override/status materialization for accepted queue/trace-link decisions when that workflow is needed.
+2. Add real SDK verifier runner support when a runnable sample assignment and credential path are ready.
+3. Recompute publication-facing evaluation tables after the Phase 2 path is stable.
+
+### Verification
+
+- `python3 -m pytest tests/test_cli_output_contract.py::test_review_command_validates_and_records_semantic_review_inputs tests/test_cli_output_contract.py::test_review_command_skips_resolved_review_queue_entries tests/test_cli_output_contract.py::test_gate_missing_review_queue_entry_decision_returns_pending_review tests/test_cli_output_contract.py::test_gate_accepts_review_queue_entry_decision_as_closed -q` → 4 passed.
+- `python3 -m py_compile src/assessment_harness/cli.py`
+- `python3 -m pytest tests/test_cli_output_contract.py -q` → CLI contract suite passed.
+- `python3 -m pytest tests/test_cli_output_contract.py tests/test_models.py -q` → related suite passed.
+- `python3 -m py_compile src/assessment_harness/cli.py src/assessment_harness/report.py`
+- `python3 -m pytest -q` → full suite passed.
+- `python3 -m pytest --collect-only -q` → 244 tests collected: agent-runner 27, CLI 85, compacting 7, fixtures 8, models 22, rules 95.
+- `git diff --check`
+
+## Follow-up: close non-blocking residual from review_queue final-review verification (verifier)
+
+The independent verification (`docs/verifications/2026-06-02/review_queue_final_review_slice.md`)
+passed but flagged one low/non-blocking residual: the defensive `gate` branches for
+`review_queue_entry` decisions had no dedicated regressions (unlike their finding-decision
+counterparts). Closed it by adding four mirror tests in `tests/test_cli_output_contract.py`:
+
+- `test_gate_rejects_duplicate_review_queue_entry_ids` — duplicate `entry_id` in the queue.
+- `test_gate_rejects_review_queue_decision_matching_no_entry` — decision for an absent entry.
+- `test_gate_rejects_non_minimal_review_queue_target_key` — `target_key` with a non-identity field.
+- `test_gate_rejects_review_queue_decision_without_review_queue_path` — queue decision but no
+  `inputs.review_queue_path`.
+
+Each asserts `exit 2` / `invalid_input` **and the branch-specific message** (not just the exit
+code), so a removed guard cannot pass by falling through to an adjacent error path (e.g. the
+non-minimal and no-path cases would otherwise both surface as "matches no queue entry"). No
+production code changed — these only lock already-implemented fail-loud behavior. The
+observability note (no closed-queue count in the gate envelope) was intentionally left as-is:
+it is a public-contract addition, not a defect, and out of scope without an explicit request.
+
+### Verification (follow-up)
+
+- `python3 -m pytest tests/test_cli_output_contract.py -q -k "review_queue and gate"` → 6 passed.
+- `python3 -m pytest -q` → full suite passed.
+- `python3 -m pytest --collect-only -q` → 248 tests collected: agent-runner 27, CLI 89,
+  compacting 7, fixtures 8, models 22, rules 95.
+- `git diff --check` → clean.
