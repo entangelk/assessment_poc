@@ -1,4 +1,4 @@
-# Assessment Spec Harness PoC 구현 계획서 v1.30
+# Assessment Spec Harness PoC 구현 계획서 v1.31
 
 ## 0. 문서 목적
 
@@ -467,11 +467,11 @@ inputs:
   report_path: "work/report.md"
 decisions:
   - target_type: trace_link
-    target_key: { rubric_id: "R1", spec_ids: ["S1"] }
+    target_key: { trace_link_id: "T1" }
     action: accept
     note: "3/3 runs agree; identity_basis sound."
   - target_type: trace_link
-    target_key: { rubric_id: "R7", spec_ids: ["S5"] }
+    target_key: { trace_link_id: "T7" }
     action: override
     note: "Quote misspelled in 2/2 runs; corrected from spec."
     override_payload:
@@ -590,6 +590,77 @@ review action enum:
 - `override`: 사람이 직접 수정. 결과는 trace_link의 `sources`에 `kind: human_override`로 추가 기록되고, audit log에 reviewer/reviewed_at/reason이 보존된다.
 
 `override`는 단순 오타·누락 수정에 사용한다. 해석이 갈리는 의미적 결정은 `rerun_requested`로 새 run을 요청하여 다시 compacting/review를 거치는 것이 원칙이다.
+
+`gate`는 final review record를 읽어 외부 pass/fail/pending verdict만 산출한다. 파일을
+수정하거나 reviewed artifact를 쓰지 않는다. Final review decision을 compacted
+artifact와 review_queue 상태에 반영하는 작업은 별도 `materialize-review` 명령이
+담당한다. 이 분리는 "검사/판정"과 "review 결과 산출물 반영"을 섞지 않기 위한
+계약이다.
+
+### 5.6.1 Review Materialization
+
+`materialize-review`는 final review record와 compacted artifacts를 읽어 사람이 검토한
+결과를 새 artifact directory에 materialize한다. 입력 파일은 절대 in-place로 수정하지
+않는다.
+
+초기 범위:
+
+- `target_type: trace_link` decision을 compacted `trace_links.yaml`에 반영한다.
+- `target_type: review_queue_entry` decision을 `review_queue.json` entry status에
+  반영한다.
+- `target_type: finding` decision은 `gate` 판정 입력으로만 사용하며 materialized
+  artifact를 만들지 않는다.
+- `target_type: spec_item` / `rubric_item` materialization은 후속 범위다. 해당 decision이
+  final review record에 있어도 초기 `materialize-review`는 입력 artifact를 그대로
+  보존하고, 지원하지 않는 materialization으로 판정하지 않는다.
+
+Trace link decision key:
+
+- `target_type: trace_link`의 materialization key는 `target_key: {trace_link_id}`다.
+- `trace_link_id`는 `id_map.yaml`의 `entity_type: trace_link` canonical ID와 매칭한다.
+- compacted trace link 자체에 explicit `id`가 없는 현재 schema에서는 `id_map.yaml`이
+  필수다. `trace_link` decision이 있는데 `id_map.yaml`이 없거나, key가 없거나, 한 link로
+  매칭되지 않으면 `invalid_input`/exit `2`다.
+- `{rubric_id, spec_ids}` 형태는 사람이 읽기 좋은 설명으로는 허용될 수 있지만,
+  materialization key로는 쓰지 않는다. 같은 관계가 compacting identity 변경으로 갈라질
+  수 있으므로 canonical trace-link ID를 단일 source of truth로 둔다.
+
+Trace link action mapping:
+
+- `accept` → matched trace link의 `semantic_status: human_accepted`,
+  `reviewed_by`, `reviewed_at`을 final review record 값으로 설정한다.
+- `override` → matched trace link에 `override_payload`를 얕은 병합으로 적용하고,
+  `semantic_status: human_overridden`, `reviewed_by`, `reviewed_at`을 설정한다. 또한
+  `sources[]`에 `kind: human_override`, `review_id`, `reviewer`, `reviewed_at`, `note`를
+  추가한다.
+- `hold` → artifact는 그대로 보존한다. `semantic_status`는 바꾸지 않는다.
+- `rerun_requested` → matched trace link의 `semantic_status: rerun_requested`,
+  `reviewed_by`, `reviewed_at`을 설정한다. 이는 accepted coverage가 아니며 후속
+  `check`에서 Rule 1 final coverage로 취급하지 않는다.
+
+Review queue action mapping:
+
+- `accept` / `override` → entry `status: resolved`.
+- `hold` → entry `status: held`.
+- `rerun_requested` → entry `status: rerun_pending`.
+- Queue entry는 삭제하지 않는다. `decision` 또는 `review_decision` metadata로
+  `review_id`, `reviewer`, `reviewed_at`, `action`, `note`를 보존한다.
+
+Output contract:
+
+- 입력: `--final-review`, `--compacted-dir`, `--out-dir`, 선택 `--review-queue`,
+  선택 `--id-map`.
+- `--id-map` 생략 시 `<compacted-dir>/id_map.yaml`을 사용한다.
+- `--review-queue` 생략 시 final review `inputs.review_queue_path`가 있으면 그 경로를
+  사용하고, 없으면 `<compacted-dir>/review_queue.json`이 존재할 때만 사용한다.
+- 출력: `<out-dir>/spec_items.yaml`, `<out-dir>/rubric_items.yaml`,
+  `<out-dir>/trace_links.yaml`, 선택 `<out-dir>/review_queue.json`,
+  `<out-dir>/materialization_summary.json`.
+- `materialization_summary.json`은 최소한 `review_id`, `trace_link_decision_count`,
+  `review_queue_decision_count`, `unsupported_decision_count`, `output_paths`를 기록한다.
+- `materialize-review --output json` envelope은 `status=success`/exit `0` 또는
+  `status=invalid_input`/exit `2`를 반환한다. 이 명령은 external blocking verdict를
+  반환하지 않으며, pass/fail/pending은 계속 `gate`만 담당한다.
 
 ### 5.7 Review Queue Entry
 
@@ -826,6 +897,7 @@ assessment_poc/
     rules.py
     report.py
     final_review.py
+    review_materialization.py # final_review decision -> reviewed artifacts (in-place 수정 없음)
     compacting.py       # union 기반 compacting (분류·자동 채택 없음, support/variants/identity_basis 보존)
     semantic_verification.py # read-only verifier run 결과 취합 및 상태 제안
     orchestrator.py
@@ -1078,6 +1150,12 @@ assessment-harness review \
 assessment-harness gate \
   --final-review work/final_review/review.yaml \
   --output json
+
+assessment-harness materialize-review \
+  --final-review work/final_review/review.yaml \
+  --compacted-dir work/compacted \
+  --out-dir work/reviewed \
+  --output json
 ```
 
 `compact`는 union 기반이며 자동 분류·채택을 하지 않는다. 모든 유효 candidate를 entry로 보존하고, 동일성으로 판정된 것만 하나의 entry로 묶으면서 `support`/`identity_basis`/`variants`를 기록한다.
@@ -1087,6 +1165,8 @@ assessment-harness gate \
 `review`는 최종 human review를 기록한다. 중간 candidate는 사람이 승인하는 대신 자동 integrity check와 compacting을 거치며, 모든 entry(단일 run 발견 포함)와 compacting 근거가 review 자료에 보존되어야 한다.
 
 `gate`는 외부 호출자가 pass/fail 또는 pending 상태를 소비하는 유일한 명령이다. `check`/`report`는 final review 전에는 provisional finding을 생성할 수 있으나 blocking exit `1`을 반환하지 않는다.
+
+`materialize-review`는 review 결과를 새 artifact directory에 반영하는 산출물 생성 명령이다. `gate` verdict와 독립적으로 실행할 수 있지만, 외부 release/merge 판단은 여전히 `gate` 결과만 사용한다.
 
 ## 9. 단계별 구현 계획
 
@@ -1178,19 +1258,22 @@ assessment-harness gate \
 작업:
 
 - compacted result -> final review 기록 명령 구현
-- review action 4가지(`accept` / `hold` / `rerun_requested` / `override`) 처리 및 audit metadata (`reviewed_by`, `reviewed_at`) 저장
-- `override` 발생 시 trace_link/spec_item/rubric_item의 `sources`에 `kind: human_override` 추가 기록
+- `materialize-review` 구현: trace_link review action 4가지(`accept` / `hold` / `rerun_requested` / `override`) 처리 및 audit metadata (`reviewed_by`, `reviewed_at`) 저장
+- `override` 발생 시 trace_link의 `sources`에 `kind: human_override` 추가 기록
+- review_queue final-review decision을 resolved/held/rerun_pending status로 materialize
+- spec_item/rubric_item materialization은 후속 범위로 보존하되 입력 artifact는 그대로 복사
 - 제외되거나 단일 run 발견 candidate의 retention 정책 적용 (§13에 따라 결정)
 - 실제 과제에 대해 agent-generated compacted artifacts, semantic verifier 제안, finding/review_queue를 사람이 최종 검토
 - 최종 findings/report 산출 및 결과 기록
 - final review record에 기반한 `gate` 판정 산출
+- final review record에 기반한 reviewed artifact 산출 (`materialize-review`)
 - (선택) caller agent 시나리오 1건 시연: Claude Code가 본 도구를 CLI로 호출하여 end-to-end 수행
 
 완료 기준:
 
-- `extract -> compact -> verify -> check -> report -> review -> gate` 흐름이 실제 과제 1건에서 실행된다.
+- `extract -> compact -> verify -> check -> report -> review -> gate -> materialize-review` 흐름이 실제 과제 1건에서 실행된다.
 - 무결성 실패 또는 단일 run 발견 항목이 review 자료에서 추적 가능하고, invalid candidate가 deterministic assessment 판정으로 유입되지 않음이 확인된다.
-- review에서 `override` 액션 1건 이상 시연되며, 결과가 `sources`에 별도 provenance로 기록됨이 확인된다.
+- review에서 `override` 액션 1건 이상 시연되며, 결과가 reviewed artifact의 `sources`에 별도 provenance로 기록됨이 확인된다.
 - high assessment finding은 agent confidence가 아니라 compacted YAML과 Rule 1-3만으로 재현된다. Rule 0 diagnostic은 별도로 추적된다.
 - mock runner 계약 테스트로 protocol 경계를 확인한다. 실제 두 번째 framework 통합 실증은 후속 MVP 범위로 남긴다.
 - `gate`만 confirmed blocking finding에 대해 exit `1`을 반환하고, review 전 `check`는 provisional 상태를 유지한다.
@@ -1258,6 +1341,7 @@ Phase 0:
 - human-readable `report.md`
 - final human review 기록 (`final_review/`)
 - external `gate` decision 출력
+- reviewed artifacts (`materialize-review` 산출물)
 - 실제 과제 적용 결과 요약
 
 ## 12. 구현 순서와 게이트
@@ -1301,7 +1385,7 @@ Phase 2/3 전 확정할 사항:
    - trace_link: 후보군 예시 — `rubric_id+sorted(spec_ids)`, `rubric_id+sorted(spec_ids)+normalized_rationale`
    - PoC default 권고: 가장 보수적(상세) 기준으로 시작 → 너무 자주 갈라지면 완화
 3. 복수 run 정책: 기본 run 수(권고 3), 최대 run 수(권고 7), 최소 유효 run 수(`min_valid_runs`, 권고 2). 미달 시 동작: error 종료 vs warn-and-proceed.
-4. 최종 human review의 `override` 사용 범위: 단순 오타·누락만인지, 의미적 결정도 허용할지. 의미적 override는 새 run 권장.
+4. ✓ 최종 human review의 `override` 사용 범위는 단순 오타·누락 materialization으로 제한한다. 해석이 갈리는 의미적 결정은 `rerun_requested`로 새 run을 요청하는 것이 원칙이다 (§5.6.1).
 5. `trace_link.rationale`의 최소 length 또는 quality guard 적용 여부.
 6. 제외/단일 발견 agent candidate 및 raw trace의 retention/redaction/access 정책.
 7. Agent runner `max_turns`, cost ceiling 정책.
@@ -1331,7 +1415,7 @@ Phase 2/3 전 확정할 사항:
 - 하네스가 run-local ID를 canonical ID로 remap하고 provenance를 보존한다.
 - 별도 read-only verifier-agent가 `ai_judgement` trace link를 복수 실행으로 검토하고, 그 제안과 불일치를 원본 link와 분리해 저장한다.
 - 사람이 마지막에 compacted artifacts, semantic verifier 제안, compacting 근거(`identity_basis`/`support`/`variants`), 무결성 제외 내역, findings, report를 검토한다.
-- 실제 과제 1건에서 `extract -> compact -> verify -> check -> report -> review -> gate`가 실행되며, `review`에서 `override` 액션 1건 이상이 시연된다.
+- 실제 과제 1건에서 `extract -> compact -> verify -> check -> report -> review -> gate -> materialize-review`가 실행되며, `review`에서 `override` 액션 1건 이상이 reviewed artifact에 materialize된다.
 - final review 이전 finding은 provisional이며, 외부 blocking 판정은 `gate`에서만 발생한다.
 - 동일한 compacted artifacts와 semantic verification artifacts에 대해서는 agent runner 사용 여부와 무관하게 findings/report가 동일하다.
 - mock runner contract test가 통과하여 framework-agnostic protocol 경계를 확인한다. 실제 다른 framework 연동 실증은 후속 MVP에서 수행한다.
@@ -1342,6 +1426,28 @@ Phase 2/3 전 확정할 사항:
 ---
 
 ## 15. 변경 이력
+
+### v1.31 (2026-06-04)
+
+핵심 변경: **final review materialization 명령 계약 확정.**
+
+- `gate`는 계속 외부 pass/fail/pending verdict만 산출하고 파일을 쓰지 않는다고
+  명시했다. Final review decision을 artifact에 반영하는 책임은 새
+  `materialize-review` 명령으로 분리한다.
+- `materialize-review`의 초기 범위를 trace_link status/provenance materialization과
+  review_queue status materialization으로 한정했다. `target_type: finding`은 `gate`
+  판정 입력으로만 사용하며, spec_item/rubric_item materialization은 후속 범위다.
+- Trace link materialization key는 `{trace_link_id}`만 허용하고, 이 ID는
+  `id_map.yaml`의 `entity_type: trace_link` canonical ID로 매칭한다고 고정했다.
+  `{rubric_id, spec_ids}`는 identity_basis 변경 시 모호할 수 있어 materialization key로
+  쓰지 않는다.
+- Trace link action mapping을 확정했다: `accept -> human_accepted`,
+  `override -> human_overridden + human_override source`, `hold -> no artifact change`,
+  `rerun_requested -> rerun_requested`.
+- Review queue action mapping을 확정했다: `accept`/`override -> resolved`,
+  `hold -> held`, `rerun_requested -> rerun_pending`.
+- `override` 사용 범위 결정을 닫았다. 단순 오타·누락 수정만 materialize하고, 의미적
+  판단 변경은 원칙적으로 `rerun_requested`를 사용한다.
 
 ### v1.30 (2026-05-29)
 

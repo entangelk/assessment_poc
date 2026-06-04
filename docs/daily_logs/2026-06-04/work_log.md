@@ -55,3 +55,52 @@
   - no `--source-manifest` with policy present → `invalid_input`, exit `2`, `provide_source_manifest`.
   - no `--policy` with manifest present → `invalid_input`, exit `2`, `provide_policy`.
   - both omitted → `invalid_input`, exit `2`, `provide_source_manifest`.
+
+## Plan v1.31 Review Materialization Contract
+
+### Goals
+
+- Close the canonical contract gap for trace-link override/status materialization before implementation.
+- Keep `gate` verdict-only and avoid making it write artifact files.
+- Define a surgical initial `materialize-review` scope that can be implemented next without guessing public behavior.
+
+### Completed work
+
+- Updated `docs/implementation_plan_assessment_harness_poc_v1.md` to v1.31.
+  - Key change: added §5.6.1 `Review Materialization`.
+  - Key change: defined `materialize-review` as a separate command that reads final review + compacted artifacts and writes reviewed artifacts to a new output directory.
+  - Key change: fixed trace-link materialization keys at `target_key: {trace_link_id}`, resolved through `id_map.yaml` `entity_type: trace_link` entries.
+  - Key change: defined trace-link action mapping: `accept -> human_accepted`, `override -> human_overridden + human_override source`, `hold -> no artifact change`, `rerun_requested -> rerun_requested`.
+  - Key change: defined review_queue action mapping: `accept`/`override -> resolved`, `hold -> held`, `rerun_requested -> rerun_pending`.
+  - Effect: the next implementation slice can add `materialize-review` without deciding command shape, key shape, or status mapping ad hoc.
+- Updated `HANDOFF.md`, `README.md`, `docs/evaluation.md`, and `CHANGELOG.md`.
+  - Effect: the canonical plan version and next implementation task now point to v1.31 and `materialize-review`.
+
+### Issues found
+
+- Problem: final review examples used trace-link keys shaped like `{rubric_id, spec_ids}` while compacting already treats trace links as canonical relationship artifacts with `id_map.entity_type: trace_link`.
+  Cause: earlier examples predated the later trace-link canonical ID lineage work.
+  Resolution: v1.31 changes trace-link final-review materialization examples and contract to use `{trace_link_id}`.
+  Outcome: materialization can join by canonical lineage rather than relation fields that may become ambiguous when identity_basis changes.
+- Problem: the plan said `override` should add `kind: human_override` provenance but did not define which command writes that provenance.
+  Cause: `review` drafts decisions and `gate` returns verdicts, but neither should mutate compacted artifacts.
+  Resolution: v1.31 assigns artifact writing to `materialize-review`.
+  Outcome: `gate` remains verdict-only, and reviewed artifact generation is explicit.
+
+### Decisions
+
+- **Command separation:** `gate` must not materialize review decisions. `materialize-review` owns reviewed artifact output.
+- **No in-place mutation:** `materialize-review` writes to `--out-dir`; compacted inputs remain immutable review evidence.
+- **Trace-link key:** materialization uses canonical `trace_link_id` via `id_map.yaml`, not `{rubric_id, spec_ids}`.
+- **Override scope:** `override` materialization is for typo/omission fixes. Semantic reinterpretation should use `rerun_requested` and a new run.
+
+### Next steps
+
+1. Implement `materialize-review` per plan v1.31, including schema self-discovery and CLI output contract tests.
+2. Add regressions for trace-link accept/override/hold/rerun_requested, review_queue status mapping, missing/ambiguous id_map joins, and no in-place mutation.
+3. Re-run focused CLI tests and the full suite after implementation.
+
+### Verification
+
+- Documentation-only contract update.
+- `git diff --check` → clean.

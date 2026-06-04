@@ -15,7 +15,7 @@
 > (which fixture fires which finding, which input is rejected, in what order) as
 > the stable claim; treat the *counts* as "true on the snapshot date."
 >
-> **Snapshot:** 2026-06-04 · plan v1.30 · Python 3.12.3 · direct `pytest`
+> **Snapshot:** 2026-06-04 · plan v1.31 · Python 3.12.3 · direct `pytest`
 > (`PYTHONPATH=src`). Canonical dev environment is Docker (`python:3.11-slim`);
 > see [Reproduction](#reproduction).
 

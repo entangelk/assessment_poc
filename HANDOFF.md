@@ -10,7 +10,7 @@
 
 ## Current Status
 
-- Implementation plan is at v1.30 (`docs/implementation_plan_assessment_harness_poc_v1.md`) and is the canonical implementation source of truth, ahead of `docs/ideation_assessment_harness_v2.2.md` (revised in-place 2026-05-27, supersedes v2.1).
+- Implementation plan is at v1.31 (`docs/implementation_plan_assessment_harness_poc_v1.md`) and is the canonical implementation source of truth, ahead of `docs/ideation_assessment_harness_v2.2.md` (revised in-place 2026-05-27, supersedes v2.1).
 - **Rule 0 is live**: source snapshot grounding, evidence completeness/reference-integrity checks, mandatory `--source-manifest`, and structured invalid-input recovery are implemented.
 - **Rule 1 is feature-complete** (plan v1.19 §6): `possible_orphan_scored_rubric_item`, `unconfirmed_trace_coverage`, and `orphan_bonus_rubric_item` are all implemented. The CLI exposes their review actions and provisional severity counts; slice 3.1 locks the public envelope/schema contract, including the bonus-only `(high=0, medium=0, informational=1)` boundary.
 - **Rule 2 is implemented** (plan v1.19 §6): `uncovered_must_spec_item` is emitted as medium/provisional when no `scored` rubric traces a `must` spec, with `review_uncovered_must_spec` exposed through `check`. It is structural only: pending scored traces cover, while bonus-only or qualitative-only traces do not.
@@ -32,10 +32,11 @@
 - **Initial `verify` CLI orchestration is live for `mock_fixture` only** (plan v1.30 §5.3.1 / §5.7 / §8): `verify --compacted-dir ... --source-manifest ... --runner mock_fixture --runs N --policy ... --out-dir ...` reads compacted artifacts, preserves incoming review queue metadata/entries, writes schema-valid `semantic_verifications.yaml`, and appends non-duplicate `ai_judgement_pending` review queue entries for `verification_mode: ai_judgement` evidence. When `id_map.yaml` is present, `verify` resolves `trace_link_id` from trace-link canonical lineage rather than trace file order. The mock verifier records `agent_uncertain` proposals only, including `source_refs: []` when quote-level `source_ref` is missing; it does not rewrite compacted trace links or make final semantic acceptance claims.
 - **Initial semantic-verification consumption is live** (plan v1.30 §5.3.1 / §8): `check --semantic-verifications ... --id-map ...` applies verifier proposals as in-memory effective `semantic_status` for Rule 1 evidence without rewriting compacted trace links. For trace links with compacting lineage (`variants`), `check` requires `--id-map` and uses the same trace-link lineage resolver as `verify`; post-review statuses (`human_accepted`, `human_rejected`, `human_overridden`, `rerun_requested`) are not overwritten by agent proposals. `report --semantic-verifications ... --review-queue ...` validates and renders those artifacts, and `review --semantic-verifications ... --review-queue ...` validates them before recording paths in the final-review draft.
 - **Initial review_queue final-review handling is live** (plan v1.30 §5.6 / §5.7): `review --review-queue ...` drafts `target_type: review_queue_entry` decisions for unresolved queue entries using minimal `{entry_id}` keys. `gate` loads `inputs.review_queue_path`, treats missing/held/rerun queue decisions as `pending_review`, and lets accepted/overridden queue entries close without producing blocking findings.
-- **Pending implementation**: real SDK runners, framework tools, production source-snapshot generation in `extract`, trace-link override materialization/status materialization for accepted queue/trace-link overrides, and later Phase 2/3 runner workflows.
+- **Review materialization contract is specified, not implemented** (plan v1.31 §5.6.1 / §8): `materialize-review` will write reviewed artifacts to a new output directory, never mutate compacted inputs, materialize trace-link decisions by `target_key: {trace_link_id}` using `id_map.yaml`, and materialize review_queue entry status. `gate` remains verdict-only.
+- **Pending implementation**: `materialize-review`, real SDK runners, framework tools, production source-snapshot generation in `extract`, and later Phase 2/3 runner workflows.
 - Package surface: `check` / `extract` / `compact` / `verify` / `schema` / `report` / `review` / `gate` subcommands, fifteen JSON Schemas, and six fully-grounded fixtures (`clean_assignment`, `reference_integrity`, `orphan_scored_rubric`, `bonus_misuse`, `uncovered_must_spec`, `optionality_mismatch`). Docker is the canonical dev environment.
 - The PoC is an **agent-level harness**: the 1st-class caller is an AI agent (Claude Code / Codex / Gemini), not a human. Humans participate only as final reviewers.
-- The final workflow is `extract --runs N -> compact -> verify --runs N -> check -> report -> review -> gate`. Compacting is a **union-based audit operation**: every valid candidate is preserved with `support` / `identity_basis` / `variants`.
+- The final workflow is `extract --runs N -> compact -> verify --runs N -> check -> report -> review -> gate -> materialize-review`. Compacting is a **union-based audit operation**: every valid candidate is preserved with `support` / `identity_basis` / `variants`; reviewed artifacts are produced by materialization, not by `gate`.
 
 ## Publication / Portfolio Effort (active, 2026-05-29)
 
@@ -128,7 +129,7 @@ docker compose run --rm harness --output json check \
 - **Policy unification**: `config/policy.yaml` is the single policy file with `rules`, `compacting`, `runs`, and `verification` sections.
 - **Compacting model**: union of every valid candidate with `support` / `identity_basis` / `variants` preserved. No quorum, no automatic acceptance, no automatic exclusion.
 - **Trace link ID lineage** (Owner, 2026-05-28; plan v1.22 §5.0): trace link internal `rubric_id` / `spec_ids` are dependent references remapped through spec/rubric item `id_map`, while the trace link entry itself also has canonical identity as a compacted relationship artifact. `id_map.entity_type` therefore includes `trace_link` alongside `spec_item` and `rubric_item`.
-- **Final review power**: `accept` / `hold` / `rerun_requested` / `override`. `override` is recorded as a distinct `kind: human_override` provenance entry in `sources`.
+- **Final review power**: `accept` / `hold` / `rerun_requested` / `override`. `override` is limited to typo/omission materialization; semantic reinterpretation should use `rerun_requested`. `materialize-review` records override as a distinct `kind: human_override` provenance entry in `sources`.
 - **Mock runner role**: `agent_runners/mock.py` is a deterministic fixture-replay runner used only for protocol contract tests; it is separate from `manual.py` which holds human-authored Phase 0/1 inputs.
 - **Trace separation**: `agent_trace.raw.jsonl` and `agent_trace.audit.jsonl` are stored separately with distinct retention/redaction expectations. `agent_trace.schema.json` currently validates one audit JSONL event at a time; raw trace retention/redaction remains a later decision.
 - **Audit trace role payloads** (plan v1.23 §5.4.1): turn events must carry audit payload by role: `system` requires `content_ref`, `agent` requires `tool_call`, and `tool` requires `name` plus `result_ref`.
@@ -143,8 +144,8 @@ docker compose run --rm harness --output json check \
 - Phase 0 held `agent_runners/` and `tools/` out of scope. Phase 2 has now started with the `AgentRunner` protocol, deterministic mock replay, candidate schemas, runner artifact normalization, candidate/audit trace attribution validation, normalized/deep candidate run integrity classification, mock `extract`, `compact`, and mock `verify` orchestration; framework tools and real SDK runners remain unimplemented.
 - `evidence_source_ref` is validated by span containment within the referenced `spec_item.source_ref` (same document, evidence span inside the spec span), not strict equality.
 - Schemas allow `additionalProperties: true` at entity objects so candidate-stage fields (`confidence`, `agent_run_id`, ...) added in Phase 2 do not break Phase 0 schemas. Run-level candidate artifacts are now separately validated by `candidates.schema.json`.
-- `review` initial implementation deliberately writes safe `hold` drafts only. It does not collect human choices interactively, auto-accept findings, rewrite trace links, or materialize `human_override` provenance.
-- `gate` initial implementation deliberately covers finding-level final decisions only. Trace-link override materialization, review_queue composition, and semantic-verification queue handling remain later Phase 2/3 work.
+- `review` initial implementation deliberately writes safe drafts only. It does not collect human choices interactively, auto-accept findings, rewrite trace links, or materialize `human_override` provenance.
+- `gate` is verdict-only. It now handles finding and review_queue final decisions, but it does not rewrite trace links or review_queue files. Trace-link override/status and queue status materialization belong to the planned `materialize-review` command.
 - `AgentRunner` protocol foundation deliberately stops at type boundary plus deterministic mock replay. It does not introduce SDK credentials, framework tools, orchestration, raw trace retention policy, or candidate compacting behavior.
 - Docker is the dev environment; the `harness` and `test` services in `docker-compose.yml` bind-mount source/schemas/fixtures/tests so iterations do not require a rebuild.
 - Snapshot text grounding uses whitespace-normalized **substring** matching for `spec_item.text` (allows multi-line spans) and for all quotes. Rubric items skip `text`/`description` grounding because they are evaluator-facing summaries; only `source_ref.quote` is grounded when provided.
@@ -161,7 +162,7 @@ docker compose run --rm harness --output json check \
 - `min_valid_runs` / `default_runs` / `max_runs` numeric values and missing-quorum behaviour (error vs warn-and-proceed).
 - Tool side-effect policy: read-only tools only, vs propose-tools that write directly to candidate files, vs runner that collects and emits in one batch.
 - Raw trace retention / redaction / access policy (especially for non-public rubric content).
-- Override usage scope: typo/omission only, or allow semantic overrides (semantic overrides should normally trigger `rerun_requested`).
+- Override usage scope: resolved in plan v1.31. `override` materialization is for typo/omission fixes only; semantic reinterpretation should normally trigger `rerun_requested`.
 - Remaining review queue composition: `compact` preserves upstream entries and appends non-duplicate `invalid_run`; `verify` preserves upstream entries and appends non-duplicate `ai_judgement_pending`. Future `check`/`report`/`review` plumbing still must consume the unified queue without treating Phase 0 `--review-queue-out` as a merge target.
 
 ## Next Tasks
@@ -170,7 +171,7 @@ docker compose run --rm harness --output json check \
 
 **Rule 0-3 and lint family L1/L5/L6 are complete. Initial finding-level `review`/`gate` path is implemented.**
 
-Rationale: Rule 2 and Rule 3 completed the remaining deterministic structural checks on the established lint/output pipeline. Plan v1.30 now supplies the minimal final-review finding mapping, safe review draft generation, gate boundary matrix, draft safety guards, Phase 0 policy completeness, policy schema-validation recovery clarification, trace link canonical ID lineage, audit trace role-payload requirements, candidate artifact schema foundation, candidate audit-trace attribution validation, runner artifact normalization, staged candidate run integrity classification, and deep candidate Rule 0 validation with explicit diagnostic-to-status routing.
+Rationale: Rule 2 and Rule 3 completed the remaining deterministic structural checks on the established lint/output pipeline. Plan v1.31 now supplies the minimal final-review finding mapping, safe review draft generation, gate boundary matrix, draft safety guards, Phase 0 policy completeness, policy schema-validation recovery clarification, trace link canonical ID lineage, audit trace role-payload requirements, candidate artifact schema foundation, candidate audit-trace attribution validation, runner artifact normalization, staged candidate run integrity classification, deep candidate Rule 0 validation with explicit diagnostic-to-status routing, and the `materialize-review` output contract.
 
 ### Publication Boundary (2026-05-27)
 
@@ -198,7 +199,7 @@ Rule 3 plus plan v1.15's optional-only boundary reinforcement passed the owner's
 ### `gate` and later phases
 
 - Initial finding-level `review`/`gate` is implemented with `final_review.schema.json`. `review` produces a safe `hold` draft with minimal finding keys; `gate` is the only stage that may promote persistent `possible_orphan_scored_rubric_item` / `unconfirmed_trace_coverage` into `orphan_scored_rubric_item` (high / confirmed). Lint-family and Rule 3 findings can be confirmed/dismissed by final review; only confirmed Rule L6 and Rule 3 are currently blocking.
-- Next gate/review work: materialize trace-link override provenance, support richer human decision input if needed, and consume Phase 2 compact/verifier queue entries without overwriting lint safeguard queue entries.
+- Next gate/review work: implement `materialize-review` per plan v1.31, then support richer human decision input if needed.
 - Real-assignment permissions and Phase 2 runner/retention parameters resolve here too.
 
 ### Lint family (complete) — plan v1.19 §6
@@ -273,7 +274,7 @@ When a **verifier** claims branch coverage from probes, measure at the level tha
 - `fixtures/uncovered_must_spec/`: grounded Rule 2 fixture covering untraced, pending-scored-covered, bonus-only, qualitative-only, optional, and informational spec boundaries.
 - `fixtures/optionality_mismatch/`: grounded Rule 3 fixture covering optional-only high weight, policy threshold, pending-status structural emission, must/informational-mixed suppression, bonus/qualitative-role exclusion, and below-threshold suppression.
 - `tests/`: `test_rules.py`, `test_cli_output_contract.py`, `test_fixtures.py`, `test_models.py`, `test_agent_runner_contract.py`, `conftest.py`.
-- `docs/implementation_plan_assessment_harness_poc_v1.md`: implementation source of truth (v1.30).
+- `docs/implementation_plan_assessment_harness_poc_v1.md`: implementation source of truth (v1.31).
 - `docs/ideation_assessment_harness_v2.2.md`: latest ideation (final 2026-05-27, in-place revised same day). Adds Rubric Lint Rules family — 6 accepted (L1, L2, L4, L5, L6, L7), 3 rejected. Source for plan v1.19's §6 lint family.
 - `docs/ideation_assessment_harness_v2.1.md`: latest ideation, second in precedence.
 - `docs/ideation_assessment_harness_v2.md`, `docs/ideation_assessment_harness_v1.md`: historical references.
