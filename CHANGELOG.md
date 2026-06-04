@@ -2,6 +2,7 @@
 
 | Date | Change | Detail |
 |---|---|---|
+| 2026-06-04 | `materialize-review` guard follow-up: clarifies that deferred spec/rubric decisions do not cause an `invalid_input` verdict while still counting in `unsupported_decision_count`, and locks the previously untraced trace-link/review_queue/materialization boundary branches under CLI regressions. | [Work log](docs/daily_logs/2026-06-04/work_log.md) |
 | 2026-06-04 | Initial `materialize-review` CLI orchestration: writes reviewed artifacts to a new directory without mutating compacted inputs, applies trace-link final-review decisions through `id_map.yaml` canonical trace IDs, materializes review_queue entry statuses, and emits a `materialization_summary.json`. | [Work log](docs/daily_logs/2026-06-04/work_log.md) |
 | 2026-06-04 | Plan v1.31 + review materialization contract: defines `materialize-review` as a separate artifact-writing command so `gate` remains verdict-only; trace-link materialization uses `target_key: {trace_link_id}` via `id_map.yaml`, and review_queue decisions materialize to resolved/held/rerun_pending statuses. | [Work log](docs/daily_logs/2026-06-04/work_log.md) |
 | 2026-06-02 | Final review queue handling: `review --review-queue` now drafts `review_queue_entry` decisions for unresolved queue entries, and `gate` treats unresolved queue work as `pending_review` while allowing accepted/overridden queue entries to close without a blocking verdict. | [Work log](docs/daily_logs/2026-06-02/work_log.md) |

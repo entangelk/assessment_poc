@@ -610,9 +610,10 @@ artifact와 review_queue 상태에 반영하는 작업은 별도 `materialize-re
   반영한다.
 - `target_type: finding` decision은 `gate` 판정 입력으로만 사용하며 materialized
   artifact를 만들지 않는다.
-- `target_type: spec_item` / `rubric_item` materialization은 후속 범위다. 해당 decision이
-  final review record에 있어도 초기 `materialize-review`는 입력 artifact를 그대로
-  보존하고, 지원하지 않는 materialization으로 판정하지 않는다.
+- `target_type: spec_item` / `rubric_item` materialization은 후속 범위다. 이런
+  decision의 존재만으로 실패 verdict(`invalid_input`)를 내지 않는다. 입력 artifact는
+  그대로 보존하고, `materialization_summary.json`의 `unsupported_decision_count`에
+  후속 범위(spec_item/rubric_item) 결정 수로 집계한다.
 
 Trace link decision key:
 

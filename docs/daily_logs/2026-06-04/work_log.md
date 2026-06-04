@@ -12,7 +12,7 @@
 
 - Updated `docs/evaluation.md`.
   - Key change: refreshed the dated moving snapshot from 2026-05-31 to 2026-06-04.
-  - Key change: updated the full-suite count from `200 passed`; the final same-day snapshot is `258 passed` after the later `materialize-review` implementation.
+  - Key change: updated the full-suite count from `200 passed`; the final same-day snapshot is `266 passed` after the later `materialize-review` guard follow-up.
   - Key change: added the `tests/test_compacting.py` row and updated CLI contract coverage from 48 to 89 tests.
   - Effect: the publication evidence page now reflects the current Phase 2 CLI surface (`extract`, `compact`, `verify`, semantic-verification consumption, and review_queue final-review handling).
 - Updated `HANDOFF.md`.
@@ -42,7 +42,7 @@
 
 ### Verification
 
-- `PYTHONPATH=src python3 -m pytest --collect-only -q` → initial refresh snapshot before `materialize-review`: 248 tests collected (agent-runner 27, CLI 89, compacting 7, fixtures 8, models 22, rules 95). Superseded later in this log by the 258-test snapshot after `materialize-review`.
+- `PYTHONPATH=src python3 -m pytest --collect-only -q` → initial refresh snapshot before `materialize-review`: 248 tests collected (agent-runner 27, CLI 89, compacting 7, fixtures 8, models 22, rules 95). Superseded later in this log by the 266-test snapshot after `materialize-review` guard follow-up.
 - `PYTHONPATH=src python3 -m pytest -q` → full suite passed for the initial refresh snapshot.
 - Fixture smoke runs with `PYTHONPATH=src python3 -m assessment_harness.cli --output json check ...`:
   - `clean_assignment` → `provisional_findings`, exit `0`, `(high=0, medium=2, informational=0)`, `review_queue_count=0`.
@@ -157,4 +157,56 @@
 - `python3 -m py_compile src/assessment_harness/cli.py`
 - `PYTHONPATH=src python3 -m pytest tests/test_cli_output_contract.py -q` → CLI contract suite passed.
 - `PYTHONPATH=src python3 -m pytest --collect-only -q` → 258 tests collected: agent-runner 27, CLI 99, compacting 7, fixtures 8, models 22, rules 95.
+- `PYTHONPATH=src python3 -m pytest -q` → full suite passed.
+
+## `materialize-review` Contract Guard Follow-up
+
+### Goals
+
+- Resolve the owner-identified ambiguity around spec/rubric materialization wording.
+- Close the conditional verification gaps where existing `materialize-review` behavior was implemented but not locked by regression tests.
+- Keep the public contract stable while adding only the missing guard coverage.
+
+### Completed work
+
+- Updated `docs/implementation_plan_assessment_harness_poc_v1.md`.
+  - Key change: clarified that `spec_item` / `rubric_item` decisions do not produce a failure verdict (`invalid_input`) by themselves.
+  - Key change: clarified that those deferred-scope decisions preserve input artifacts and are counted in `materialization_summary.json` as `unsupported_decision_count`.
+  - Effect: the field name and prose no longer require the next worker to guess whether "판정" means a failure verdict or a summary tally.
+- Added `materialize-review` regressions in `tests/test_cli_output_contract.py`.
+  - Locks rejection of non-minimal trace keys such as `{rubric_id, spec_ids}`.
+  - Locks rejection when one canonical `trace_link_id` maps to multiple trace links.
+  - Locks spec/rubric decision preservation plus `unsupported_decision_count`.
+  - Locks finding decisions as `gate`-only inputs that do not materialize artifacts.
+  - Locks review_queue duplicate-entry, duplicate-decision, missing-entry, and no-queue-input guards.
+- Updated `docs/evaluation.md`, `HANDOFF.md`, and `CHANGELOG.md`.
+  - Effect: project status and measured test counts now reflect the 266-test suite and the closed materialization guard gaps.
+
+### Issues found
+
+- Problem: `materialize-review` had correct defensive code for several contract branches, but the tests did not trace every branch.
+  Cause: the first implementation focused on the main action/status paths and only two trace-link invalid-input cases.
+  Resolution: added eight focused CLI regressions for the previously untraced branches.
+  Outcome: the conditional verification reason is addressed in the test suite rather than relying on smoke output or code reading.
+- Problem: the contract phrase "지원하지 않는 materialization으로 판정하지 않는다" could be read as conflicting with `unsupported_decision_count`.
+  Cause: the prose did not distinguish a failure verdict from a summary count.
+  Resolution: applied the owner-selected minimal wording: no `invalid_input` verdict, preserve artifacts, count deferred spec/rubric decisions in `unsupported_decision_count`.
+  Outcome: code behavior and canonical contract wording now align without changing the public field name.
+
+### Decisions
+
+- **Owner contract interpretation:** for `spec_item` / `rubric_item` final-review decisions, "not judged as unsupported materialization" means no failure verdict. The decisions are still counted in `unsupported_decision_count` because they are deferred-scope materialization work.
+- **Scope discipline:** no runtime code change was needed; the follow-up only clarified the contract and added regression guards for existing behavior.
+
+### Next steps
+
+1. Add a `materialization_summary.schema.json` only if downstream tooling starts consuming the summary as a stable structured artifact.
+2. Add real SDK runner support when sample assignment and credential path are ready.
+3. Recompute `docs/evaluation.md` again at publication freeze, then perform the deferred bilingual mirrors.
+
+### Verification
+
+- `PYTHONPATH=src python3 -m pytest -q -k "materialize_review" tests/test_cli_output_contract.py` → 18 passed.
+- `PYTHONPATH=src python3 -m pytest tests/test_cli_output_contract.py -q` → 107 passed.
+- `PYTHONPATH=src python3 -m pytest --collect-only -q` → 266 tests collected: agent-runner 27, CLI 107, compacting 7, fixtures 8, models 22, rules 95.
 - `PYTHONPATH=src python3 -m pytest -q` → full suite passed.

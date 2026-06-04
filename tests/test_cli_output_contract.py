@@ -2581,6 +2581,390 @@ def test_materialize_review_rejects_unknown_trace_link_id(
     assert "matches no trace link" in envelope["input_error"]
 
 
+def test_materialize_review_rejects_non_minimal_trace_key(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    compacted_dir = tmp_path / "compacted"
+    findings_path = tmp_path / "findings.json"
+    review_path = tmp_path / "final_review.yaml"
+    _write_compacted_for_materialization(compacted_dir)
+    _write_findings(findings_path, [])
+    _write_final_review(
+        review_path,
+        findings_path,
+        decisions=[
+            {
+                "target_type": "trace_link",
+                "target_key": {"rubric_id": "R1", "spec_ids": ["S1"]},
+                "action": "accept",
+            }
+        ],
+    )
+
+    code, envelope, _ = _run_main(
+        [
+            "--output",
+            "json",
+            "materialize-review",
+            "--final-review",
+            str(review_path),
+            "--compacted-dir",
+            str(compacted_dir),
+            "--out-dir",
+            str(tmp_path / "reviewed"),
+        ],
+        capsys,
+    )
+
+    _assert_envelope(envelope)
+    assert code == 2
+    assert envelope["status"] == "invalid_input"
+    assert "target_key is not minimal" in envelope["input_error"]
+
+
+def test_materialize_review_rejects_trace_link_id_matching_multiple_links(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    compacted_dir = tmp_path / "compacted"
+    findings_path = tmp_path / "findings.json"
+    review_path = tmp_path / "final_review.yaml"
+    _write_compacted_for_materialization(compacted_dir)
+
+    trace_path = compacted_dir / "trace_links.yaml"
+    trace_doc = yaml.safe_load(trace_path.read_text(encoding="utf-8"))
+    second_trace = json.loads(json.dumps(trace_doc["trace_links"][0]))
+    second_trace["variants"][0]["run_id"] = "run_2"
+    second_trace["variants"][0]["candidate_id"] = "TL_LOCAL_2"
+    second_trace["support"]["found_in_runs"] = ["run_2"]
+    second_trace["sources"] = [{"kind": "agent_run", "run_id": "run_2"}]
+    trace_doc["trace_links"].append(second_trace)
+    trace_path.write_text(
+        yaml.safe_dump(trace_doc, sort_keys=False), encoding="utf-8"
+    )
+
+    id_map_path = compacted_dir / "id_map.yaml"
+    id_map_doc = yaml.safe_load(id_map_path.read_text(encoding="utf-8"))
+    id_map_doc["id_map"][0]["run_refs"].append(
+        {"run_id": "run_2", "local_id": "TL_LOCAL_2"}
+    )
+    id_map_path.write_text(
+        yaml.safe_dump(id_map_doc, sort_keys=False), encoding="utf-8"
+    )
+
+    _write_findings(findings_path, [])
+    _write_final_review(
+        review_path,
+        findings_path,
+        decisions=[
+            {
+                "target_type": "trace_link",
+                "target_key": {"trace_link_id": "T1"},
+                "action": "accept",
+            }
+        ],
+    )
+
+    code, envelope, _ = _run_main(
+        [
+            "--output",
+            "json",
+            "materialize-review",
+            "--final-review",
+            str(review_path),
+            "--compacted-dir",
+            str(compacted_dir),
+            "--out-dir",
+            str(tmp_path / "reviewed"),
+        ],
+        capsys,
+    )
+
+    _assert_envelope(envelope)
+    assert code == 2
+    assert envelope["status"] == "invalid_input"
+    assert "multiple trace links" in envelope["input_error"]
+
+
+def test_materialize_review_preserves_spec_and_rubric_decisions_as_unsupported(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    compacted_dir = tmp_path / "compacted"
+    findings_path = tmp_path / "findings.json"
+    review_path = tmp_path / "final_review.yaml"
+    out_dir = tmp_path / "reviewed"
+    _write_compacted_for_materialization(compacted_dir)
+    _write_findings(findings_path, [])
+    _write_final_review(
+        review_path,
+        findings_path,
+        decisions=[
+            {
+                "target_type": "spec_item",
+                "target_key": {"spec_id": "S1"},
+                "action": "accept",
+            },
+            {
+                "target_type": "rubric_item",
+                "target_key": {"rubric_id": "R1"},
+                "action": "hold",
+            },
+        ],
+    )
+    original_spec = yaml.safe_load(
+        (compacted_dir / "spec_items.yaml").read_text(encoding="utf-8")
+    )
+    original_rubric = yaml.safe_load(
+        (compacted_dir / "rubric_items.yaml").read_text(encoding="utf-8")
+    )
+
+    code, envelope, _ = _run_main(
+        [
+            "--output",
+            "json",
+            "materialize-review",
+            "--final-review",
+            str(review_path),
+            "--compacted-dir",
+            str(compacted_dir),
+            "--out-dir",
+            str(out_dir),
+        ],
+        capsys,
+    )
+
+    _assert_envelope(envelope)
+    assert code == 0
+    assert envelope["status"] == "success"
+    assert envelope["unsupported_decision_count"] == 2
+    assert yaml.safe_load(
+        (out_dir / "spec_items.yaml").read_text(encoding="utf-8")
+    ) == original_spec
+    assert yaml.safe_load(
+        (out_dir / "rubric_items.yaml").read_text(encoding="utf-8")
+    ) == original_rubric
+    summary = json.loads(
+        (out_dir / "materialization_summary.json").read_text(encoding="utf-8")
+    )
+    assert summary["unsupported_decision_count"] == 2
+
+
+def test_materialize_review_ignores_finding_decisions(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    compacted_dir = tmp_path / "compacted"
+    findings_path = tmp_path / "findings.json"
+    review_path = tmp_path / "final_review.yaml"
+    out_dir = tmp_path / "reviewed"
+    _write_compacted_for_materialization(compacted_dir)
+    _write_findings(
+        findings_path, [_finding("unconfirmed_trace_coverage", severity="high")]
+    )
+    _write_final_review(
+        review_path,
+        findings_path,
+        decisions=[
+            {
+                "target_type": "finding",
+                "target_key": {"finding_id": "rule_1:review_coverage:0"},
+                "action": "accept",
+            }
+        ],
+    )
+    original_trace = yaml.safe_load(
+        (compacted_dir / "trace_links.yaml").read_text(encoding="utf-8")
+    )
+
+    code, envelope, _ = _run_main(
+        [
+            "--output",
+            "json",
+            "materialize-review",
+            "--final-review",
+            str(review_path),
+            "--compacted-dir",
+            str(compacted_dir),
+            "--out-dir",
+            str(out_dir),
+        ],
+        capsys,
+    )
+
+    _assert_envelope(envelope)
+    assert code == 0
+    assert envelope["status"] == "success"
+    assert envelope["trace_link_decision_count"] == 0
+    assert envelope["unsupported_decision_count"] == 0
+    assert yaml.safe_load(
+        (out_dir / "trace_links.yaml").read_text(encoding="utf-8")
+    ) == original_trace
+
+
+def test_materialize_review_rejects_duplicate_queue_entry_ids(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    compacted_dir = tmp_path / "compacted"
+    findings_path = tmp_path / "findings.json"
+    review_path = tmp_path / "final_review.yaml"
+    _write_compacted_for_materialization(compacted_dir)
+    _write_review_queue(
+        compacted_dir / "review_queue.json",
+        [_queue_entry("queue_1"), _queue_entry("queue_1")],
+    )
+    _write_findings(findings_path, [])
+    _write_final_review(review_path, findings_path, decisions=[])
+
+    code, envelope, _ = _run_main(
+        [
+            "--output",
+            "json",
+            "materialize-review",
+            "--final-review",
+            str(review_path),
+            "--compacted-dir",
+            str(compacted_dir),
+            "--out-dir",
+            str(tmp_path / "reviewed"),
+        ],
+        capsys,
+    )
+
+    _assert_envelope(envelope)
+    assert code == 2
+    assert envelope["status"] == "invalid_input"
+    assert "duplicate entry_id" in envelope["input_error"]
+
+
+def test_materialize_review_rejects_duplicate_queue_decisions(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    compacted_dir = tmp_path / "compacted"
+    findings_path = tmp_path / "findings.json"
+    review_path = tmp_path / "final_review.yaml"
+    _write_compacted_for_materialization(compacted_dir)
+    _write_findings(findings_path, [])
+    _write_final_review(
+        review_path,
+        findings_path,
+        decisions=[
+            {
+                "target_type": "review_queue_entry",
+                "target_key": {"entry_id": "queue_1"},
+                "action": "hold",
+            },
+            {
+                "target_type": "review_queue_entry",
+                "target_key": {"entry_id": "queue_1"},
+                "action": "accept",
+            },
+        ],
+        inputs={"review_queue_path": str(compacted_dir / "review_queue.json")},
+    )
+
+    code, envelope, _ = _run_main(
+        [
+            "--output",
+            "json",
+            "materialize-review",
+            "--final-review",
+            str(review_path),
+            "--compacted-dir",
+            str(compacted_dir),
+            "--out-dir",
+            str(tmp_path / "reviewed"),
+        ],
+        capsys,
+    )
+
+    _assert_envelope(envelope)
+    assert code == 2
+    assert envelope["status"] == "invalid_input"
+    assert "duplicate decisions" in envelope["input_error"]
+
+
+def test_materialize_review_rejects_queue_decision_matching_no_entry(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    compacted_dir = tmp_path / "compacted"
+    findings_path = tmp_path / "findings.json"
+    review_path = tmp_path / "final_review.yaml"
+    _write_compacted_for_materialization(compacted_dir)
+    _write_findings(findings_path, [])
+    _write_final_review(
+        review_path,
+        findings_path,
+        decisions=[
+            {
+                "target_type": "review_queue_entry",
+                "target_key": {"entry_id": "queue_missing"},
+                "action": "accept",
+            }
+        ],
+        inputs={"review_queue_path": str(compacted_dir / "review_queue.json")},
+    )
+
+    code, envelope, _ = _run_main(
+        [
+            "--output",
+            "json",
+            "materialize-review",
+            "--final-review",
+            str(review_path),
+            "--compacted-dir",
+            str(compacted_dir),
+            "--out-dir",
+            str(tmp_path / "reviewed"),
+        ],
+        capsys,
+    )
+
+    _assert_envelope(envelope)
+    assert code == 2
+    assert envelope["status"] == "invalid_input"
+    assert "matches no queue entry" in envelope["input_error"]
+
+
+def test_materialize_review_rejects_queue_decision_without_queue_input(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    compacted_dir = tmp_path / "compacted"
+    findings_path = tmp_path / "findings.json"
+    review_path = tmp_path / "final_review.yaml"
+    _write_compacted_for_materialization(compacted_dir)
+    (compacted_dir / "review_queue.json").unlink()
+    _write_findings(findings_path, [])
+    _write_final_review(
+        review_path,
+        findings_path,
+        decisions=[
+            {
+                "target_type": "review_queue_entry",
+                "target_key": {"entry_id": "queue_1"},
+                "action": "accept",
+            }
+        ],
+    )
+
+    code, envelope, _ = _run_main(
+        [
+            "--output",
+            "json",
+            "materialize-review",
+            "--final-review",
+            str(review_path),
+            "--compacted-dir",
+            str(compacted_dir),
+            "--out-dir",
+            str(tmp_path / "reviewed"),
+        ],
+        capsys,
+    )
+
+    _assert_envelope(envelope)
+    assert code == 2
+    assert envelope["status"] == "invalid_input"
+    assert "no review_queue input" in envelope["input_error"]
+
+
 def test_gate_rejects_stale_finding_decision(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
