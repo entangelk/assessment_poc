@@ -160,14 +160,41 @@ def test_phase_two_contract_schemas_are_registered_and_validate_plan_examples() 
             }
         ]
     }
+    materialization_summary = {
+        "review_id": "review_1",
+        "trace_link_decision_count": 1,
+        "review_queue_decision_count": 1,
+        "unsupported_decision_count": 0,
+        "output_paths": {
+            "spec_items_path": "reviewed/spec_items.yaml",
+            "rubric_items_path": "reviewed/rubric_items.yaml",
+            "trace_links_path": "reviewed/trace_links.yaml",
+            "review_queue_path": "reviewed/review_queue.json",
+            "materialization_summary_path": (
+                "reviewed/materialization_summary.json"
+            ),
+        },
+        "source_paths": {
+            "final_review_path": "review/final_review.yaml",
+            "compacted_dir": "compacted",
+            "review_queue_path": "compacted/review_queue.json",
+        },
+    }
 
     assert "candidates" in SCHEMA_FILES
     assert "compacting" in SCHEMA_FILES
     assert "id_map" in SCHEMA_FILES
     assert "semantic_verifications" in SCHEMA_FILES
+    assert "materialization_summary" in SCHEMA_FILES
     assert validate("candidates", candidates) == []
     assert validate("id_map", id_map) == []
     assert validate("semantic_verifications", semantic_verifications) == []
+    assert validate("materialization_summary", materialization_summary) == []
+    materialization_summary_without_source_paths = dict(materialization_summary)
+    del materialization_summary_without_source_paths["source_paths"]
+    assert validate(
+        "materialization_summary", materialization_summary_without_source_paths
+    ) == []
 
 
 def test_phase_two_contract_schemas_reject_untraceable_entries() -> None:

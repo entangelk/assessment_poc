@@ -12,7 +12,7 @@
 
 - Updated `docs/evaluation.md`.
   - Key change: refreshed the dated moving snapshot from 2026-05-31 to 2026-06-04.
-  - Key change: updated the full-suite count from `200 passed`; the final same-day snapshot is `267 passed` after the later `materialize-review` guard follow-up.
+  - Key change: updated the full-suite count from `200 passed`; the final same-day snapshot is `268 passed` after the later `materialize-review` guard follow-up and summary-schema stabilization.
   - Key change: added the `tests/test_compacting.py` row and updated CLI contract coverage from 48 to 89 tests.
   - Effect: the publication evidence page now reflects the current Phase 2 CLI surface (`extract`, `compact`, `verify`, semantic-verification consumption, and review_queue final-review handling).
 - Updated `HANDOFF.md`.
@@ -42,7 +42,7 @@
 
 ### Verification
 
-- `PYTHONPATH=src python3 -m pytest --collect-only -q` → initial refresh snapshot before `materialize-review`: 248 tests collected (agent-runner 27, CLI 89, compacting 7, fixtures 8, models 22, rules 95). Superseded later in this log by the 267-test snapshot after `materialize-review` guard follow-up.
+- `PYTHONPATH=src python3 -m pytest --collect-only -q` → initial refresh snapshot before `materialize-review`: 248 tests collected (agent-runner 27, CLI 89, compacting 7, fixtures 8, models 22, rules 95). Superseded later in this log by the 268-test snapshot after `materialize-review` guard follow-up and summary-schema stabilization.
 - `PYTHONPATH=src python3 -m pytest -q` → full suite passed for the initial refresh snapshot.
 - Fixture smoke runs with `PYTHONPATH=src python3 -m assessment_harness.cli --output json check ...`:
   - `clean_assignment` → `provisional_findings`, exit `0`, `(high=0, medium=2, informational=0)`, `review_queue_count=0`.
@@ -180,7 +180,7 @@
   - Locks finding decisions as `gate`-only inputs that do not materialize artifacts.
   - Locks review_queue duplicate-entry, duplicate-decision, missing-entry, and no-queue-input guards.
 - Updated `docs/evaluation.md`, `HANDOFF.md`, and `CHANGELOG.md`.
-  - Effect: project status and measured test counts now reflect the 267-test suite and the closed materialization guard gaps.
+  - Effect: project status and measured test counts now reflect the 268-test suite and the closed materialization guard gaps.
 
 ### Issues found
 
@@ -224,7 +224,7 @@
   - Key change: writes two `target_type: trace_link` decisions with the same `target_key: {trace_link_id: T1}`.
   - Effect: the `final review contains duplicate decisions for one trace link` invalid-input path is now directly pinned.
 - Updated `docs/evaluation.md` and `HANDOFF.md`.
-  - Effect: current measured counts now reflect 267 total tests and 108 CLI contract tests.
+  - Effect: current measured counts now reflect 268 total tests and 109 CLI contract tests.
 
 ### Issues found
 
@@ -240,8 +240,7 @@
 ### Next steps
 
 1. Commit/push only when the owner asks.
-2. Add a `materialization_summary.schema.json` only if downstream tooling starts consuming the summary as a stable structured artifact.
-3. Add real SDK runner support when sample assignment and credential path are ready.
+2. Add real SDK runner support when sample assignment and credential path are ready.
 
 ### Verification
 
@@ -249,3 +248,66 @@
 - `PYTHONPATH=src python3 -m pytest tests/test_cli_output_contract.py -q` → 108 passed.
 - `PYTHONPATH=src python3 -m pytest --collect-only -q` → 267 tests collected: agent-runner 27, CLI 108, compacting 7, fixtures 8, models 22, rules 95.
 - `PYTHONPATH=src python3 -m pytest -q` → full suite passed.
+- `python3 -m py_compile src/assessment_harness/cli.py src/assessment_harness/schemas.py`
+
+## Materialization Summary Schema
+
+### Goals
+
+- Turn `materialization_summary.json` from a best-effort informational file into a schema-validated artifact.
+- Keep the schema limited to the fields that `materialize-review` already emits.
+- Avoid changing the public CLI envelope or materialization behavior.
+
+### Completed work
+
+- Added `schemas/materialization_summary.schema.json`.
+  - Key change: requires `review_id`, the three decision counters, and `output_paths`.
+  - Key change: accepts optional `source_paths`, including `source_paths.review_queue_path: null` when no review queue was materialized.
+  - Effect: downstream agents can validate the materialization summary before consuming artifact paths and counts.
+- Registered the schema in `src/assessment_harness/schemas.py`.
+  - Effect: the existing `validate()` and loader helpers can discover the new schema by name.
+- Updated `src/assessment_harness/cli.py`.
+  - Key change: validates the generated summary before writing `materialization_summary.json`.
+  - Effect: a future code change that breaks the summary contract fails loudly instead of writing a malformed artifact.
+  - Follow-up fix: corrected the generated-summary schema-failure path to call `_materialize_invalid_input` and moved summary validation before all reviewed artifact writes.
+- Updated tests.
+  - `tests/test_models.py` now locks schema registration and a representative valid summary.
+  - `tests/test_models.py` also locks that `source_paths` remains optional under the minimum summary contract.
+  - `tests/test_cli_output_contract.py` now validates the summary produced by the end-to-end `materialize-review` path and forces the generated-summary schema-failure branch.
+- Updated `HANDOFF.md` and `CHANGELOG.md`.
+  - Effect: current project status now reflects sixteen JSON Schemas and the schema-validated materialization summary.
+
+### Issues found
+
+- Problem: `materialization_summary.json` was described as an output contract but had no schema registration or generated-artifact validation.
+  Cause: the initial materialization slice kept the summary as a lightweight informational JSON file.
+  Resolution: added a minimal schema and validated the generated summary before writing it.
+  Outcome: the artifact remains backward-compatible while becoming machine-checkable.
+- Problem: the generated-summary validation failure path called an undefined `_materialize_review_invalid_input`.
+  Cause: typo against the existing `_materialize_invalid_input` helper, and the first tests only covered valid summaries.
+  Resolution: fixed the helper call and added a monkeypatched regression that forces summary validation failure.
+  Outcome: generated-summary schema failure now returns `invalid_input`/exit `2` instead of falling through to top-level `internal_error`.
+- Problem: `source_paths` was required by the schema even though §5.6.1 only requires review ID, decision counts, and output paths as the minimum summary contract.
+  Cause: the schema mirrored current implementation metadata rather than the contractual minimum.
+  Resolution: kept `source_paths` supported but no longer required.
+  Outcome: the schema is aligned with the minimal public contract while accepting today's richer summary.
+
+### Decisions
+
+- **Minimal schema:** keep `additionalProperties: true` and require only the fields listed in the §5.6.1 minimum contract. This preserves future metadata flexibility while pinning the current stable surface.
+- **No envelope change:** the CLI envelope already reports the summary path and counts; this slice only validates the on-disk summary artifact.
+- **Failure classification:** generated-summary schema failure returns `invalid_input`/exit `2` through the existing materialize-review error envelope so caller agents get a structured recovery path.
+
+### Next steps
+
+1. Add real SDK runner support when sample assignment and credential path are ready.
+2. Recompute `docs/evaluation.md` again at publication freeze, then perform the deferred bilingual mirrors.
+
+### Verification
+
+- `PYTHONPATH=src python3 -m pytest tests/test_models.py -q` → 22 passed.
+- `PYTHONPATH=src python3 -m pytest -q -k "materialize_review" tests/test_cli_output_contract.py` → 20 passed.
+- `PYTHONPATH=src python3 -m pytest tests/test_cli_output_contract.py -q` → 109 passed.
+- `PYTHONPATH=src python3 -m pytest --collect-only -q` → 268 tests collected: agent-runner 27, CLI 109, compacting 7, fixtures 8, models 22, rules 95.
+- `PYTHONPATH=src python3 -m pytest -q` → full suite passed.
+- `python3 -m py_compile src/assessment_harness/cli.py src/assessment_harness/schemas.py`

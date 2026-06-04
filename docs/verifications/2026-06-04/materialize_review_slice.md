@@ -168,3 +168,89 @@ The `materialize-review` slice passes. Contract (plan v1.31 §5.6.1) is internal
 
 - The branch-C test plus HANDOFF/work_log/evaluation updates are **uncommitted** in the working tree (`git status`: `M tests/test_cli_output_contract.py`, `M HANDOFF.md`, `M docs/daily_logs/2026-06-04/work_log.md`, `M docs/evaluation.md`). This verification record is untracked. Commit when ready.
 - No publication authorization is implied by this record.
+
+> Follow-up: the branch-C work was committed as `dea7adf` "Close materialize review verification gaps". The matrix-closure findings above are now committed history.
+
+---
+
+## Re-verification — `materialization_summary` schema stabilization (2026-06-04, working tree, uncommitted)
+
+New task: stabilize `materialization_summary.json` as a schema-validated artifact. Changes audited (uncommitted; HEAD `dea7adf`):
+- `schemas/materialization_summary.schema.json` (new, untracked)
+- `src/assessment_harness/schemas.py`: registers `"materialization_summary"` in `SCHEMA_FILES`
+- `src/assessment_harness/cli.py`: validates the generated summary before writing it
+- `tests/test_cli_output_contract.py`: asserts the real generated summary validates
+- `tests/test_models.py`: registry assertion + representative example
+
+### What holds
+
+- **Schema is well-formed and registered.** `validate("materialization_summary", {})` returns errors (rejects empty); `test_models.py` asserts `"materialization_summary" in SCHEMA_FILES` and validates a representative example. The schema's `required`/`properties` match the fields the implementation emits (`review_id`, three counts, `output_paths` with the four mandatory sub-paths, `source_paths`).
+- **Real generated artifact is validated in a test**, not just a hand-built example: `test_materialize_review_applies_trace_override_and_queue_status` now asserts `validate("materialization_summary", summary) == []` on the summary the CLI actually wrote (`tests/test_cli_output_contract.py:2335`).
+- **Reported numbers reproduce independently**: `test_models.py` 22 passed; `-k materialize` 19 passed; CLI suite 108 passed; full suite 267 passed; `py_compile` ok; `git diff --check` clean.
+
+### Issues / Risks
+
+1. **DEFECT (real, latent) — undefined function in the validation-failure path.** `cli.py:2502` calls `_materialize_review_invalid_input(...)`, but the only defined helper is `_materialize_invalid_input` (`cli.py:2209`). Proven by introspection: `hasattr(cli, '_materialize_review_invalid_input') == False`; a direct call raises `AttributeError`. So if the new pre-write summary validation ever fails, the command does **not** return the intended `invalid_input`/exit 2 envelope — it raises, and `main()`'s top-level `except Exception` converts it to **exit 3** with a generic message. The guard cannot perform the clean rejection it was written to perform. No test catches this because the failure branch is unreachable with valid inputs (next finding), so the green bar is misleading here. **Fix before commit**: rename the call to `_materialize_invalid_input` (the two sibling call sites at `cli.py:2346`/`2467` already use the correct name) and add a regression that forces a schema-invalid summary (e.g. monkeypatch the summary builder) to exit 2 / `status=invalid_input`, so the error path is actually exercised.
+2. **Guard is effectively dead today.** `final_review.schema.json` requires `review_id` (non-empty string), `reviewer`, `reviewed_at`, `inputs`, `decisions`, so any final review that passes `load_validated` already forces a valid `review_id`; the three counts are `len(...)` (always `int >= 0`); all paths are `str(Path)` (non-empty) or `None` where the schema allows null. There is no valid-input route that makes the generated summary fail validation. So the new check provides ~zero runtime protection now; its only value is guarding *future* changes to summary construction — and that value is nullified by Issue 1 (the guard crashes instead of reporting). State this honestly: the artifact is "schema-validated" in the sense that a passing schema example exists and the real output is asserted valid in a test, not in the sense that the runtime check can currently reject anything.
+3. **Minor — schema is stricter than the contract's stated minimum.** §5.6.1 lists the summary's minimum fields as `review_id`, `trace_link_decision_count`, `review_queue_decision_count`, `unsupported_decision_count`, `output_paths` ("최소한"). The schema additionally makes `source_paths` `required`. The implementation always emits `source_paths`, so this is internally consistent, but the schema now mandates a field the contract treats as an optional extra. Reconcile by either adding `source_paths` to the §5.6.1 minimum list or relaxing the schema to not require it.
+4. **Minor — ordering/category (moot while Issue 2 holds).** Summary validation runs *after* `spec/rubric/trace/queue` artifacts are already written, and a failure is categorized as `invalid_input`/exit 2 (bad user input) rather than `internal error`/exit 3, even though a malformed self-generated summary is an internal inconsistency, not bad input. Both only matter once the branch becomes reachable; worth deciding alongside the Issue 1 fix.
+
+### Verdict — 조건부 합격 (Conditional Pass)
+
+The schema, its registration, the representative example, and the real-artifact validation test are sound, and every reported number reproduces. The condition is Issue 1: the validation-failure path references an undefined function, so the newly added guard would raise (→ exit 3) instead of returning the intended `invalid_input` envelope if it ever fired. It is unreachable with valid inputs today (Issue 2), so nothing is broken at runtime now and the suite is legitimately green — but shipping a guard whose failure branch is itself broken, with no test exercising that branch, is exactly the "green ≠ verified" gap. Fix the function name and add a forced-failure regression (and decide Issues 3–4) before treating this slice as closed. I did not modify any code; surfacing per the verification-record discipline.
+
+### Reproduction
+
+```bash
+cd /workspace/assessment_poc
+PYTHONPATH=src python3 -c "import assessment_harness.cli as c; print(hasattr(c,'_materialize_review_invalid_input'))"  # -> False (the bug)
+PYTHONPATH=src python3 -m pytest tests/test_models.py -q          # 22 passed
+PYTHONPATH=src python3 -m pytest -k materialize -q                # 19 passed
+PYTHONPATH=src python3 -m pytest -q                               # 267 passed
+```
+
+---
+
+## Re-verification — summary-validation fix (2026-06-04, working tree, uncommitted)
+
+Re-audited the fix for the previous conditional-pass conditions (HEAD still `dea7adf`; changes uncommitted).
+
+### Issue 1 (undefined function) — RESOLVED, and now tested
+
+- `cli.py` now calls `_materialize_invalid_input(...)` (the defined helper); `grep` over `src/` + `tests/` finds **zero** remaining references to the bad name `_materialize_review_invalid_input`.
+- The validation block was also moved **before** all artifact writes (`spec/rubric/trace/queue/summary`), so a failure returns the envelope with no files written.
+- `test_materialize_review_rejects_generated_summary_schema_violation` monkeypatches `assessment_harness.cli.validate` to force a summary failure and asserts exit 2 / `status=invalid_input` / `input_error` contains "generated materialization summary failed schema validation" **and** that neither `spec_items.yaml` nor `materialization_summary.json` exists. This test exercises the exact branch that was broken — it would have failed against the previous (NameError → exit 3) code, so the fix is genuinely locked, not just present. Verified it passes in isolation.
+
+### Issue 2 (guard dead today) — adequately addressed
+
+Still true that valid inputs cannot make the generated summary fail (final-review schema forces `review_id`; counts/paths are machine-generated). But that is the normal shape of a defensive self-check, and its failure path is now (a) correct and (b) covered by the forced-failure regression. No longer a concern.
+
+### Issue 3 (schema stricter than contract) — RESOLVED
+
+`materialization_summary.schema.json` `required` is now exactly the §5.6.1 minimum set (`review_id`, the three counts, `output_paths`); `source_paths` is a defined-but-optional property. `test_models.py` adds an over-strict guard validating a summary **without** `source_paths` returns `[]`, locking the optional-ness. Matches the contract minimum.
+
+### Issue 4 (partial write / exit category) — partial-write RESOLVED; category is an accepted call
+
+Partial-write is gone (validation precedes writes, asserted by the new test). The exit-2 (`invalid_input`) categorization for a self-generated summary failure was kept — the owner explicitly specified "실패 시 invalid_input / exit 2", so this is a deliberate, instructed choice, not a defect.
+
+### Scope-creep check (owner asked explicitly)
+
+Every change traces to an instruction or to mandatory doc maintenance — **no unsolicited work found**:
+
+| Change | Traces to |
+|---|---|
+| `cli.py` call-name fix + move validation before writes | owner instruction 1–3 |
+| forced-failure + partial-artifact test | owner instruction 4 |
+| `source_paths` → optional in schema | owner instruction 5 (§5.6.1 minimum) |
+| `schemas.py` registration, new schema file | the feature itself |
+| `CHANGELOG.md` row, `HANDOFF.md`/`docs/evaluation.md` count + status updates (15→16 schemas, 267→268 tests, 108→109 CLI), `work_log` | required by CLAUDE.md §5 doc-maintenance, not scope creep |
+
+The `cli.py` diff is surgical: only the validation block moved/inserted; no adjacent code, formatting, or other commands touched. The minor point I had raised but the owner did **not** instruct (exit 3 vs exit 2 re-categorization) was **not** acted on — the worker correctly left existing behavior alone. The verification record's `M` status is my own appends, not worker tampering.
+
+### Reproduced numbers (independent)
+
+failure test alone → 1 passed; `-k materialize` → **20 passed**; CLI suite → **109 passed**; `test_models.py` → **22 passed**; full suite → **268 passed**; `py_compile` → ok; `git diff --check` → clean. All match the owner's report.
+
+### Final verdict — 합격 (Pass)
+
+Both prior conditional-pass conditions are cleared with correct, message-distinguishing, direction-checked regressions; the schema matches the contract minimum; partial writes are eliminated; and no scope creep occurred. No defects outstanding. (Operational: this slice plus its doc updates remain uncommitted; `materialization_summary.schema.json` is untracked. Commit when ready. No publication authorization implied.)

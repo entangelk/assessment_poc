@@ -2472,9 +2472,6 @@ def _cmd_materialize_review(args: argparse.Namespace) -> CommandResult:
     trace_out = out_dir / "trace_links.yaml"
     queue_out = out_dir / "review_queue.json"
     summary_out = out_dir / "materialization_summary.json"
-    _write_yaml(spec_out, spec_doc)
-    _write_yaml(rubric_out, rubric_doc)
-    _write_yaml(trace_out, trace_doc)
     output_paths: dict[str, str] = {
         "spec_items_path": str(spec_out),
         "rubric_items_path": str(rubric_out),
@@ -2482,7 +2479,6 @@ def _cmd_materialize_review(args: argparse.Namespace) -> CommandResult:
         "materialization_summary_path": str(summary_out),
     }
     if queue_doc is not None:
-        _write_json(queue_out, queue_doc)
         output_paths["review_queue_path"] = str(queue_out)
 
     summary = {
@@ -2497,6 +2493,18 @@ def _cmd_materialize_review(args: argparse.Namespace) -> CommandResult:
             "review_queue_path": str(queue_path) if queue_path is not None else None,
         },
     }
+    summary_errors = validate("materialization_summary", summary)
+    if summary_errors:
+        return _materialize_invalid_input(
+            args,
+            "generated materialization summary failed schema validation",
+            summary_errors,
+        )
+    _write_yaml(spec_out, spec_doc)
+    _write_yaml(rubric_out, rubric_doc)
+    _write_yaml(trace_out, trace_doc)
+    if queue_doc is not None:
+        _write_json(queue_out, queue_doc)
     _write_json(summary_out, summary)
 
     envelope = _build_envelope(

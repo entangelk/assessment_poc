@@ -32,6 +32,7 @@ SCHEMA_FILES: dict[str, str] = {
     "id_map": "id_map.schema.json",
     "semantic_verifications": "semantic_verifications.schema.json",
     "agent_trace": "agent_trace.schema.json",
+    "materialization_summary": "materialization_summary.schema.json",
 }
 
 

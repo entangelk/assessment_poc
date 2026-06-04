@@ -2332,9 +2332,68 @@ def test_materialize_review_applies_trace_override_and_queue_status(
     summary = json.loads(
         (out_dir / "materialization_summary.json").read_text(encoding="utf-8")
     )
+    assert validate("materialization_summary", summary) == []
     assert summary["review_id"] == "review_test"
     assert summary["trace_link_decision_count"] == 1
     assert summary["review_queue_decision_count"] == 1
+
+
+def test_materialize_review_rejects_generated_summary_schema_violation(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    compacted_dir = tmp_path / "compacted"
+    findings_path = tmp_path / "findings.json"
+    review_path = tmp_path / "final_review.yaml"
+    out_dir = tmp_path / "reviewed"
+    _write_compacted_for_materialization(compacted_dir)
+    _write_findings(findings_path, [])
+    _write_final_review(
+        review_path,
+        findings_path,
+        decisions=[
+            {
+                "target_type": "trace_link",
+                "target_key": {"trace_link_id": "T1"},
+                "action": "accept",
+            }
+        ],
+    )
+
+    original_validate = validate
+
+    def reject_summary(schema_name: str, instance: dict) -> list[str]:
+        if schema_name == "materialization_summary":
+            return ["summary forced invalid"]
+        return original_validate(schema_name, instance)
+
+    monkeypatch.setattr("assessment_harness.cli.validate", reject_summary)
+
+    code, envelope, _ = _run_main(
+        [
+            "--output",
+            "json",
+            "materialize-review",
+            "--final-review",
+            str(review_path),
+            "--compacted-dir",
+            str(compacted_dir),
+            "--out-dir",
+            str(out_dir),
+        ],
+        capsys,
+    )
+
+    _assert_envelope(envelope)
+    assert code == 2
+    assert envelope["status"] == "invalid_input"
+    assert (
+        "generated materialization summary failed schema validation"
+        in envelope["input_error"]
+    )
+    assert not (out_dir / "spec_items.yaml").exists()
+    assert not (out_dir / "materialization_summary.json").exists()
 
 
 def test_materialize_review_hold_preserves_trace_link(

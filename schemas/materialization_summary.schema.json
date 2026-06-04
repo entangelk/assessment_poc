@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://assessment-harness/materialization_summary.schema.json",
+  "title": "Materialization Summary",
+  "description": "Summary emitted by materialize-review after writing reviewed artifacts.",
+  "type": "object",
+  "required": [
+    "review_id",
+    "trace_link_decision_count",
+    "review_queue_decision_count",
+    "unsupported_decision_count",
+    "output_paths"
+  ],
+  "properties": {
+    "review_id": { "type": "string", "minLength": 1 },
+    "trace_link_decision_count": { "type": "integer", "minimum": 0 },
+    "review_queue_decision_count": { "type": "integer", "minimum": 0 },
+    "unsupported_decision_count": { "type": "integer", "minimum": 0 },
+    "output_paths": {
+      "type": "object",
+      "required": [
+        "spec_items_path",
+        "rubric_items_path",
+        "trace_links_path",
+        "materialization_summary_path"
+      ],
+      "properties": {
+        "spec_items_path": { "type": "string", "minLength": 1 },
+        "rubric_items_path": { "type": "string", "minLength": 1 },
+        "trace_links_path": { "type": "string", "minLength": 1 },
+        "review_queue_path": { "type": "string", "minLength": 1 },
+        "materialization_summary_path": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": true
+    },
+    "source_paths": {
+      "type": "object",
+      "required": ["final_review_path", "compacted_dir", "review_queue_path"],
+      "properties": {
+        "final_review_path": { "type": "string", "minLength": 1 },
+        "compacted_dir": { "type": "string", "minLength": 1 },
+        "review_queue_path": {
+          "type": ["string", "null"],
+          "minLength": 1
+        }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}
