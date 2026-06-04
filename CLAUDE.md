@@ -1,11 +1,3 @@
-<!-- .ko mirror created on finalize (publication_plan §7b) -->
-
-<p align="center">
-  <a href="./CLAUDE.md"><img src="https://img.shields.io/badge/Language-EN-111111?style=for-the-badge" alt="English"></a>
-  <a href="./CLAUDE.ko.md"><img src="https://img.shields.io/badge/Language-KO-6B7280?style=for-the-badge" alt="한국어"></a>
-</p>
-<p align="center"><sub>Switch language / 언어 전환</sub></p>
-
 # CLAUDE.md
 
 Behavioral guidelines to reduce common LLM coding mistakes. Merge with project-specific instructions as needed.
@@ -32,6 +24,7 @@ Before implementing:
 - No abstractions for single-use code.
 - No "flexibility" or "configurability" that wasn't requested.
 - No error handling for impossible scenarios.
+- Before writing a new helper or utility, search the codebase first (serena or grep). Reuse what exists; don't reinvent it.
 - If you write 200 lines and it could be 50, rewrite it.
 
 Ask yourself: "Would a senior engineer say this is overcomplicated?" If yes, simplify.
