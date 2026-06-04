@@ -311,3 +311,62 @@
 - `PYTHONPATH=src python3 -m pytest --collect-only -q` → 268 tests collected: agent-runner 27, CLI 109, compacting 7, fixtures 8, models 22, rules 95.
 - `PYTHONPATH=src python3 -m pytest -q` → full suite passed.
 - `python3 -m py_compile src/assessment_harness/cli.py src/assessment_harness/schemas.py`
+
+## Initial Read-only Framework Tools
+
+### Goals
+
+- Start the Phase 2 framework-neutral tool layer without choosing a runner SDK or tool side-effect policy.
+- Provide only read-only source/rubric inspection helpers that future runners can wrap in their own tool schemas.
+- Keep propose/write tools deferred until the owner resolves the side-effect policy.
+
+### Completed work
+
+- Added `src/assessment_harness/tools/`.
+  - Key change: `spec_tools.py` provides `list_sections` and `read_spec_section` for Markdown source documents.
+  - Key change: section spans trim leading/trailing blank padding and return stable line metadata plus section text.
+  - Key change: `rubric_tools.py` provides `list_rubric_items` and `get_rubric_item` over schema-validated `rubric_items.yaml`.
+  - Effect: future agent runners can inspect source and rubric material through framework-neutral Python functions before any SDK-specific wrapping exists.
+- Added `tests/test_tools.py`.
+  - Locks Markdown heading spans, empty-section non-inverted spans, adjacent-heading empty-section text isolation, case-insensitive exact section lookup, missing/ambiguous section errors, rubric summaries, full rubric item lookup, missing/ambiguous rubric ID errors, and return-value immutability.
+- Updated `docs/evaluation.md`, `HANDOFF.md`, and `CHANGELOG.md`.
+  - Effect: current project status now reflects the read-only tool layer and the 278-test suite.
+
+### Issues found
+
+- Problem: initial section-span expectations included blank padding between Markdown headings.
+  Cause: raw heading-to-next-heading spans include visual spacing lines that are not useful to runner tools.
+  Resolution: trim leading/trailing blank lines from section content spans while preserving the heading line separately.
+  Outcome: tool callers get source line ranges that point at meaningful content rather than spacer lines.
+- Problem: rubric duplicate-ID ambiguity and copy-return behavior were implemented but not explicitly locked.
+  Cause: the first tool tests covered the normal and missing-ID paths only.
+  Resolution: added regressions for ambiguous rubric IDs and mutation of returned summaries/full items.
+  Outcome: the read-only tools now fail loudly on ambiguous lookup and do not expose internal mutable state.
+- Problem: empty Markdown sections could return cosmetic inverted spans (`content_start_line > end_line`).
+  Cause: blank-line trimming did not normalize the no-content case.
+  Resolution: normalize empty sections to a non-inverted empty span with empty text.
+  Outcome: callers get stable metadata even for heading-only sections.
+- Problem: the first empty-section normalization could leak the next heading into `read_spec_section` text for adjacent headings with no blank line (`## A\n## B`).
+  Cause: the no-content branch adjusted the span but still sliced source lines from the adjusted bounds instead of explicitly returning no content.
+  Resolution: anchor empty spans to the last raw line before the next same-or-higher heading and set `content_lines` to an empty list; added an adjacent-heading regression that asserts both empty text and non-overlap with the next heading line.
+  Outcome: the cosmetic span fix no longer changes read-tool content semantics.
+
+### Decisions
+
+- **Read-only only:** implement `list_sections`, `read_spec_section`, `list_rubric_items`, and `get_rubric_item`; defer `propose_spec_item`, `propose_trace_link`, and `flag_ambiguity` until the tool side-effect policy is canonical.
+- **No SDK wrapping yet:** tools are plain Python functions. Framework-specific JSON schema/function registration belongs with future SDK runners.
+
+### Next steps
+
+1. Decide the tool side-effect policy before implementing propose/write tools.
+2. Add real SDK runner support when sample assignment and credential path are ready.
+3. Recompute `docs/evaluation.md` again at publication freeze, then perform the deferred bilingual mirrors.
+
+### Verification
+
+- `PYTHONPATH=src python3 -m pytest tests/test_tools.py -q` → 10 passed.
+- `PYTHONPATH=src python3 -m pytest tests/test_agent_runner_contract.py tests/test_tools.py -q` → 37 passed.
+- `PYTHONPATH=src python3 -m pytest --collect-only -q` → 278 tests collected: agent-runner 27, CLI 109, tools 10, compacting 7, fixtures 8, models 22, rules 95.
+- `PYTHONPATH=src python3 -m pytest -q` → full suite passed.
+- `python3 -m py_compile src/assessment_harness/tools/__init__.py src/assessment_harness/tools/spec_tools.py src/assessment_harness/tools/rubric_tools.py` → passed.
+- `git diff --check` → clean.

@@ -21,17 +21,18 @@
 
 ## Test suite
 
-`268 passed` (full suite, this snapshot).
+`278 passed` (full suite, this snapshot).
 
 | Test module | Count | Locks |
 |---|---:|---|
 | `tests/test_rules.py` | 95 | Rule 0–3 + lint L1/L5/L6, each with under-strict + over-strict guards |
 | `tests/test_cli_output_contract.py` | 109 | envelope/exit-code contract, `schema` introspection, `extract`/`compact`/`verify`, semantic-verification consumption, `review`/`gate`/`materialize-review` branches |
 | `tests/test_agent_runner_contract.py` | 27 | runner protocol, candidate schemas, normalization, staged + deep integrity |
+| `tests/test_tools.py` | 10 | framework-neutral read-only source/rubric tools |
 | `tests/test_compacting.py` | 7 | compacting helper union, id_map lineage, run exclusion, trace-reference remapping |
 | `tests/test_models.py` | 22 | YAML/schema loader, source-snapshot sha256, span access |
 | `tests/test_fixtures.py` | 8 | grounded end-to-end fixture behavior |
-| **Total** | **268** | |
+| **Total** | **278** | |
 
 Every rule branch is locked in **both directions** (the original bug can re-fail
 the test, *and* an over-correction that flags a normal case also fails) — the
@@ -89,7 +90,7 @@ docker compose run --rm test          # full pytest suite
 What produced this snapshot (direct, equivalent):
 
 ```bash
-PYTHONPATH=src python3 -m pytest -q                 # 268 passed
+PYTHONPATH=src python3 -m pytest -q                 # 278 passed
 PYTHONPATH=src python3 -m pytest --collect-only -q  # per-module counts
 ```
 
