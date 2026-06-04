@@ -154,7 +154,7 @@ dated moving snapshot; it should be recomputed before publication.)
 
 ## What's next
 
-1. Recompute `docs/evaluation.md` from real test/smoke output before publication.
+1. Recompute `docs/evaluation.md` once more from real test/smoke output at publication freeze.
 2. Real SDK runner support on top of the existing runner-protocol,
    candidate-integrity, compacting, and mock verifier foundations.
 3. A first real-assignment manual run (Phase 1).
