@@ -286,6 +286,7 @@ CLI는 `--policy config/policy.yaml` 하나로 모든 정책을 받는다.
 | `extract` CLI 오케스트레이션 (`mock_fixture`) | 초기 구현 완료 |
 | `compact` CLI 오케스트레이션 | 초기 구현 완료 |
 | `verify` 오케스트레이션 (`mock_fixture`) | 초기 구현 완료 |
+| `materialize-review` CLI 오케스트레이션 | 초기 구현 완료 |
 | 실제 SDK runner | 미구현 |
 | 전체 Phase 2/3 E2E 워크플로 | 미구현 |
 

@@ -12,7 +12,7 @@
 
 - Updated `docs/evaluation.md`.
   - Key change: refreshed the dated moving snapshot from 2026-05-31 to 2026-06-04.
-  - Key change: updated the full-suite count from `200 passed` to `248 passed`.
+  - Key change: updated the full-suite count from `200 passed`; the final same-day snapshot is `258 passed` after the later `materialize-review` implementation.
   - Key change: added the `tests/test_compacting.py` row and updated CLI contract coverage from 48 to 89 tests.
   - Effect: the publication evidence page now reflects the current Phase 2 CLI surface (`extract`, `compact`, `verify`, semantic-verification consumption, and review_queue final-review handling).
 - Updated `HANDOFF.md`.
@@ -42,8 +42,8 @@
 
 ### Verification
 
-- `PYTHONPATH=src python3 -m pytest --collect-only -q` → 248 tests collected: agent-runner 27, CLI 89, compacting 7, fixtures 8, models 22, rules 95.
-- `PYTHONPATH=src python3 -m pytest -q` → full suite passed (`248 passed` by collection count).
+- `PYTHONPATH=src python3 -m pytest --collect-only -q` → initial refresh snapshot before `materialize-review`: 248 tests collected (agent-runner 27, CLI 89, compacting 7, fixtures 8, models 22, rules 95). Superseded later in this log by the 258-test snapshot after `materialize-review`.
+- `PYTHONPATH=src python3 -m pytest -q` → full suite passed for the initial refresh snapshot.
 - Fixture smoke runs with `PYTHONPATH=src python3 -m assessment_harness.cli --output json check ...`:
   - `clean_assignment` → `provisional_findings`, exit `0`, `(high=0, medium=2, informational=0)`, `review_queue_count=0`.
   - `orphan_scored_rubric` → `provisional_findings`, exit `0`, `(high=1, medium=1, informational=1)`, `review_queue_count=0`.
@@ -104,3 +104,57 @@
 
 - Documentation-only contract update.
 - `git diff --check` → clean.
+
+## Initial `materialize-review` CLI Orchestration
+
+### Goals
+
+- Implement the v1.31 review materialization contract without changing `gate` semantics.
+- Materialize reviewed artifacts in a new output directory while preserving compacted inputs unchanged.
+- Lock trace-link and review_queue status mappings under CLI contract tests.
+
+### Completed work
+
+- Added `materialize-review` to `src/assessment_harness/cli.py`.
+  - Inputs: `--final-review`, `--compacted-dir`, `--out-dir`, optional `--review-queue`, optional `--id-map`.
+  - Outputs: reviewed `spec_items.yaml`, `rubric_items.yaml`, `trace_links.yaml`, optional `review_queue.json`, and `materialization_summary.json`.
+  - Behavior: loads final review, compacted artifacts, id_map, and review_queue; applies trace-link decisions by canonical `trace_link_id`; applies review_queue decisions by `entry_id`; writes only to `--out-dir`.
+- Added schema self-discovery for `schema --command materialize-review`.
+  - Effect: caller agents can discover `materialize-review` informational fields and recovery actions through the existing contract surface.
+- Added CLI regressions in `tests/test_cli_output_contract.py`.
+  - Locks schema self-discovery for `materialize-review`.
+  - Locks trace-link `override` materialization with `human_overridden`, `reviewed_by`, `reviewed_at`, shallow `override_payload` merge, and appended `kind: human_override` source.
+  - Locks trace-link `accept` and `rerun_requested` status mapping.
+  - Locks `hold` as a no-op for trace links.
+  - Locks review_queue `accept`, `override`, `hold`, and `rerun_requested` status mapping.
+  - Locks fail-loud behavior for missing id_map and unknown trace_link_id.
+  - Locks that compacted input `trace_links.yaml` is not mutated in place.
+- Updated `HANDOFF.md`, `README.md`, `docs/case_study.md`, and `CHANGELOG.md`.
+  - Effect: project status now reflects that `materialize-review` is initially implemented.
+
+### Issues found
+
+- Problem: the first materialization tests used underspecified synthetic spec/rubric items.
+  Cause: the helper omitted required `requirement_level`, `title`, and `source_ref` fields.
+  Resolution: changed the test fixture helper to write schema-valid compacted spec/rubric inputs.
+  Outcome: tests exercise materialization behavior rather than failing early on unrelated schema validation.
+
+### Decisions
+
+- **Implementation scope:** initial materialization supports trace links and review_queue entries only. `finding` decisions remain `gate` inputs; `spec_item`/`rubric_item` decisions are counted as unsupported materialization and the artifacts are copied unchanged.
+- **Trace join:** trace-link decisions require `id_map.yaml`; order-based fallback is not used for materialization.
+- **Output discipline:** reviewed artifacts are written to `--out-dir`; compacted input files are immutable evidence.
+
+### Next steps
+
+1. Run full test suite and collect counts after this implementation.
+2. Consider a later `materialization_summary.schema.json` only if downstream tooling needs to consume the summary as a stable structured contract.
+3. Add real SDK runner support when sample assignment and credential path are ready.
+
+### Verification
+
+- `PYTHONPATH=src python3 -m pytest -q -k "materialize_review" tests/test_cli_output_contract.py` → 10 passed.
+- `python3 -m py_compile src/assessment_harness/cli.py`
+- `PYTHONPATH=src python3 -m pytest tests/test_cli_output_contract.py -q` → CLI contract suite passed.
+- `PYTHONPATH=src python3 -m pytest --collect-only -q` → 258 tests collected: agent-runner 27, CLI 99, compacting 7, fixtures 8, models 22, rules 95.
+- `PYTHONPATH=src python3 -m pytest -q` → full suite passed.

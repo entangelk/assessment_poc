@@ -113,8 +113,8 @@ Implemented and tested:
 - **Rules 1–3** (scored-rubric coverage, required-spec coverage, optionality
   consistency) and **lint rules L1 / L5 / L6** (double scoring, bonus
   re-grading mandatory work, mandatory-as-bonus-only).
-- **`check` / `report` / `review` / `gate`** with a stable agent-consumable
-  envelope and a `schema` introspection command.
+- **`check` / `report` / `review` / `gate` / `materialize-review`** with a
+  stable agent-consumable envelope and a `schema` introspection command.
 - **Agent-runner protocol + deterministic mock**, candidate artifact schemas,
   audit-trace attribution, runner normalization, and a **staged candidate
   integrity model** with deep Rule 0 classification.

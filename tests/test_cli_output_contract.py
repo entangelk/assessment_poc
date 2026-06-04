@@ -959,6 +959,30 @@ def test_schema_command_returns_review_contract(
     }
 
 
+def test_schema_command_returns_materialize_review_contract(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    code, envelope, _ = _run_main(
+        ["--output", "json", "schema", "--command", "materialize-review"], capsys
+    )
+    _assert_envelope(envelope)
+    assert code == 0
+    contract = envelope["contract"]
+    assert contract["command"] == "materialize-review"
+    assert contract["stable_core"] == STABLE_CORE_FIELDS
+    assert contract["next_actions_types"] == ["fix_input"]
+    assert set(contract["informational"]) == {
+        "reviewed_dir",
+        "trace_links_path",
+        "review_queue_path",
+        "materialization_summary_path",
+        "trace_link_decision_count",
+        "review_queue_decision_count",
+        "unsupported_decision_count",
+        "input_error",
+    }
+
+
 def test_schema_command_rejects_unknown_command(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -2112,6 +2136,449 @@ def test_gate_rejects_review_queue_decision_without_review_queue_path(
     assert code == 2
     assert envelope["status"] == "invalid_input"
     assert "no review_queue_path" in envelope["input_error"]
+
+
+def _write_compacted_for_materialization(root: Path) -> None:
+    root.mkdir()
+    _write_yaml = lambda path, payload: path.write_text(
+        yaml.safe_dump(payload, sort_keys=False), encoding="utf-8"
+    )
+    _write_yaml(
+        root / "spec_items.yaml",
+        {
+            "spec_items": [
+                {
+                    "id": "S1",
+                    "text": "Original spec.",
+                    "requirement_level": "must",
+                    "source_ref": {
+                        "document_id": "DOC_SPEC",
+                        "start_line": 1,
+                        "end_line": 1,
+                    },
+                }
+            ]
+        },
+    )
+    _write_yaml(
+        root / "rubric_items.yaml",
+        {
+            "rubric_items": [
+                {
+                    "id": "R1",
+                    "title": "Scored rubric",
+                    "evaluation_role": "scored",
+                    "weight": 1,
+                    "source_ref": {
+                        "document_id": "DOC_RUBRIC",
+                        "start_line": 1,
+                        "end_line": 1,
+                    },
+                }
+            ]
+        },
+    )
+    _write_yaml(
+        root / "trace_links.yaml",
+        {
+            "trace_links": [
+                {
+                    "rubric_id": "R1",
+                    "spec_ids": ["S1"],
+                    "rationale": "Initial rationale.",
+                    "evidence_quotes": [
+                        {
+                            "spec_id": "S1",
+                            "quote": "Original spec.",
+                            "verification_mode": "ai_judgement",
+                        }
+                    ],
+                    "semantic_status": "agent_uncertain",
+                    "support": {"total_valid_runs": 1, "found_in_runs": ["run_1"]},
+                    "identity_basis": "rubric_id+sorted(spec_ids)",
+                    "variants": [
+                        {
+                            "run_id": "run_1",
+                            "candidate_id": "TL_LOCAL_1",
+                            "proposed_item": {
+                                "rubric_id": "R1",
+                                "spec_ids": ["S1"],
+                            },
+                        }
+                    ],
+                    "sources": [{"kind": "agent_run", "run_id": "run_1"}],
+                    "reviewed_by": None,
+                    "reviewed_at": None,
+                }
+            ]
+        },
+    )
+    _write_yaml(
+        root / "id_map.yaml",
+        {
+            "id_map": [
+                {
+                    "canonical_id": "T1",
+                    "entity_type": "trace_link",
+                    "run_refs": [{"run_id": "run_1", "local_id": "TL_LOCAL_1"}],
+                }
+            ]
+        },
+    )
+    _write_review_queue(
+        root / "review_queue.json",
+        [
+            {
+                "entry_id": "queue_1",
+                "type": "ai_judgement_pending",
+                "target": {"trace_link_id": "T1"},
+                "reason": "semantic review pending",
+                "related_runs": ["run_1"],
+                "status": "open",
+            }
+        ],
+    )
+
+
+def test_materialize_review_applies_trace_override_and_queue_status(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    compacted_dir = tmp_path / "compacted"
+    findings_path = tmp_path / "findings.json"
+    review_path = tmp_path / "final_review.yaml"
+    out_dir = tmp_path / "reviewed"
+    _write_compacted_for_materialization(compacted_dir)
+    _write_findings(findings_path, [])
+    _write_final_review(
+        review_path,
+        findings_path,
+        decisions=[
+            {
+                "target_type": "trace_link",
+                "target_key": {"trace_link_id": "T1"},
+                "action": "override",
+                "note": "Correct quote typo.",
+                "override_payload": {
+                    "rationale": "Corrected rationale.",
+                    "evidence_quotes": [
+                        {
+                            "spec_id": "S1",
+                            "quote": "Corrected spec.",
+                            "verification_mode": "ai_judgement",
+                        }
+                    ],
+                },
+            },
+            {
+                "target_type": "review_queue_entry",
+                "target_key": {"entry_id": "queue_1"},
+                "action": "accept",
+                "note": "Reviewed.",
+            },
+        ],
+        inputs={"review_queue_path": str(compacted_dir / "review_queue.json")},
+    )
+    original_trace_text = (compacted_dir / "trace_links.yaml").read_text(
+        encoding="utf-8"
+    )
+
+    code, envelope, _ = _run_main(
+        [
+            "--output",
+            "json",
+            "materialize-review",
+            "--final-review",
+            str(review_path),
+            "--compacted-dir",
+            str(compacted_dir),
+            "--out-dir",
+            str(out_dir),
+        ],
+        capsys,
+    )
+
+    _assert_envelope(envelope)
+    assert code == 0
+    assert envelope["status"] == "success"
+    assert envelope["trace_link_decision_count"] == 1
+    assert envelope["review_queue_decision_count"] == 1
+    assert (compacted_dir / "trace_links.yaml").read_text(
+        encoding="utf-8"
+    ) == original_trace_text
+
+    reviewed_trace_doc = yaml.safe_load(
+        (out_dir / "trace_links.yaml").read_text(encoding="utf-8")
+    )
+    trace_link = reviewed_trace_doc["trace_links"][0]
+    assert trace_link["semantic_status"] == "human_overridden"
+    assert trace_link["reviewed_by"] == "tester"
+    assert trace_link["reviewed_at"] == "2026-05-28T00:00:00Z"
+    assert trace_link["rationale"] == "Corrected rationale."
+    assert trace_link["evidence_quotes"][0]["quote"] == "Corrected spec."
+    assert trace_link["sources"][-1] == {
+        "kind": "human_override",
+        "review_id": "review_test",
+        "reviewer": "tester",
+        "reviewed_at": "2026-05-28T00:00:00Z",
+        "note": "Correct quote typo.",
+    }
+
+    reviewed_queue = json.loads(
+        (out_dir / "review_queue.json").read_text(encoding="utf-8")
+    )
+    assert reviewed_queue["review_queue"][0]["status"] == "resolved"
+    assert reviewed_queue["review_queue"][0]["review_decision"]["action"] == "accept"
+
+    summary = json.loads(
+        (out_dir / "materialization_summary.json").read_text(encoding="utf-8")
+    )
+    assert summary["review_id"] == "review_test"
+    assert summary["trace_link_decision_count"] == 1
+    assert summary["review_queue_decision_count"] == 1
+
+
+def test_materialize_review_hold_preserves_trace_link(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    compacted_dir = tmp_path / "compacted"
+    findings_path = tmp_path / "findings.json"
+    review_path = tmp_path / "final_review.yaml"
+    out_dir = tmp_path / "reviewed"
+    _write_compacted_for_materialization(compacted_dir)
+    _write_findings(findings_path, [])
+    _write_final_review(
+        review_path,
+        findings_path,
+        decisions=[
+            {
+                "target_type": "trace_link",
+                "target_key": {"trace_link_id": "T1"},
+                "action": "hold",
+                "note": "Needs another look.",
+            }
+        ],
+    )
+    original_trace = yaml.safe_load(
+        (compacted_dir / "trace_links.yaml").read_text(encoding="utf-8")
+    )["trace_links"][0]
+
+    code, envelope, _ = _run_main(
+        [
+            "--output",
+            "json",
+            "materialize-review",
+            "--final-review",
+            str(review_path),
+            "--compacted-dir",
+            str(compacted_dir),
+            "--out-dir",
+            str(out_dir),
+        ],
+        capsys,
+    )
+
+    _assert_envelope(envelope)
+    assert code == 0
+    reviewed_trace = yaml.safe_load(
+        (out_dir / "trace_links.yaml").read_text(encoding="utf-8")
+    )["trace_links"][0]
+    assert reviewed_trace == original_trace
+
+
+@pytest.mark.parametrize(
+    ("action", "expected_status"),
+    [
+        ("accept", "human_accepted"),
+        ("rerun_requested", "rerun_requested"),
+    ],
+)
+def test_materialize_review_trace_status_mapping(
+    action: str,
+    expected_status: str,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    compacted_dir = tmp_path / "compacted"
+    findings_path = tmp_path / "findings.json"
+    review_path = tmp_path / "final_review.yaml"
+    out_dir = tmp_path / "reviewed"
+    _write_compacted_for_materialization(compacted_dir)
+    _write_findings(findings_path, [])
+    _write_final_review(
+        review_path,
+        findings_path,
+        decisions=[
+            {
+                "target_type": "trace_link",
+                "target_key": {"trace_link_id": "T1"},
+                "action": action,
+            }
+        ],
+    )
+
+    code, envelope, _ = _run_main(
+        [
+            "--output",
+            "json",
+            "materialize-review",
+            "--final-review",
+            str(review_path),
+            "--compacted-dir",
+            str(compacted_dir),
+            "--out-dir",
+            str(out_dir),
+        ],
+        capsys,
+    )
+
+    _assert_envelope(envelope)
+    assert code == 0
+    reviewed_trace = yaml.safe_load(
+        (out_dir / "trace_links.yaml").read_text(encoding="utf-8")
+    )["trace_links"][0]
+    assert reviewed_trace["semantic_status"] == expected_status
+    assert reviewed_trace["reviewed_by"] == "tester"
+
+
+@pytest.mark.parametrize(
+    ("action", "expected_status"),
+    [
+        ("hold", "held"),
+        ("override", "resolved"),
+        ("rerun_requested", "rerun_pending"),
+    ],
+)
+def test_materialize_review_queue_status_mapping(
+    action: str,
+    expected_status: str,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    compacted_dir = tmp_path / "compacted"
+    findings_path = tmp_path / "findings.json"
+    review_path = tmp_path / "final_review.yaml"
+    out_dir = tmp_path / "reviewed"
+    _write_compacted_for_materialization(compacted_dir)
+    _write_findings(findings_path, [])
+    _write_final_review(
+        review_path,
+        findings_path,
+        decisions=[
+            {
+                "target_type": "review_queue_entry",
+                "target_key": {"entry_id": "queue_1"},
+                "action": action,
+            }
+        ],
+        inputs={"review_queue_path": str(compacted_dir / "review_queue.json")},
+    )
+
+    code, envelope, _ = _run_main(
+        [
+            "--output",
+            "json",
+            "materialize-review",
+            "--final-review",
+            str(review_path),
+            "--compacted-dir",
+            str(compacted_dir),
+            "--out-dir",
+            str(out_dir),
+        ],
+        capsys,
+    )
+
+    _assert_envelope(envelope)
+    assert code == 0
+    reviewed_queue = json.loads(
+        (out_dir / "review_queue.json").read_text(encoding="utf-8")
+    )
+    entry = reviewed_queue["review_queue"][0]
+    assert entry["status"] == expected_status
+    assert entry["review_decision"]["action"] == action
+
+
+def test_materialize_review_rejects_trace_decision_without_id_map(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    compacted_dir = tmp_path / "compacted"
+    findings_path = tmp_path / "findings.json"
+    review_path = tmp_path / "final_review.yaml"
+    _write_compacted_for_materialization(compacted_dir)
+    (compacted_dir / "id_map.yaml").unlink()
+    _write_findings(findings_path, [])
+    _write_final_review(
+        review_path,
+        findings_path,
+        decisions=[
+            {
+                "target_type": "trace_link",
+                "target_key": {"trace_link_id": "T1"},
+                "action": "accept",
+            }
+        ],
+    )
+
+    code, envelope, _ = _run_main(
+        [
+            "--output",
+            "json",
+            "materialize-review",
+            "--final-review",
+            str(review_path),
+            "--compacted-dir",
+            str(compacted_dir),
+            "--out-dir",
+            str(tmp_path / "reviewed"),
+        ],
+        capsys,
+    )
+
+    _assert_envelope(envelope)
+    assert code == 2
+    assert envelope["status"] == "invalid_input"
+    assert "id_map" in envelope["input_error"]
+
+
+def test_materialize_review_rejects_unknown_trace_link_id(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    compacted_dir = tmp_path / "compacted"
+    findings_path = tmp_path / "findings.json"
+    review_path = tmp_path / "final_review.yaml"
+    _write_compacted_for_materialization(compacted_dir)
+    _write_findings(findings_path, [])
+    _write_final_review(
+        review_path,
+        findings_path,
+        decisions=[
+            {
+                "target_type": "trace_link",
+                "target_key": {"trace_link_id": "T_MISSING"},
+                "action": "accept",
+            }
+        ],
+    )
+
+    code, envelope, _ = _run_main(
+        [
+            "--output",
+            "json",
+            "materialize-review",
+            "--final-review",
+            str(review_path),
+            "--compacted-dir",
+            str(compacted_dir),
+            "--out-dir",
+            str(tmp_path / "reviewed"),
+        ],
+        capsys,
+    )
+
+    _assert_envelope(envelope)
+    assert code == 2
+    assert envelope["status"] == "invalid_input"
+    assert "matches no trace link" in envelope["input_error"]
 
 
 def test_gate_rejects_stale_finding_decision(

@@ -13,6 +13,7 @@ Subcommands implemented in Phase 0:
 - ``report``  : render findings + diagnostics into a Markdown report.
 - ``review``  : write a safe final-review draft with hold decisions.
 - ``gate``    : consume final review and emit the external verdict.
+- ``materialize-review``: write reviewed artifacts from final-review decisions.
 
 Real SDK runners for ``extract`` / ``verify`` are later-phase scope.
 """
@@ -1498,6 +1499,25 @@ COMMAND_CONTRACTS: dict[str, dict[str, Any]] = {
             "revise_assessment",
         ],
     },
+    "materialize-review": {
+        "stable_core": STABLE_CORE_FIELDS,
+        "informational": [
+            "reviewed_dir",
+            "trace_links_path",
+            "review_queue_path",
+            "materialization_summary_path",
+            "trace_link_decision_count",
+            "review_queue_decision_count",
+            "unsupported_decision_count",
+            "input_error",
+        ],
+        "exit_codes": {
+            "0": "reviewed artifacts written.",
+            "2": "final review, compacted artifacts, id_map, or review queue input is invalid.",
+            "3": "internal error.",
+        },
+        "next_actions_types": ["fix_input"],
+    },
 }
 
 
@@ -2182,6 +2202,320 @@ def _cmd_gate(args: argparse.Namespace) -> CommandResult:
 
 
 # ---------------------------------------------------------------------------
+# materialize-review
+# ---------------------------------------------------------------------------
+
+
+def _materialize_invalid_input(
+    args: argparse.Namespace, message: str, details: list[str] | None = None
+) -> CommandResult:
+    sys.stderr.write(f"[assessment-harness] {message}\n")
+    for detail in details or []:
+        sys.stderr.write(f"  - {detail}\n")
+    envelope = _build_envelope(
+        status="invalid_input",
+        exit_code=2,
+        command="materialize-review",
+        next_actions=[{"type": "fix_input", "message": message}],
+        input_error=message,
+    )
+    return CommandResult(envelope=envelope, exit_code=2)
+
+
+def _trace_link_decision_key_errors(target_key: dict[str, Any]) -> list[str]:
+    required = {"trace_link_id"}
+    actual = set(target_key)
+    missing = sorted(required - actual)
+    extra = sorted(actual - required)
+    errors: list[str] = []
+    if missing:
+        errors.append(f"target_key for trace_link missing fields: {missing}")
+    if extra:
+        errors.append(f"target_key for trace_link has non-identity fields: {extra}")
+    return errors
+
+
+def _trace_links_by_canonical_id(
+    trace_doc: Mapping[str, Any],
+    id_map_doc: Mapping[str, Any],
+) -> dict[str, dict[str, Any]]:
+    links_by_id: dict[str, dict[str, Any]] = {}
+    for index, trace_link in enumerate(trace_doc.get("trace_links", []), start=1):
+        if not isinstance(trace_link, dict):
+            continue
+        trace_link_id = _trace_link_id(trace_link, index, id_map_doc)
+        if trace_link_id in links_by_id:
+            raise HarnessInputError(
+                "id_map resolves multiple trace links to the same trace_link_id",
+                errors=[trace_link_id],
+            )
+        links_by_id[trace_link_id] = trace_link
+    return links_by_id
+
+
+def _review_decision_metadata(
+    review_doc: Mapping[str, Any],
+    decision: Mapping[str, Any],
+) -> dict[str, Any]:
+    return {
+        "review_id": review_doc.get("review_id"),
+        "reviewer": review_doc.get("reviewer"),
+        "reviewed_at": review_doc.get("reviewed_at"),
+        "action": decision.get("action"),
+        "note": decision.get("note"),
+    }
+
+
+def _apply_trace_link_decision(
+    trace_link: dict[str, Any],
+    decision: Mapping[str, Any],
+    review_doc: Mapping[str, Any],
+) -> None:
+    action = decision.get("action")
+    if action == "hold":
+        return
+    if action == "override":
+        override_payload = decision.get("override_payload")
+        if isinstance(override_payload, Mapping):
+            for key, value in override_payload.items():
+                trace_link[key] = copy.deepcopy(value)
+        trace_link["semantic_status"] = "human_overridden"
+        sources = list(trace_link.get("sources", []))
+        source = {
+            "kind": "human_override",
+            "review_id": review_doc.get("review_id"),
+            "reviewer": review_doc.get("reviewer"),
+            "reviewed_at": review_doc.get("reviewed_at"),
+        }
+        note = decision.get("note")
+        if note is not None:
+            source["note"] = note
+        sources.append(source)
+        trace_link["sources"] = sources
+    elif action == "accept":
+        trace_link["semantic_status"] = "human_accepted"
+    elif action == "rerun_requested":
+        trace_link["semantic_status"] = "rerun_requested"
+    trace_link["reviewed_by"] = review_doc.get("reviewer")
+    trace_link["reviewed_at"] = review_doc.get("reviewed_at")
+
+
+def _materialized_queue_status(action: str) -> str:
+    if action in {"accept", "override"}:
+        return "resolved"
+    if action == "rerun_requested":
+        return "rerun_pending"
+    return "held"
+
+
+def _load_materialize_review_queue(
+    args: argparse.Namespace,
+    final_review_path: Path,
+    review_doc: Mapping[str, Any],
+    compacted_dir: Path,
+    queue_decisions: Sequence[Mapping[str, Any]],
+) -> tuple[Path | None, dict[str, Any] | None]:
+    if args.review_queue:
+        queue_path = Path(args.review_queue)
+    else:
+        review_queue_path = review_doc.get("inputs", {}).get("review_queue_path")
+        if isinstance(review_queue_path, str):
+            queue_path = _resolve_relative(final_review_path, review_queue_path)
+        else:
+            candidate = compacted_dir / "review_queue.json"
+            queue_path = candidate if candidate.exists() else None
+    if queue_path is None:
+        if queue_decisions:
+            raise HarnessInputError(
+                "final review contains review_queue_entry decisions but no review_queue input"
+            )
+        return None, None
+    return queue_path, load_validated(queue_path, "review_queue")
+
+
+def _cmd_materialize_review(args: argparse.Namespace) -> CommandResult:
+    final_review_path = Path(args.final_review)
+    compacted_dir = Path(args.compacted_dir)
+    out_dir = Path(args.out_dir)
+    try:
+        review_doc = load_validated(final_review_path, "final_review")
+        spec_doc = load_validated(compacted_dir / "spec_items.yaml", "spec_items")
+        rubric_doc = load_validated(compacted_dir / "rubric_items.yaml", "rubric_items")
+        trace_doc = load_validated(compacted_dir / "trace_links.yaml", "trace_links")
+    except HarnessInputError as exc:
+        return _materialize_invalid_input(args, str(exc), exc.errors)
+
+    decisions = review_doc.get("decisions", [])
+    trace_decisions = [
+        decision
+        for decision in decisions
+        if isinstance(decision, Mapping) and decision.get("target_type") == "trace_link"
+    ]
+    queue_decisions = [
+        decision
+        for decision in decisions
+        if isinstance(decision, Mapping)
+        and decision.get("target_type") == "review_queue_entry"
+    ]
+    unsupported_decisions = [
+        decision
+        for decision in decisions
+        if isinstance(decision, Mapping)
+        and decision.get("target_type") in {"spec_item", "rubric_item"}
+    ]
+
+    trace_doc = copy.deepcopy(trace_doc)
+    queue_doc: dict[str, Any] | None = None
+    queue_path: Path | None = None
+
+    try:
+        if trace_decisions:
+            id_map_path = Path(args.id_map) if args.id_map else compacted_dir / "id_map.yaml"
+            if not id_map_path.exists():
+                raise HarnessInputError(
+                    "materialize-review requires id_map.yaml for trace_link decisions"
+                )
+            id_map_doc = load_validated(id_map_path, "id_map")
+            trace_by_id = _trace_links_by_canonical_id(trace_doc, id_map_doc)
+        else:
+            trace_by_id = {}
+
+        trace_decisions_by_id: dict[str, Mapping[str, Any]] = {}
+        for decision in trace_decisions:
+            target_key = decision.get("target_key", {})
+            if not isinstance(target_key, dict):
+                raise HarnessInputError(
+                    "final review trace_link decision target_key is not a mapping"
+                )
+            key_errors = _trace_link_decision_key_errors(target_key)
+            if key_errors:
+                raise HarnessInputError(
+                    "final review trace_link decision target_key is not minimal",
+                    errors=key_errors,
+                )
+            trace_link_id = target_key["trace_link_id"]
+            if trace_link_id in trace_decisions_by_id:
+                raise HarnessInputError(
+                    "final review contains duplicate decisions for one trace link",
+                    errors=[str(trace_link_id)],
+                )
+            if trace_link_id not in trace_by_id:
+                raise HarnessInputError(
+                    "final review contains a trace_link decision that matches no trace link",
+                    errors=[str(trace_link_id)],
+                )
+            trace_decisions_by_id[str(trace_link_id)] = decision
+
+        for trace_link_id, decision in trace_decisions_by_id.items():
+            _apply_trace_link_decision(trace_by_id[trace_link_id], decision, review_doc)
+
+        queue_path, queue_doc = _load_materialize_review_queue(
+            args,
+            final_review_path,
+            review_doc,
+            compacted_dir,
+            queue_decisions,
+        )
+        if queue_doc is not None:
+            queue_doc = copy.deepcopy(queue_doc)
+            queue_by_key: dict[tuple[tuple[str, Any], ...], dict[str, Any]] = {}
+            for entry in queue_doc.get("review_queue", []):
+                if not isinstance(entry, dict):
+                    continue
+                key = _review_queue_entry_key(entry)
+                if key in queue_by_key:
+                    raise HarnessInputError(
+                        "review_queue contains duplicate entry_id target keys",
+                        errors=[str(dict(key))],
+                    )
+                queue_by_key[key] = entry
+
+            queue_decisions_by_key: dict[
+                tuple[tuple[str, Any], ...], Mapping[str, Any]
+            ] = {}
+            for decision in queue_decisions:
+                target_key = decision.get("target_key", {})
+                if not isinstance(target_key, dict):
+                    raise HarnessInputError(
+                        "final review review_queue_entry decision target_key is not a mapping"
+                    )
+                key_errors = _review_queue_decision_key_errors(target_key)
+                if key_errors:
+                    raise HarnessInputError(
+                        "final review review_queue_entry decision target_key is not minimal",
+                        errors=key_errors,
+                    )
+                key = _decision_key(target_key)
+                if key in queue_decisions_by_key:
+                    raise HarnessInputError(
+                        "final review contains duplicate decisions for one review_queue entry",
+                        errors=[str(dict(key))],
+                    )
+                if key not in queue_by_key:
+                    raise HarnessInputError(
+                        "final review contains a review_queue_entry decision that matches no queue entry",
+                        errors=[str(dict(key))],
+                    )
+                queue_decisions_by_key[key] = decision
+
+            for key, decision in queue_decisions_by_key.items():
+                entry = queue_by_key[key]
+                action = str(decision.get("action"))
+                entry["status"] = _materialized_queue_status(action)
+                entry["review_decision"] = _review_decision_metadata(review_doc, decision)
+    except HarnessInputError as exc:
+        return _materialize_invalid_input(args, str(exc), exc.errors)
+
+    out_dir.mkdir(parents=True, exist_ok=True)
+    spec_out = out_dir / "spec_items.yaml"
+    rubric_out = out_dir / "rubric_items.yaml"
+    trace_out = out_dir / "trace_links.yaml"
+    queue_out = out_dir / "review_queue.json"
+    summary_out = out_dir / "materialization_summary.json"
+    _write_yaml(spec_out, spec_doc)
+    _write_yaml(rubric_out, rubric_doc)
+    _write_yaml(trace_out, trace_doc)
+    output_paths: dict[str, str] = {
+        "spec_items_path": str(spec_out),
+        "rubric_items_path": str(rubric_out),
+        "trace_links_path": str(trace_out),
+        "materialization_summary_path": str(summary_out),
+    }
+    if queue_doc is not None:
+        _write_json(queue_out, queue_doc)
+        output_paths["review_queue_path"] = str(queue_out)
+
+    summary = {
+        "review_id": review_doc.get("review_id"),
+        "trace_link_decision_count": len(trace_decisions),
+        "review_queue_decision_count": len(queue_decisions),
+        "unsupported_decision_count": len(unsupported_decisions),
+        "output_paths": output_paths,
+        "source_paths": {
+            "final_review_path": str(final_review_path),
+            "compacted_dir": str(compacted_dir),
+            "review_queue_path": str(queue_path) if queue_path is not None else None,
+        },
+    }
+    _write_json(summary_out, summary)
+
+    envelope = _build_envelope(
+        status="success",
+        exit_code=0,
+        command="materialize-review",
+        next_actions=[],
+        reviewed_dir=str(out_dir),
+        trace_links_path=str(trace_out),
+        review_queue_path=str(queue_out) if queue_doc is not None else None,
+        materialization_summary_path=str(summary_out),
+        trace_link_decision_count=len(trace_decisions),
+        review_queue_decision_count=len(queue_decisions),
+        unsupported_decision_count=len(unsupported_decisions),
+    )
+    return CommandResult(envelope=envelope, exit_code=0)
+
+
+# ---------------------------------------------------------------------------
 # envelope assembly
 # ---------------------------------------------------------------------------
 
@@ -2393,6 +2727,17 @@ def _build_parser() -> argparse.ArgumentParser:
     _add_output_arg(p_gate, root=False)
     p_gate.add_argument("--final-review", required=True)
 
+    p_materialize = sub.add_parser(
+        "materialize-review",
+        help="write reviewed artifacts from final-review decisions without mutating inputs.",
+    )
+    _add_output_arg(p_materialize, root=False)
+    p_materialize.add_argument("--final-review", required=True)
+    p_materialize.add_argument("--compacted-dir", required=True)
+    p_materialize.add_argument("--out-dir", required=True)
+    p_materialize.add_argument("--review-queue", default=None)
+    p_materialize.add_argument("--id-map", default=None)
+
     return parser
 
 
@@ -2416,6 +2761,8 @@ def main(argv: list[str] | None = None) -> int:
             result = _cmd_review(args)
         elif args.subcommand == "gate":
             result = _cmd_gate(args)
+        elif args.subcommand == "materialize-review":
+            result = _cmd_materialize_review(args)
         else:  # pragma: no cover - argparse guards this
             parser.error(f"unknown subcommand: {args.subcommand}")
             return 3
