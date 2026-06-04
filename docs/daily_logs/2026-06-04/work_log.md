@@ -12,7 +12,7 @@
 
 - Updated `docs/evaluation.md`.
   - Key change: refreshed the dated moving snapshot from 2026-05-31 to 2026-06-04.
-  - Key change: updated the full-suite count from `200 passed`; the final same-day snapshot is `266 passed` after the later `materialize-review` guard follow-up.
+  - Key change: updated the full-suite count from `200 passed`; the final same-day snapshot is `267 passed` after the later `materialize-review` guard follow-up.
   - Key change: added the `tests/test_compacting.py` row and updated CLI contract coverage from 48 to 89 tests.
   - Effect: the publication evidence page now reflects the current Phase 2 CLI surface (`extract`, `compact`, `verify`, semantic-verification consumption, and review_queue final-review handling).
 - Updated `HANDOFF.md`.
@@ -42,7 +42,7 @@
 
 ### Verification
 
-- `PYTHONPATH=src python3 -m pytest --collect-only -q` → initial refresh snapshot before `materialize-review`: 248 tests collected (agent-runner 27, CLI 89, compacting 7, fixtures 8, models 22, rules 95). Superseded later in this log by the 266-test snapshot after `materialize-review` guard follow-up.
+- `PYTHONPATH=src python3 -m pytest --collect-only -q` → initial refresh snapshot before `materialize-review`: 248 tests collected (agent-runner 27, CLI 89, compacting 7, fixtures 8, models 22, rules 95). Superseded later in this log by the 267-test snapshot after `materialize-review` guard follow-up.
 - `PYTHONPATH=src python3 -m pytest -q` → full suite passed for the initial refresh snapshot.
 - Fixture smoke runs with `PYTHONPATH=src python3 -m assessment_harness.cli --output json check ...`:
   - `clean_assignment` → `provisional_findings`, exit `0`, `(high=0, medium=2, informational=0)`, `review_queue_count=0`.
@@ -180,7 +180,7 @@
   - Locks finding decisions as `gate`-only inputs that do not materialize artifacts.
   - Locks review_queue duplicate-entry, duplicate-decision, missing-entry, and no-queue-input guards.
 - Updated `docs/evaluation.md`, `HANDOFF.md`, and `CHANGELOG.md`.
-  - Effect: project status and measured test counts now reflect the 266-test suite and the closed materialization guard gaps.
+  - Effect: project status and measured test counts now reflect the 267-test suite and the closed materialization guard gaps.
 
 ### Issues found
 
@@ -209,4 +209,43 @@
 - `PYTHONPATH=src python3 -m pytest -q -k "materialize_review" tests/test_cli_output_contract.py` → 18 passed.
 - `PYTHONPATH=src python3 -m pytest tests/test_cli_output_contract.py -q` → 107 passed.
 - `PYTHONPATH=src python3 -m pytest --collect-only -q` → 266 tests collected: agent-runner 27, CLI 107, compacting 7, fixtures 8, models 22, rules 95.
+- `PYTHONPATH=src python3 -m pytest -q` → full suite passed.
+
+## `materialize-review` Trace Duplicate Decision Guard
+
+### Goals
+
+- Re-check the materialize-review boundary matrix after owner feedback.
+- Close the remaining trace-link duplicate-decision guard that was accidentally conflated with the queue duplicate-decision guard.
+
+### Completed work
+
+- Added `test_materialize_review_rejects_duplicate_trace_link_decisions` in `tests/test_cli_output_contract.py`.
+  - Key change: writes two `target_type: trace_link` decisions with the same `target_key: {trace_link_id: T1}`.
+  - Effect: the `final review contains duplicate decisions for one trace link` invalid-input path is now directly pinned.
+- Updated `docs/evaluation.md` and `HANDOFF.md`.
+  - Effect: current measured counts now reflect 267 total tests and 108 CLI contract tests.
+
+### Issues found
+
+- Problem: the prior guard follow-up claimed duplicate decision coverage, but the added test exercised the review_queue duplicate-decision path only.
+  Cause: the trace and queue paths use similar wording but different code paths.
+  Resolution: added the missing trace-specific duplicate-decision regression and re-ran focused/CLI/full suites.
+  Outcome: the matrix no longer has the remaining trace duplicate-decision empty cell.
+
+### Decisions
+
+- **No commit/push without owner request:** per owner instruction after the prior accidental push, this follow-up remains uncommitted until explicitly requested.
+
+### Next steps
+
+1. Commit/push only when the owner asks.
+2. Add a `materialization_summary.schema.json` only if downstream tooling starts consuming the summary as a stable structured artifact.
+3. Add real SDK runner support when sample assignment and credential path are ready.
+
+### Verification
+
+- `PYTHONPATH=src python3 -m pytest -q -k "materialize_review" tests/test_cli_output_contract.py` → 19 passed.
+- `PYTHONPATH=src python3 -m pytest tests/test_cli_output_contract.py -q` → 108 passed.
+- `PYTHONPATH=src python3 -m pytest --collect-only -q` → 267 tests collected: agent-runner 27, CLI 108, compacting 7, fixtures 8, models 22, rules 95.
 - `PYTHONPATH=src python3 -m pytest -q` → full suite passed.

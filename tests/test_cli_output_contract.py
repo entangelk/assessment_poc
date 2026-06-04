@@ -2581,6 +2581,52 @@ def test_materialize_review_rejects_unknown_trace_link_id(
     assert "matches no trace link" in envelope["input_error"]
 
 
+def test_materialize_review_rejects_duplicate_trace_link_decisions(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    compacted_dir = tmp_path / "compacted"
+    findings_path = tmp_path / "findings.json"
+    review_path = tmp_path / "final_review.yaml"
+    _write_compacted_for_materialization(compacted_dir)
+    _write_findings(findings_path, [])
+    _write_final_review(
+        review_path,
+        findings_path,
+        decisions=[
+            {
+                "target_type": "trace_link",
+                "target_key": {"trace_link_id": "T1"},
+                "action": "hold",
+            },
+            {
+                "target_type": "trace_link",
+                "target_key": {"trace_link_id": "T1"},
+                "action": "accept",
+            },
+        ],
+    )
+
+    code, envelope, _ = _run_main(
+        [
+            "--output",
+            "json",
+            "materialize-review",
+            "--final-review",
+            str(review_path),
+            "--compacted-dir",
+            str(compacted_dir),
+            "--out-dir",
+            str(tmp_path / "reviewed"),
+        ],
+        capsys,
+    )
+
+    _assert_envelope(envelope)
+    assert code == 2
+    assert envelope["status"] == "invalid_input"
+    assert "duplicate decisions for one trace link" in envelope["input_error"]
+
+
 def test_materialize_review_rejects_non_minimal_trace_key(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
