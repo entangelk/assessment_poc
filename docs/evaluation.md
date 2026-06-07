@@ -15,24 +15,24 @@
 > (which fixture fires which finding, which input is rejected, in what order) as
 > the stable claim; treat the *counts* as "true on the snapshot date."
 >
-> **Snapshot:** 2026-06-04 · plan v1.31 · Python 3.12.3 · direct `pytest`
+> **Snapshot:** 2026-06-07 · plan v1.32 · Python 3.12.3 · direct `pytest`
 > (`PYTHONPATH=src`). Canonical dev environment is Docker (`python:3.11-slim`);
 > see [Reproduction](#reproduction).
 
 ## Test suite
 
-`278 passed` (full suite, this snapshot).
+`279 passed` (full suite, this snapshot).
 
 | Test module | Count | Locks |
 |---|---:|---|
 | `tests/test_rules.py` | 95 | Rule 0–3 + lint L1/L5/L6, each with under-strict + over-strict guards |
-| `tests/test_cli_output_contract.py` | 109 | envelope/exit-code contract, `schema` introspection, `extract`/`compact`/`verify`, semantic-verification consumption, `review`/`gate`/`materialize-review` branches |
+| `tests/test_cli_output_contract.py` | 110 | envelope/exit-code contract, `schema` introspection, `extract`/`compact`/`verify`, semantic-verification consumption, `review`/`gate`/`materialize-review` branches |
 | `tests/test_agent_runner_contract.py` | 27 | runner protocol, candidate schemas, normalization, staged + deep integrity |
 | `tests/test_tools.py` | 10 | framework-neutral read-only source/rubric tools |
 | `tests/test_compacting.py` | 7 | compacting helper union, id_map lineage, run exclusion, trace-reference remapping |
 | `tests/test_models.py` | 22 | YAML/schema loader, source-snapshot sha256, span access |
 | `tests/test_fixtures.py` | 8 | grounded end-to-end fixture behavior |
-| **Total** | **278** | |
+| **Total** | **279** | |
 
 Every rule branch is locked in **both directions** (the original bug can re-fail
 the test, *and* an over-correction that flags a normal case also fails) — the
@@ -90,7 +90,7 @@ docker compose run --rm test          # full pytest suite
 What produced this snapshot (direct, equivalent):
 
 ```bash
-PYTHONPATH=src python3 -m pytest -q                 # 278 passed
+PYTHONPATH=src python3 -m pytest -q                 # 279 passed
 PYTHONPATH=src python3 -m pytest --collect-only -q  # per-module counts
 ```
 

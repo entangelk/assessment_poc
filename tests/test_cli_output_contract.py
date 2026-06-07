@@ -3531,8 +3531,37 @@ def test_extract_mock_fixture_writes_validated_candidate_runs(
     assert envelope["run_count"] == 2
     assert envelope["valid_run_count"] == 2
     assert envelope["invalid_run_count"] == 0
-    assert envelope["source_manifest_path"].endswith(
-        "clean_assignment/source_manifest.yaml"
+    manifest_path = Path(envelope["source_manifest_path"])
+    assert manifest_path == tmp_path / "source_snapshot" / "manifest.yaml"
+    manifest_doc = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
+    assert validate("source_manifest", manifest_doc) == []
+    assert manifest_doc["documents"] == [
+        {
+            "document_id": "DOC_SPEC",
+            "role": "candidate_spec",
+            "path": "spec.md",
+            "sha256": hashlib.sha256(
+                (tmp_path / "source_snapshot" / "spec.md").read_bytes()
+            ).hexdigest(),
+        },
+        {
+            "document_id": "DOC_RUBRIC",
+            "role": "evaluator_rubric",
+            "path": "rubric.md",
+            "sha256": hashlib.sha256(
+                (tmp_path / "source_snapshot" / "rubric.md").read_bytes()
+            ).hexdigest(),
+        },
+    ]
+    assert (tmp_path / "source_snapshot" / "spec.md").read_text(
+        encoding="utf-8"
+    ) == (fixture_dir / "clean_assignment" / "source" / "spec.md").read_text(
+        encoding="utf-8"
+    )
+    assert (tmp_path / "source_snapshot" / "rubric.md").read_text(
+        encoding="utf-8"
+    ) == (fixture_dir / "clean_assignment" / "source" / "rubric.md").read_text(
+        encoding="utf-8"
     )
 
     for run_id in ("run_001", "run_002"):
@@ -3556,6 +3585,43 @@ def test_extract_mock_fixture_writes_validated_candidate_runs(
         } == {run_id}
         assert {event["run_id"] for event in audit_trace} == {run_id}
         assert {event["run_id"] for event in raw_trace} == {run_id}
+
+
+def test_extract_explicit_source_manifest_takes_precedence(
+    fixture_dir: Path,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    out_dir = tmp_path / "runs"
+    explicit_manifest = fixture_dir / "clean_assignment" / "source_manifest.yaml"
+
+    code, envelope, _ = _run_main(
+        [
+            "--output",
+            "json",
+            "extract",
+            "--spec",
+            str(fixture_dir / "clean_assignment" / "source" / "spec.md"),
+            "--rubric",
+            str(fixture_dir / "clean_assignment" / "source" / "rubric.md"),
+            "--source-manifest",
+            str(explicit_manifest),
+            "--runner",
+            "mock_fixture",
+            "--fixture-dir",
+            str(fixture_dir / "clean_assignment"),
+            "--runs",
+            "1",
+            "--out-dir",
+            str(out_dir),
+        ],
+        capsys,
+    )
+
+    _assert_envelope(envelope)
+    assert code == 0
+    assert envelope["source_manifest_path"] == str(explicit_manifest)
+    assert not (tmp_path / "source_snapshot" / "manifest.yaml").exists()
 
 
 def test_extract_mock_fixture_output_feeds_compact_runs_dir(

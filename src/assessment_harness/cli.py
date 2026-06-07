@@ -23,7 +23,9 @@ from __future__ import annotations
 import argparse
 import copy
 import datetime as _dt
+import hashlib
 import json
+import shutil
 import sys
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -720,14 +722,58 @@ def _extract_runner(args: argparse.Namespace) -> MockFixtureRunner:
 def _extract_source_manifest_path(args: argparse.Namespace) -> Path:
     if args.source_manifest:
         return Path(args.source_manifest)
-    if args.runner == "mock_fixture" and args.fixture_dir:
-        fixture_manifest = Path(args.fixture_dir) / "source_manifest.yaml"
-        if fixture_manifest.exists():
-            return fixture_manifest
-    raise HarnessInputError(
-        "--source-manifest is required unless --runner mock_fixture can read "
-        "source_manifest.yaml from --fixture-dir"
-    )
+    return _generate_extract_source_snapshot(args)
+
+
+def _generate_extract_source_snapshot(args: argparse.Namespace) -> Path:
+    snapshot_dir = Path(args.out_dir).parent / "source_snapshot"
+    spec_snapshot_path = snapshot_dir / "spec.md"
+    rubric_snapshot_path = snapshot_dir / "rubric.md"
+    manifest_path = snapshot_dir / "manifest.yaml"
+
+    snapshot_dir.mkdir(parents=True, exist_ok=True)
+    _copy_snapshot_source(Path(args.spec), spec_snapshot_path)
+    _copy_snapshot_source(Path(args.rubric), rubric_snapshot_path)
+    manifest_doc = {
+        "project_id": Path(args.spec).parent.name or "assessment_extract",
+        "assessment_version": "v1",
+        "documents": [
+            {
+                "document_id": "DOC_SPEC",
+                "role": "candidate_spec",
+                "path": "spec.md",
+                "sha256": _sha256_file(spec_snapshot_path),
+            },
+            {
+                "document_id": "DOC_RUBRIC",
+                "role": "evaluator_rubric",
+                "path": "rubric.md",
+                "sha256": _sha256_file(rubric_snapshot_path),
+            },
+        ],
+    }
+    errors = validate("source_manifest", manifest_doc)
+    if errors:
+        raise HarnessInputError(
+            "generated source manifest failed schema validation",
+            errors=errors,
+        )
+    _write_yaml(manifest_path, manifest_doc)
+    return manifest_path
+
+
+def _copy_snapshot_source(source: Path, destination: Path) -> None:
+    if source.resolve() == destination.resolve():
+        return
+    shutil.copyfile(source, destination)
+
+
+def _sha256_file(path: Path) -> str:
+    hasher = hashlib.sha256()
+    with path.open("rb") as fh:
+        for chunk in iter(lambda: fh.read(65536), b""):
+            hasher.update(chunk)
+    return hasher.hexdigest()
 
 
 def _extract_run_count(runs: int) -> int:

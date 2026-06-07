@@ -1,4 +1,4 @@
-# Assessment Spec Harness PoC 구현 계획서 v1.31
+# Assessment Spec Harness PoC 구현 계획서 v1.32
 
 ## 0. 문서 목적
 
@@ -1159,6 +1159,14 @@ assessment-harness materialize-review \
   --output json
 ```
 
+`extract`는 `--source-manifest`가 명시되지 않으면 `--out-dir`의 sibling
+directory인 `source_snapshot/`에 입력 spec/rubric을 immutable snapshot으로 복사하고
+`source_snapshot/manifest.yaml`을 생성한다. 예를 들어 `--out-dir work/runs`이면
+manifest는 `work/source_snapshot/manifest.yaml`이다. 생성 manifest는 `DOC_SPEC`
+(`candidate_spec`)과 `DOC_RUBRIC`(`evaluator_rubric`) 문서를 기록하고, 각 snapshot
+파일의 `sha256`을 포함한다. `--source-manifest`가 명시되면 그 manifest를 그대로
+사용하며 자동 snapshot 생성을 수행하지 않는다.
+
 `compact`는 union 기반이며 자동 분류·채택을 하지 않는다. 모든 유효 candidate를 entry로 보존하고, 동일성으로 판정된 것만 하나의 entry로 묶으면서 `support`/`identity_basis`/`variants`를 기록한다.
 
 `verify`는 `ai_judgement` link에 대한 별도 read-only verifier-agent 실행이다. 각 run의 제안과 취합 결과를 저장하되 compacted artifact 또는 최종 판단을 수정하지 않는다.
@@ -1379,7 +1387,8 @@ Phase 1 전 확정할 사항:
 
 Phase 2/3 전 확정할 사항:
 
-1. Phase 2에서 연결할 Claude Agent SDK 자격 증명 제공 방식.
+1. Phase 2에서 연결할 Claude Agent SDK 자격 증명 제공 방식. 결정 전 검토 항목은
+   `docs/sdk_runner_decisions.md`에 정리한다.
 2. compacting의 `identity_basis` 알고리즘:
    - spec_item: 후보군 예시 — `source+section+normalized_text`, `source+normalized_text`, `normalized_text only`
    - rubric_item: 후보군 예시 — `title+normalized_description`, `normalized_title only`
@@ -1390,7 +1399,10 @@ Phase 2/3 전 확정할 사항:
 5. `trace_link.rationale`의 최소 length 또는 quality guard 적용 여부.
 6. 제외/단일 발견 agent candidate 및 raw trace의 retention/redaction/access 정책.
 7. Agent runner `max_turns`, cost ceiling 정책.
-8. Tool 호출 사이드이펙트 정책: tool은 read-only로 시작할지, propose 계열이 candidate file에 직접 쓸지 vs runner가 collect 후 일괄 출력할지.
+8. ✓ Tool 호출 사이드이펙트 정책: tool은 read-only로 유지하고, propose 계열은 파일을
+   직접 쓰지 않는다. 후보 생성은 runner가 도구 호출 결과를 collect한 뒤 run 종료 시
+   candidate artifact로 일괄 출력한다. 파일 직접 쓰기는 audit 경계를 흐리므로 PoC
+   기본 정책에서 제외한다.
 9. 복수 run의 형태: PoC는 candidate-generation role과 채택된 read-only semantic-verifier role 각각에서 동일 설정의 독립 반복으로 한정. 추가 critic/resolver 역할은 후속 MVP 범위.
 10. reproducibility 범위: "같은 candidate 집합 + 같은 identity_basis 설정 → 같은 compacted artifacts", "같은 compacted artifacts + 같은 semantic verification artifacts → 같은 findings"까지만 보장한다. 같은 spec/rubric을 N회 실행했을 때 같은 candidate 또는 verifier 제안이 나오는 것은 보장하지 않는다.
 
@@ -1427,6 +1439,24 @@ Phase 2/3 전 확정할 사항:
 ---
 
 ## 15. 변경 이력
+
+### v1.32 (2026-06-07)
+
+핵심 변경: **`extract` source snapshot 자동 생성을 초기 구현 계약으로 확정**.
+
+- **CLI 동작**: `extract --source-manifest`가 생략되면 `--out-dir`의 sibling
+  `source_snapshot/`에 spec/rubric snapshot과 `manifest.yaml`을 생성한다. 예:
+  `--out-dir work/runs` → `work/source_snapshot/manifest.yaml`.
+- **명시 manifest 우선**: `--source-manifest`가 주어지면 해당 manifest를 그대로 쓰고
+  자동 snapshot 생성을 수행하지 않는다.
+- **문서 ID 계약**: 자동 manifest는 `DOC_SPEC` / `DOC_RUBRIC`를 사용해 기존 fixture와
+  runner 후보의 `source_ref.document_id` 계약을 유지한다.
+- **Tool side-effect 결정**: read-only tool 정책을 채택하고, propose 계열은 파일에 직접
+  쓰지 않는다. runner가 collect 후 candidate artifact를 일괄 출력한다.
+- **SDK runner 결정 보류**: credential, 샘플 assignment, raw trace 보관/마스킹 정책은
+  `docs/sdk_runner_decisions.md`에 별도 checklist로 정리하고 추후 결정한다.
+- **Publication mirror 순서**: bilingual mirror / README EN-KO flip은 모든 작업 후
+  publication freeze 시점까지 계속 defer한다.
 
 ### v1.31 (2026-06-04)
 

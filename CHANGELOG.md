@@ -2,6 +2,8 @@
 
 | Date | Change | Detail |
 |---|---|---|
+| 2026-06-07 | `extract` source snapshot auto-generation: when `--source-manifest` is omitted, `extract` now writes sibling `source_snapshot/spec.md`, `source_snapshot/rubric.md`, and `source_snapshot/manifest.yaml`; explicit manifests still take precedence. | [Work log](docs/daily_logs/2026-06-07/work_log.md) |
+| 2026-06-07 | Plan v1.32 + SDK runner decision checklist: adopts read-only framework tools with runner-collected candidate emission, defers publication mirrors until final freeze, and records live SDK runner decisions in `docs/sdk_runner_decisions.md`. | [Work log](docs/daily_logs/2026-06-07/work_log.md) |
 | 2026-06-04 | Initial read-only framework tools: adds Markdown source section listing/lookup and schema-validated rubric item listing/lookup for future agent runners, leaving propose/write tools deferred until the side-effect policy is decided. | [Work log](docs/daily_logs/2026-06-04/work_log.md) |
 | 2026-06-04 | `materialization_summary.schema.json`: registers and validates the `materialize-review` summary artifact so downstream agents can consume review materialization counts and paths as a stable structured output. | [Work log](docs/daily_logs/2026-06-04/work_log.md) |
 | 2026-06-04 | `materialize-review` guard follow-up: clarifies that deferred spec/rubric decisions do not cause an `invalid_input` verdict while still counting in `unsupported_decision_count`, and locks the previously untraced trace-link/review_queue/materialization boundary branches under CLI regressions. | [Work log](docs/daily_logs/2026-06-04/work_log.md) |
