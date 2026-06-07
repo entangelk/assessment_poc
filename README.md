@@ -321,6 +321,7 @@ CLI는 `--policy config/policy.yaml` 하나로 모든 정책을 받는다.
 | [docs/publication_plan_v1.md](docs/publication_plan_v1.md) | 이 공개 작업 자체의 계획 (메타 프로세스) |
 | [schemas/](schemas/) | JSON Schema 데이터 계약 |
 | [docs/sdk_runner_decisions.md](docs/sdk_runner_decisions.md) | 실제 SDK runner 구현 전 결정해야 할 credential / sample / trace retention 체크리스트 |
+| [docs/sample_assignment_guidelines.md](docs/sample_assignment_guidelines.md) | AI가 PoC용 테스트 과제 spec/rubric 샘플을 만들 때 따를 작성 가이드 |
 
 **상세 기록 (감사 추적)**
 

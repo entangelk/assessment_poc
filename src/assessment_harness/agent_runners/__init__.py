@@ -5,6 +5,9 @@ for now. Real SDK integrations are later Phase 2 work.
 """
 
 from assessment_harness.agent_runners.base import AgentRunResult, AgentRunner
+from assessment_harness.agent_runners.deterministic import (
+    DeterministicExtractionRunner,
+)
 from assessment_harness.agent_runners.integrity import (
     CandidateRunIntegrityResult,
     classify_candidate_run_integrity,
@@ -18,6 +21,7 @@ __all__ = [
     "AgentRunResult",
     "AgentRunner",
     "CandidateRunIntegrityResult",
+    "DeterministicExtractionRunner",
     "MockFixtureRunner",
     "classify_candidate_run_integrity",
     "classify_deep_candidate_run_integrity",

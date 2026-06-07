@@ -34,6 +34,7 @@ from typing import Any, Mapping, Sequence
 import yaml
 
 from .agent_runners import (
+    DeterministicExtractionRunner,
     MockFixtureRunner,
     classify_deep_candidate_run_integrity,
     normalize_result_candidates,
@@ -632,7 +633,7 @@ def _cmd_extract(args: argparse.Namespace) -> CommandResult:
             max_turns=1,
             policy=policy_doc,
         )
-        if isinstance(runner, MockFixtureRunner):
+        if isinstance(runner, (MockFixtureRunner, DeterministicExtractionRunner)):
             result = _with_mock_extract_run_id(result, run_id)
         candidates = normalize_result_candidates(result)
         integrity = classify_deep_candidate_run_integrity(
@@ -706,10 +707,15 @@ def _validate_extract_paths(args: argparse.Namespace) -> None:
             raise HarnessInputError(f"{label} file not found: {path}")
 
 
-def _extract_runner(args: argparse.Namespace) -> MockFixtureRunner:
+def _extract_runner(
+    args: argparse.Namespace,
+) -> MockFixtureRunner | DeterministicExtractionRunner:
+    if args.runner == "deterministic_extraction":
+        return DeterministicExtractionRunner()
     if args.runner != "mock_fixture":
         raise HarnessInputError(
-            "only --runner mock_fixture is implemented; real SDK runners are deferred"
+            "only --runner mock_fixture or deterministic_extraction is implemented; "
+            "real SDK runners are deferred"
         )
     if not args.fixture_dir:
         raise HarnessInputError("--fixture-dir is required when --runner mock_fixture")

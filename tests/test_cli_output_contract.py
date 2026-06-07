@@ -3836,6 +3836,99 @@ def test_extract_mock_fixture_rejects_unknown_runner(
     assert "real SDK runners are deferred" in stderr
 
 
+def test_extract_deterministic_runner_generates_grounded_validated_candidates(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    spec = tmp_path / "spec.md"
+    rubric = tmp_path / "rubric.md"
+    spec.write_text(
+        "# Sample Spec\n"
+        "\n"
+        "## Requirements\n"
+        "\n"
+        "The solution must validate every input record before writing\n"
+        "it to the output file.\n"
+        "\n"
+        "The solution may print a short summary after processing.\n",
+        encoding="utf-8",
+    )
+    rubric.write_text(
+        "# Sample Rubric\n"
+        "\n"
+        "## R1. Validation (20 points)\n"
+        "\n"
+        'Traceable spec quote: "The solution must validate every input record\n'
+        'before writing it to the output file."\n'
+        "\n"
+        "## RB1. Bonus: summary (+5 points)\n"
+        "\n"
+        'Traceable spec quote: "The solution may print a short summary after\n'
+        'processing."\n'
+        "\n"
+        "## Q1. Qualitative note: readability\n"
+        "\n"
+        "Not scored.\n",
+        encoding="utf-8",
+    )
+    out_dir = tmp_path / "runs"
+
+    code, envelope, _ = _run_main(
+        [
+            "--output",
+            "json",
+            "extract",
+            "--spec",
+            str(spec),
+            "--rubric",
+            str(rubric),
+            "--runner",
+            "deterministic_extraction",
+            "--runs",
+            "1",
+            "--out-dir",
+            str(out_dir),
+        ],
+        capsys,
+    )
+
+    _assert_envelope(envelope)
+    assert code == 0
+    # grounding-correct candidates promote the whole run via deep Rule 0
+    assert envelope["valid_run_count"] == 1
+    assert envelope["invalid_run_count"] == 0
+    # no --source-manifest given: snapshot auto-generated beside --out-dir
+    assert envelope["source_manifest_path"] == str(
+        tmp_path / "source_snapshot" / "manifest.yaml"
+    )
+
+    candidates = yaml.safe_load(
+        (out_dir / "run_001" / "candidates.yaml").read_text(encoding="utf-8")
+    )
+    assert validate("candidates", candidates) == []
+    all_candidates = (
+        candidates["spec_item_candidates"]
+        + candidates["rubric_item_candidates"]
+        + candidates["trace_link_candidates"]
+    )
+    assert all_candidates
+    # under-strict guard: any grounding regression drops these below validated
+    assert all(c["integrity_status"] == "validated" for c in all_candidates)
+    # role classification covers scored / bonus / qualitative
+    assert {
+        c["proposed_item"]["evaluation_role"]
+        for c in candidates["rubric_item_candidates"]
+    } == {"scored", "bonus", "qualitative"}
+    # over-strict guard: qualitative item (no traceable quote) is NOT traced,
+    # while the scored and bonus items are.
+    traced_rubric_ids = {
+        c["proposed_item"]["rubric_id"]
+        for c in candidates["trace_link_candidates"]
+    }
+    assert "Q1" not in traced_rubric_ids
+    assert {"R1", "RB1"} <= traced_rubric_ids
+
+
 def test_extract_rejects_runs_outside_plan_limit(
     fixture_dir: Path,
     tmp_path: Path,
