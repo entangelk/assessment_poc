@@ -1,6 +1,6 @@
 # Unified harness policy (Phase 0 default).
 # Sections: rules / compacting / runs / verification.
-# Numeric and algorithm choices are PoC defaults; revisit per docs/implementation_plan_assessment_harness_poc_v1.md §13.
+# Numeric and algorithm choices are PoC defaults; revisit per docs/planning/implementation_plan_assessment_harness_poc_v1.md §13.
 
 rules:
   optionality_mismatch:

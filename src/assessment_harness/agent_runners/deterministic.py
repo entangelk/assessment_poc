@@ -7,7 +7,7 @@ call**: it derives candidates deterministically from the rubric's declared
 ``Traceable spec quote`` hints and locates each quote inside the spec so every
 emitted reference is grounding-correct against the source snapshot.
 
-It is NOT live agent extraction. See ``docs/sdk_runner_minimal_slice_plan.md``
+It is NOT live agent extraction. See ``docs/guidelines/sdk_runner_minimal_slice_plan.md``
 for the placeholder decisions this runner encodes and the path to a real SDK
 runner behind the same ``AgentRunner`` protocol.
 """

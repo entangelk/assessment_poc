@@ -15,10 +15,10 @@
 본 PoC 구현 중 문서가 충돌할 경우 다음 순서로 해석한다.
 
 1. 본 구현 계획서: 구현 범위, 단계, 입력/출력 계약, 완료 기준
-2. `docs/ideation_assessment_harness_v2.2.md`: lint 가족과 최신 ideation 결정
-3. `docs/ideation_assessment_harness_v2.1.md`: 제품 목적과 장기 방향
-4. `docs/ideation_assessment_harness_v2.md`: historical reference
-5. `docs/ideation_assessment_harness_v1.md`: historical ideation reference
+2. `docs/planning/ideation_assessment_harness_v2.2.md`: lint 가족과 최신 ideation 결정
+3. `docs/planning/ideation_assessment_harness_v2.1.md`: 제품 목적과 장기 방향
+4. `docs/planning/ideation_assessment_harness_v2.md`: historical reference
+5. `docs/planning/ideation_assessment_harness_v1.md`: historical ideation reference
 
 본 계획서가 `v2.2` 또는 `v2.1`의 핵심 목적과 충돌하는 경우에는 임의 구현하지 않고 결정을 다시 기록한다.
 
@@ -1388,7 +1388,7 @@ Phase 1 전 확정할 사항:
 Phase 2/3 전 확정할 사항:
 
 1. Phase 2에서 연결할 Claude Agent SDK 자격 증명 제공 방식. 결정 전 검토 항목은
-   `docs/sdk_runner_decisions.md`에 정리한다.
+   `docs/guidelines/sdk_runner_decisions.md`에 정리한다.
 2. compacting의 `identity_basis` 알고리즘:
    - spec_item: 후보군 예시 — `source+section+normalized_text`, `source+normalized_text`, `normalized_text only`
    - rubric_item: 후보군 예시 — `title+normalized_description`, `normalized_title only`
@@ -1454,7 +1454,7 @@ Phase 2/3 전 확정할 사항:
 - **Tool side-effect 결정**: read-only tool 정책을 채택하고, propose 계열은 파일에 직접
   쓰지 않는다. runner가 collect 후 candidate artifact를 일괄 출력한다.
 - **SDK runner 결정 보류**: credential, 샘플 assignment, raw trace 보관/마스킹 정책은
-  `docs/sdk_runner_decisions.md`에 별도 checklist로 정리하고 추후 결정한다.
+  `docs/guidelines/sdk_runner_decisions.md`에 별도 checklist로 정리하고 추후 결정한다.
 - **Publication mirror 순서**: bilingual mirror / README EN-KO flip은 모든 작업 후
   publication freeze 시점까지 계속 defer한다.
 

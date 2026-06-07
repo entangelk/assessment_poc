@@ -70,7 +70,7 @@ decision later.
    step has no AI-judgement evidence to review in this slice.
 5. **Runner limits / credentials / raw-trace retention.** `max_turns`, cost
    ceilings, credential delivery, and raw-trace redaction (the open items in
-   `docs/sdk_runner_decisions.md`) are not exercised because there is no live
+   `docs/guidelines/sdk_runner_decisions.md`) are not exercised because there is no live
    model. They remain open and must be decided before a real SDK runner.
 
 ## Out of scope for this slice
@@ -84,6 +84,6 @@ decision later.
 
 1. Keep `DeterministicExtractionRunner` as the offline/CI default.
 2. Add `SdkExtractionRunner` behind the same protocol once
-   `docs/sdk_runner_decisions.md` items 1–7 are decided and credentials/SDK are
+   `docs/guidelines/sdk_runner_decisions.md` items 1–7 are decided and credentials/SDK are
    available.
 3. Make live SDK tests opt-in; keep the normal suite offline and deterministic.

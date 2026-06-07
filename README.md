@@ -202,7 +202,7 @@ flowchart TB
 
 ## 핵심 데이터 계약
 
-자세한 schema는 [구현 계획서 §5](docs/implementation_plan_assessment_harness_poc_v1.md#5-데이터-계약) 참고. 요약:
+자세한 schema는 [구현 계획서 §5](docs/planning/implementation_plan_assessment_harness_poc_v1.md#5-데이터-계약) 참고. 요약:
 
 - **spec_items / rubric_items / trace_links**: compacted artifacts. `support` (어느 run에서 발견), `identity_basis` (동일성 판단 기준), `variants` (미세 차이 보존)
 - **candidate artifacts**: run별 pre-compacting 후보. `classify_candidate_run_integrity`는 schema/audit trace attribution만 확인해 `structurally_validated`로 표시하고, `classify_deep_candidate_run_integrity`가 내부 reference, source grounding, token quote mismatch를 구분해 통과한 run만 `validated`로 승격한다.
@@ -293,7 +293,7 @@ CLI는 `--policy config/policy.yaml` 하나로 모든 정책을 받는다.
 > 진행은 선형 단계가 아니었다. Phase 2 기반(runner·candidate 계열)이 먼저 들어왔고,
 > 실제 과제 manual run과 전체 E2E는 아직이다. 그래서 단계 번호 대신 영역별 상태로 표기한다.
 
-상세 진입 조건/완료 기준: [구현 계획서 §9, §12](docs/implementation_plan_assessment_harness_poc_v1.md#9-단계별-구현-계획)
+상세 진입 조건/완료 기준: [구현 계획서 §9, §12](docs/planning/implementation_plan_assessment_harness_poc_v1.md#9-단계별-구현-계획)
 
 ---
 
@@ -314,14 +314,14 @@ CLI는 `--policy config/policy.yaml` 하나로 모든 정책을 받는다.
 
 | 문서 | 역할 |
 |---|---|
-| [docs/implementation_plan_assessment_harness_poc_v1.md](docs/implementation_plan_assessment_harness_poc_v1.md) | **구현 명세 (1순위 SoT)** — 현재 v1.32 |
-| [docs/ideation_assessment_harness_v2.2.md](docs/ideation_assessment_harness_v2.2.md) | Rubric Lint Rules 가족 (2순위, 2026-05-27 final + in-place 개정) |
-| [docs/ideation_assessment_harness_v2.1.md](docs/ideation_assessment_harness_v2.1.md) | 제품 목적과 장기 방향 (3순위) |
-| [docs/ideation_assessment_harness_v2.md](docs/ideation_assessment_harness_v2.md) · [v1](docs/ideation_assessment_harness_v1.md) | historical reference |
-| [docs/publication_plan_v1.md](docs/publication_plan_v1.md) | 이 공개 작업 자체의 계획 (메타 프로세스) |
+| [docs/planning/implementation_plan_assessment_harness_poc_v1.md](docs/planning/implementation_plan_assessment_harness_poc_v1.md) | **구현 명세 (1순위 SoT)** — 현재 v1.32 |
+| [docs/planning/ideation_assessment_harness_v2.2.md](docs/planning/ideation_assessment_harness_v2.2.md) | Rubric Lint Rules 가족 (2순위, 2026-05-27 final + in-place 개정) |
+| [docs/planning/ideation_assessment_harness_v2.1.md](docs/planning/ideation_assessment_harness_v2.1.md) | 제품 목적과 장기 방향 (3순위) |
+| [docs/planning/ideation_assessment_harness_v2.md](docs/planning/ideation_assessment_harness_v2.md) · [v1](docs/planning/ideation_assessment_harness_v1.md) | historical reference |
+| [docs/planning/publication_plan_v1.md](docs/planning/publication_plan_v1.md) | 이 공개 작업 자체의 계획 (메타 프로세스) |
 | [schemas/](schemas/) | JSON Schema 데이터 계약 |
-| [docs/sdk_runner_decisions.md](docs/sdk_runner_decisions.md) | 실제 SDK runner 구현 전 결정해야 할 credential / sample / trace retention 체크리스트 |
-| [docs/sample_assignment_guidelines.md](docs/sample_assignment_guidelines.md) | AI가 PoC용 테스트 과제 spec/rubric 샘플을 만들 때 따를 작성 가이드 |
+| [docs/guidelines/sdk_runner_decisions.md](docs/guidelines/sdk_runner_decisions.md) | 실제 SDK runner 구현 전 결정해야 할 credential / sample / trace retention 체크리스트 |
+| [docs/guidelines/sample_assignment_guidelines.md](docs/guidelines/sample_assignment_guidelines.md) | AI가 PoC용 테스트 과제 spec/rubric 샘플을 만들 때 따를 작성 가이드 |
 
 **상세 기록 (감사 추적)**
 

@@ -2,6 +2,7 @@
 
 | Date | Change | Detail |
 |---|---|---|
+| 2026-06-07 | Docs reorganization: moved design/plan docs to `docs/planning/` and runner/sample guides to `docs/guidelines/`; updated active references (README, HANDOFF, cross-doc links, code comments). Historical `daily_logs`/`verifications` links were left as-is (path mapping recorded in the work log). | [Work log](docs/daily_logs/2026-06-07/work_log.md) |
 | 2026-06-07 | `deterministic_extraction` runner + first full-workflow sample run: adds an offline, grounding-correct candidate runner (`extract --runner deterministic_extraction`) as an execution stand-in (no LLM/network/credentials), enabling the full `extract→…→materialize-review` pipeline on a real sample. Owner decision: prioritize execution now; placeholder choices recorded in `docs/sdk_runner_minimal_slice_plan.md` for later. Real LLM-backed SDK runner still deferred. | [Work log](docs/daily_logs/2026-06-07/work_log.md) |
 | 2026-06-07 | `extract` source snapshot auto-generation: when `--source-manifest` is omitted, `extract` now writes sibling `source_snapshot/spec.md`, `source_snapshot/rubric.md`, and `source_snapshot/manifest.yaml`; explicit manifests still take precedence. | [Work log](docs/daily_logs/2026-06-07/work_log.md) |
 | 2026-06-07 | Plan v1.32 + SDK runner decision checklist: adopts read-only framework tools with runner-collected candidate emission, defers publication mirrors until final freeze, and records live SDK runner decisions in `docs/sdk_runner_decisions.md`. | [Work log](docs/daily_logs/2026-06-07/work_log.md) |

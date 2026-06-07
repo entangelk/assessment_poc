@@ -256,3 +256,50 @@ Ran the whole pipeline on the sample (artifacts under `work/sample_run/`):
 - `PYTHONPATH=src python3 -m pytest` → `280 passed`.
 - `python3 -m py_compile src/assessment_harness/cli.py src/assessment_harness/agent_runners/deterministic.py` → OK.
 - Full sample pipeline re-run end-to-end (artifacts under `work/sample_run/`).
+
+## Docs Reorganization (planning/ + guidelines/)
+
+### Goals
+
+- Tidy a flat, growing `docs/` by grouping design/plan docs and runner/sample
+  guides into subfolders, and keep link integrity for the docs that point at
+  them.
+
+### Completed work
+
+- Created `docs/planning/` and `docs/guidelines/` and `git mv`-d 9 files:
+
+  | Old path | New path |
+  |---|---|
+  | `docs/ideation_assessment_harness_v1.md` | `docs/planning/ideation_assessment_harness_v1.md` |
+  | `docs/ideation_assessment_harness_v2.md` | `docs/planning/ideation_assessment_harness_v2.md` |
+  | `docs/ideation_assessment_harness_v2.1.md` | `docs/planning/ideation_assessment_harness_v2.1.md` |
+  | `docs/ideation_assessment_harness_v2.2.md` | `docs/planning/ideation_assessment_harness_v2.2.md` |
+  | `docs/implementation_plan_assessment_harness_poc_v1.md` | `docs/planning/implementation_plan_assessment_harness_poc_v1.md` |
+  | `docs/publication_plan_v1.md` | `docs/planning/publication_plan_v1.md` |
+  | `docs/sample_assignment_guidelines.md` | `docs/guidelines/sample_assignment_guidelines.md` |
+  | `docs/sdk_runner_decisions.md` | `docs/guidelines/sdk_runner_decisions.md` |
+  | `docs/sdk_runner_minimal_slice_plan.md` | `docs/guidelines/sdk_runner_minimal_slice_plan.md` |
+
+- Updated active references to the new paths: `README.md`, `HANDOFF.md`, the
+  cross-references inside the moved planning/guidelines docs, and code
+  (`src/assessment_harness/agent_runners/deterministic.py` docstring,
+  `config/policy.yaml` comment).
+
+### Decision on historical logs
+
+- Owner decision (2026-06-07): `docs/daily_logs/**` and `docs/verifications/**`
+  are historical records. Their links to the moved files were **left as-is** —
+  the path mapping above is the note for anyone following an old relative link.
+  Active docs were updated; logs keep their point-in-time paths.
+- `CHANGELOG.md` is a log too: its existing inline backtick paths were left
+  unchanged; a new dated entry records the reorganization with current paths.
+
+### Verification
+
+- Active hyperlinks in `README.md` / `HANDOFF.md` resolve to existing files
+  (the only non-file targets are the `docs/daily_logs/` and `docs/verifications/`
+  directories, which exist).
+- No old `docs/<file>` paths remain in active docs or code (grep, excluding
+  historical logs and CHANGELOG).
+- `PYTHONPATH=src python3 -m pytest` → `280 passed` (move is docs/comment only).

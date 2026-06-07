@@ -59,7 +59,7 @@ core framing — **foreground the decisions and the process, not just the code.*
 - [ ] `docs/decisions.md` / `.ko.md` — standalone decision vignettes (§7.1).
 
 ### 3.2 Reference (public, linked from the Documentation Map, light cleanup only)
-- [ ] `docs/implementation_plan_assessment_harness_poc_v1.md` — canonical SoT.
+- [ ] `docs/planning/implementation_plan_assessment_harness_poc_v1.md` — canonical SoT.
 - [ ] `docs/verifications/YYYY-MM-DD/*` — independent audit records (asset).
 - [ ] `docs/daily_logs/YYYY-MM-DD/work_log.md` — contemporaneous decision trail.
 - [ ] `CHANGELOG.md`, `schemas/`.
@@ -69,7 +69,7 @@ core framing — **foreground the decisions and the process, not just the code.*
 - [ ] `AGENTS.md` / `CLAUDE.md` — agent working rules.
 
 ### 3.4 This plan
-- [ ] `docs/publication_plan_v1.md` (+ `.ko` mirror — Open Decision §7).
+- [ ] `docs/planning/publication_plan_v1.md` (+ `.ko` mirror — Open Decision §7).
 
 ## 4. How / sequencing (the work plan)
 

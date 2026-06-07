@@ -9,8 +9,8 @@ before the `mock_fixture` runner is replaced or complemented by a live SDK runne
 - Tool side-effect policy is decided: framework tools stay read-only. Propose/write behavior must not write directly to candidate files; the runner collects tool results and emits candidate artifacts at the end of the run.
 - Publication freeze is deferred until the remaining development work is complete.
 - `extract` may auto-generate a source snapshot when `--source-manifest` is omitted.
-- Sample assignment creation can proceed from `docs/sample_assignment_guidelines.md`; permission and anonymization review are deferred until publication freeze.
-- **Runner end-to-end testing is delegated to agentic environments** (Claude Code / Codex acting as the runner over the harness CLI), not a library-embedded live SDK runner. So self-hosted SDK credentials / network integration are not required for now, and a number of the "Decisions Needed" items below (credential delivery, runner limits, raw-trace retention for an embedded SDK) are de-prioritized accordingly. `deterministic_extraction` stays the offline/CI default for deterministic runs; see `docs/sdk_runner_minimal_slice_plan.md`.
+- Sample assignment creation can proceed from `docs/guidelines/sample_assignment_guidelines.md`; permission and anonymization review are deferred until publication freeze.
+- **Runner end-to-end testing is delegated to agentic environments** (Claude Code / Codex acting as the runner over the harness CLI), not a library-embedded live SDK runner. So self-hosted SDK credentials / network integration are not required for now, and a number of the "Decisions Needed" items below (credential delivery, runner limits, raw-trace retention for an embedded SDK) are de-prioritized accordingly. `deterministic_extraction` stays the offline/CI default for deterministic runs; see `docs/guidelines/sdk_runner_minimal_slice_plan.md`.
 - Real (library-embedded) SDK runner implementation remains deferred; the decisions below stand for the day an embedded runner is actually wanted.
 
 ## Decisions Needed
@@ -32,7 +32,7 @@ Recommended default: live SDK tests should be opt-in only; the normal suite shou
 ### 3. Sample Assignment
 
 - Create or select the first assignment/spec/rubric pair.
-- For immediate PoC execution, a fully synthetic sample generated from `docs/sample_assignment_guidelines.md` is acceptable.
+- For immediate PoC execution, a fully synthetic sample generated from `docs/guidelines/sample_assignment_guidelines.md` is acceptable.
 - Permission, publication permission, and anonymization review are deferred until publication freeze.
 - Decide later whether the final sample can be committed as a fixture, stored privately, or referenced as a local-only path.
 
