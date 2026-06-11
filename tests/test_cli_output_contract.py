@@ -931,6 +931,7 @@ def test_schema_command_returns_report_contract(
     assert contract["command"] == "report"
     assert set(contract["informational"]) == {
         "report_path",
+        "report_format",
         "semantic_verifications_path",
         "review_queue_path",
     }
@@ -3326,10 +3327,83 @@ def test_report_command_writes_markdown(
     _assert_envelope(envelope)
     assert code == 0
     assert envelope["command"] == "report"
+    assert envelope["report_format"] == "markdown"
     assert report_path.exists()
     text = report_path.read_text(encoding="utf-8")
     assert "Assessment Harness Report" in text
     assert "Integrity Diagnostics" in text
+
+
+def test_report_command_writes_html(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    findings_path = tmp_path / "findings.json"
+    diagnostics_path = tmp_path / "diagnostics.json"
+    report_path = tmp_path / "report.html"
+    _write_findings(
+        findings_path,
+        [
+            {
+                "type": "unconfirmed_trace_coverage",
+                "severity": "medium",
+                "decision_status": "provisional",
+                "rubric_id": "R1",
+                "message": "Trace needs semantic confirmation <check>.",
+                "evidence": {"trace_link_ref": {"rubric_id": "R1"}},
+            }
+        ],
+    )
+    diagnostics_path.write_text(
+        json.dumps(
+            {
+                "diagnostics": [
+                    {
+                        "code": "source_document_hash_mismatch",
+                        "severity": "high",
+                        "message": "Snapshot hash changed.",
+                        "hint": "Regenerate source snapshot.",
+                    }
+                ],
+                "summary": {
+                    "total": 1,
+                    "high": 1,
+                    "medium": 0,
+                    "low": 0,
+                    "informational": 0,
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    code, envelope, _ = _run_main(
+        [
+            "--output",
+            "json",
+            "report",
+            "--findings",
+            str(findings_path),
+            "--diagnostics",
+            str(diagnostics_path),
+            "--format",
+            "html",
+            "--out",
+            str(report_path),
+        ],
+        capsys,
+    )
+
+    _assert_envelope(envelope)
+    assert code == 0
+    assert envelope["report_format"] == "html"
+    html = report_path.read_text(encoding="utf-8")
+    assert "<!doctype html>" in html
+    assert "Verification Report" in html
+    assert 'data-filter="medium"' in html
+    assert 'data-status="medium"' in html
+    assert "source_document_hash_mismatch" in html
+    assert "&lt;check&gt;" in html
 
 
 def test_report_command_includes_semantic_verifications_and_review_queue(

@@ -45,7 +45,7 @@ from .compacting import (
     validated_candidate_run_id,
 )
 from .models import HarnessInputError, load_source_snapshot, load_validated, load_policy
-from .report import render_markdown
+from .report import render_html, render_markdown
 from .rules import (
     HUMAN_ACCEPTED_SEMANTIC_STATUSES,
     finding_severity_counts,
@@ -1488,6 +1488,7 @@ COMMAND_CONTRACTS: dict[str, dict[str, Any]] = {
         "stable_core": STABLE_CORE_FIELDS,
         "informational": [
             "report_path",
+            "report_format",
             "semantic_verifications_path",
             "review_queue_path",
         ],
@@ -1637,7 +1638,8 @@ def _cmd_report(args: argparse.Namespace) -> CommandResult:
         )
         return CommandResult(envelope=envelope, exit_code=2)
 
-    text = render_markdown(
+    renderer = render_html if args.format == "html" else render_markdown
+    text = renderer(
         findings_doc,
         diagnostics_doc,
         semantic_verifications_doc=semantic_doc,
@@ -1658,6 +1660,7 @@ def _cmd_report(args: argparse.Namespace) -> CommandResult:
         command="report",
         next_actions=[],
         report_path=str(out_path),
+        report_format=args.format,
         **informational,
     )
     return CommandResult(envelope=envelope, exit_code=0)
@@ -2752,13 +2755,19 @@ def _build_parser() -> argparse.ArgumentParser:
 
     p_report = sub.add_parser(
         "report",
-        help="render findings + diagnostics into Markdown.",
+        help="render findings + diagnostics into a human-readable report.",
     )
     _add_output_arg(p_report, root=False)
     p_report.add_argument("--findings", required=True)
     p_report.add_argument("--diagnostics", required=True)
     p_report.add_argument("--semantic-verifications", default=None)
     p_report.add_argument("--review-queue", default=None)
+    p_report.add_argument(
+        "--format",
+        choices=("markdown", "html"),
+        default="markdown",
+        help="report format to write (default: markdown)",
+    )
     p_report.add_argument("--out", required=True)
 
     p_review = sub.add_parser(

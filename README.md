@@ -141,6 +141,15 @@ assessment-harness report \
   --review-queue work/compacted/review_queue.json \
   --out work/report.md
 
+# 브라우저로 확인할 수 있는 HTML report
+assessment-harness report \
+  --findings work/findings.json \
+  --diagnostics work/integrity_diagnostics.json \
+  --semantic-verifications work/semantic_verification/semantic_verifications.yaml \
+  --review-queue work/compacted/review_queue.json \
+  --format html \
+  --out work/report.html
+
 # 최종 human review 기록
 assessment-harness review \
   --compacted-dir work/compacted \
