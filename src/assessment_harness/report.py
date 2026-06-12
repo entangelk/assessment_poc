@@ -16,6 +16,7 @@ def render_markdown(
     diagnostics_doc: dict[str, Any],
     semantic_verifications_doc: dict[str, Any] | None = None,
     review_queue_doc: dict[str, Any] | None = None,
+    policy_doc: dict[str, Any] | None = None,
 ) -> str:
     lines: list[str] = []
     lines.append("# Assessment Harness Report")
@@ -26,6 +27,13 @@ def render_markdown(
         lines.append(f"- generated_at: {findings_doc['generated_at']}")
     lines.append("")
 
+    lines.append("## Rule Catalog")
+    for rule in _rule_catalog(policy_doc):
+        lines.append(f"- **{rule['id']} — {rule['title']}**: {rule['summary']}")
+        if rule.get("policy"):
+            lines.append(f"  - policy: {rule['policy']}")
+
+    lines.append("")
     lines.append("## Integrity Diagnostics (Rule 0)")
     summary = diagnostics_doc.get("summary", {})
     lines.append(
@@ -58,9 +66,12 @@ def render_markdown(
         lines.append("- No findings.")
     else:
         for finding in findings:
+            rule = _finding_rule_context(finding)
+            rule_text = f" ({rule})" if rule else ""
             lines.append(
                 f"- **[{finding.get('severity', '?')}/{finding.get('decision_status', '?')}] "
-                f"{finding.get('type', '?')}** — {finding.get('message', '').strip()}"
+                f"{finding.get('type', '?')}**{rule_text} — "
+                f"{finding.get('message', '').strip()}"
             )
 
     if semantic_verifications_doc is not None:
@@ -100,6 +111,7 @@ def render_html(
     diagnostics_doc: dict[str, Any],
     semantic_verifications_doc: dict[str, Any] | None = None,
     review_queue_doc: dict[str, Any] | None = None,
+    policy_doc: dict[str, Any] | None = None,
 ) -> str:
     findings = findings_doc.get("findings", [])
     diagnostics = diagnostics_doc.get("diagnostics", [])
@@ -132,6 +144,7 @@ def render_html(
             _render_header(findings_doc, diagnostic_summary, findings, queue_entries),
             _render_summary_band(diagnostic_summary, finding_counts, queue_counts, proposals),
             _render_filter_bar(),
+            _render_rule_catalog_section(_rule_catalog(policy_doc)),
             _render_diagnostics_section(diagnostics),
             _render_findings_section(findings),
             _render_semantic_section(proposals)
@@ -211,6 +224,7 @@ def _render_summary_band(
 def _render_filter_bar() -> str:
     buttons = [
         ("all", "All"),
+        ("configured", "Rules"),
         ("high", "High"),
         ("medium", "Medium"),
         ("informational", "Info"),
@@ -255,6 +269,32 @@ def _render_diagnostics_section(diagnostics: list[dict[str, Any]]) -> str:
 """
 
 
+def _render_rule_catalog_section(rules: list[dict[str, str]]) -> str:
+    body = "\n".join(
+        _render_record(
+            "rule",
+            "configured",
+            f"{rule['id']} - {rule['title']}",
+            rule["summary"],
+            [
+                ("emits", rule["emits"]),
+                ("review", rule["review"]),
+                ("policy", rule.get("policy")),
+            ],
+        )
+        for rule in rules
+    )
+    return f"""
+<section class="report-section" id="rule-catalog">
+  <div class="section-heading">
+    <p>Catalog</p>
+    <h2>Rule Meaning</h2>
+  </div>
+  <div class="record-list">{body}</div>
+</section>
+"""
+
+
 def _render_findings_section(findings: list[dict[str, Any]]) -> str:
     if not findings:
         body = '<p class="empty">No findings.</p>'
@@ -266,6 +306,7 @@ def _render_findings_section(findings: list[dict[str, Any]]) -> str:
                 finding.get("type", "?"),
                 finding.get("message", ""),
                 [
+                    ("rule_context", _finding_rule_context(finding)),
                     ("decision_status", finding.get("decision_status")),
                     ("rubric_id", finding.get("rubric_id")),
                     ("spec_id", finding.get("spec_id")),
@@ -411,6 +452,115 @@ def _status_class(status: str) -> str:
     if status == "success" or status == "resolved" or status == "agent_supported":
         return "is-cool"
     return "is-muted"
+
+
+def _rule_catalog(policy_doc: dict[str, Any] | None) -> list[dict[str, str]]:
+    threshold = _optionality_threshold(policy_doc)
+    rule_three_policy = "rules.optionality_mismatch.weight_threshold"
+    if threshold is not None:
+        rule_three_policy = f"{rule_three_policy} = {threshold}"
+    return [
+        {
+            "id": "Rule 0",
+            "title": "Reference Integrity",
+            "summary": (
+                "Validates IDs, references, source snapshot grounding, and "
+                "token-sequence evidence before later checks run."
+            ),
+            "emits": "integrity diagnostics; invalid inputs stop check before findings",
+            "review": "fix source or generated artifacts, then rerun check",
+            "policy": "source manifest required",
+        },
+        {
+            "id": "Rule 1",
+            "title": "Scored Rubric Coverage",
+            "summary": (
+                "Flags scored rubrics without accepted coverage, plus untraced "
+                "bonus rubric items as non-blocking review context."
+            ),
+            "emits": (
+                "possible_orphan_scored_rubric_item, "
+                "unconfirmed_trace_coverage, orphan_bonus_rubric_item"
+            ),
+            "review": (
+                "review_unconfirmed_trace_coverage or "
+                "review_orphan_scored_rubric"
+            ),
+            "policy": "human_accepted or human_overridden counts as final coverage",
+        },
+        {
+            "id": "Rule 2",
+            "title": "Required Spec Coverage",
+            "summary": "Flags must-level spec items that have no scored rubric trace.",
+            "emits": "uncovered_must_spec_item",
+            "review": "review_uncovered_must_spec",
+            "policy": "structural only; semantic status is not consulted",
+        },
+        {
+            "id": "Rule 3",
+            "title": "Optionality Consistency",
+            "summary": "Flags high-weight scored rubrics traced only to optional specs.",
+            "emits": "optionality_mismatch",
+            "review": "review_optionality_mismatch",
+            "policy": rule_three_policy,
+        },
+        {
+            "id": "Rule L1",
+            "title": "Cross-role Double Scoring",
+            "summary": "Flags the same spec being traced by scored and bonus rubrics.",
+            "emits": "double_scored_spec and double_scoring_review queue entries",
+            "review": "review_double_scoring",
+            "policy": "lint safeguard; confirmed finding is recorded but non-blocking",
+        },
+        {
+            "id": "Rule L5",
+            "title": "Bonus Mandatory-only",
+            "summary": "Flags bonus rubrics whose traced targets are all must specs.",
+            "emits": "bonus_grades_mandatory_only",
+            "review": "review_bonus_mandatory_only",
+            "policy": "lint safeguard; untraced bonus remains Rule 1 context",
+        },
+        {
+            "id": "Rule L6",
+            "title": "Mandatory Spec Bonus-only",
+            "summary": (
+                "Flags must specs covered only by bonus rubrics, with paired "
+                "human-review queue entries."
+            ),
+            "emits": (
+                "mandatory_spec_bonus_only_traced and "
+                "mandatory_spec_bonus_review queue entries"
+            ),
+            "review": "review_mandatory_spec_bonus_only",
+            "policy": "bonus-only only; qualitative traces stay with Rule 2",
+        },
+    ]
+
+
+def _optionality_threshold(policy_doc: dict[str, Any] | None) -> Any:
+    if not isinstance(policy_doc, dict):
+        return None
+    rules = policy_doc.get("rules")
+    if not isinstance(rules, dict):
+        return None
+    optionality = rules.get("optionality_mismatch")
+    if not isinstance(optionality, dict):
+        return None
+    return optionality.get("weight_threshold")
+
+
+def _finding_rule_context(finding: dict[str, Any]) -> str:
+    mapping = {
+        "possible_orphan_scored_rubric_item": "Rule 1 - scored rubric has no trace link yet",
+        "unconfirmed_trace_coverage": "Rule 1 - trace exists but final coverage is not accepted",
+        "orphan_bonus_rubric_item": "Rule 1 - bonus rubric has no trace link",
+        "uncovered_must_spec_item": "Rule 2 - must spec has no scored rubric trace",
+        "optionality_mismatch": "Rule 3 - scored rubric is optional-only at policy threshold",
+        "double_scored_spec": "Rule L1 - spec is scored and bonus-traced",
+        "bonus_grades_mandatory_only": "Rule L5 - bonus rubric targets only must specs",
+        "mandatory_spec_bonus_only_traced": "Rule L6 - must spec is bonus-only covered",
+    }
+    return mapping.get(str(finding.get("type", "")), "")
 
 
 def _text(value: Any) -> str:

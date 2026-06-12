@@ -1491,10 +1491,11 @@ COMMAND_CONTRACTS: dict[str, dict[str, Any]] = {
             "report_format",
             "semantic_verifications_path",
             "review_queue_path",
+            "policy_path",
         ],
         "exit_codes": {
             "0": "report rendered.",
-            "2": "input findings, diagnostics, semantic verifications, or review queue could not be read.",
+            "2": "input findings, diagnostics, policy, semantic verifications, or review queue could not be read.",
             "3": "internal error.",
         },
         "next_actions_types": [],
@@ -1617,6 +1618,7 @@ def _cmd_report(args: argparse.Namespace) -> CommandResult:
             "semantic_verifications",
         )
         review_queue_doc = _load_optional_validated(args.review_queue, "review_queue")
+        policy_doc = load_policy(Path(args.policy)) if args.policy else None
     except (OSError, json.JSONDecodeError) as exc:
         sys.stderr.write(f"[assessment-harness] cannot read inputs: {exc}\n")
         envelope = _build_envelope(
@@ -1644,6 +1646,7 @@ def _cmd_report(args: argparse.Namespace) -> CommandResult:
         diagnostics_doc,
         semantic_verifications_doc=semantic_doc,
         review_queue_doc=review_queue_doc,
+        policy_doc=policy_doc,
     )
     out_path = Path(args.out)
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -1654,6 +1657,8 @@ def _cmd_report(args: argparse.Namespace) -> CommandResult:
         informational["semantic_verifications_path"] = str(args.semantic_verifications)
     if args.review_queue:
         informational["review_queue_path"] = str(args.review_queue)
+    if args.policy:
+        informational["policy_path"] = str(args.policy)
     envelope = _build_envelope(
         status="success",
         exit_code=0,
@@ -2760,6 +2765,7 @@ def _build_parser() -> argparse.ArgumentParser:
     _add_output_arg(p_report, root=False)
     p_report.add_argument("--findings", required=True)
     p_report.add_argument("--diagnostics", required=True)
+    p_report.add_argument("--policy", default=None)
     p_report.add_argument("--semantic-verifications", default=None)
     p_report.add_argument("--review-queue", default=None)
     p_report.add_argument(

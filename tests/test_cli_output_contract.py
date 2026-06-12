@@ -932,6 +932,7 @@ def test_schema_command_returns_report_contract(
     assert set(contract["informational"]) == {
         "report_path",
         "report_format",
+        "policy_path",
         "semantic_verifications_path",
         "review_queue_path",
     }
@@ -3331,6 +3332,7 @@ def test_report_command_writes_markdown(
     assert report_path.exists()
     text = report_path.read_text(encoding="utf-8")
     assert "Assessment Harness Report" in text
+    assert "Rule Catalog" in text
     assert "Integrity Diagnostics" in text
 
 
@@ -3340,6 +3342,7 @@ def test_report_command_writes_html(
 ) -> None:
     findings_path = tmp_path / "findings.json"
     diagnostics_path = tmp_path / "diagnostics.json"
+    policy_path = tmp_path / "policy.yaml"
     report_path = tmp_path / "report.html"
     _write_findings(
         findings_path,
@@ -3376,6 +3379,10 @@ def test_report_command_writes_html(
         ),
         encoding="utf-8",
     )
+    policy_path.write_text(
+        yaml.safe_dump({"rules": {"optionality_mismatch": {"weight_threshold": 10}}}),
+        encoding="utf-8",
+    )
 
     code, envelope, _ = _run_main(
         [
@@ -3386,6 +3393,8 @@ def test_report_command_writes_html(
             str(findings_path),
             "--diagnostics",
             str(diagnostics_path),
+            "--policy",
+            str(policy_path),
             "--format",
             "html",
             "--out",
@@ -3397,9 +3406,22 @@ def test_report_command_writes_html(
     _assert_envelope(envelope)
     assert code == 0
     assert envelope["report_format"] == "html"
+    assert envelope["policy_path"] == str(policy_path)
     html = report_path.read_text(encoding="utf-8")
     assert "<!doctype html>" in html
     assert "Verification Report" in html
+    assert 'id="rule-catalog"' in html
+    assert 'data-filter="configured"' in html
+    assert "Rule Meaning" in html
+    assert "Rule 0 - Reference Integrity" in html
+    assert "Rule 1 - Scored Rubric Coverage" in html
+    assert "Rule 2 - Required Spec Coverage" in html
+    assert "Rule 3 - Optionality Consistency" in html
+    assert "Rule L1 - Cross-role Double Scoring" in html
+    assert "Rule L5 - Bonus Mandatory-only" in html
+    assert "Rule L6 - Mandatory Spec Bonus-only" in html
+    assert "rules.optionality_mismatch.weight_threshold = 10" in html
+    assert "Rule 1 - trace exists but final coverage is not accepted" in html
     assert 'data-filter="medium"' in html
     assert 'data-status="medium"' in html
     assert "source_document_hash_mismatch" in html
@@ -3545,6 +3567,54 @@ def test_report_command_rejects_invalid_semantic_verifications(
     assert code == 2
     assert envelope["status"] == "invalid_input"
     assert "semantic_verifications" in envelope["next_actions"][0]["message"]
+
+
+def test_report_command_rejects_invalid_policy(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    findings_path = tmp_path / "findings.json"
+    diagnostics_path = tmp_path / "diagnostics.json"
+    policy_path = tmp_path / "bad_policy.yaml"
+    _write_findings(findings_path, [])
+    diagnostics_path.write_text(
+        json.dumps(
+            {
+                "diagnostics": [],
+                "summary": {
+                    "total": 0,
+                    "high": 0,
+                    "medium": 0,
+                    "low": 0,
+                    "informational": 0,
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    policy_path.write_text(yaml.safe_dump({"rules": []}), encoding="utf-8")
+
+    code, envelope, _ = _run_main(
+        [
+            "--output",
+            "json",
+            "report",
+            "--findings",
+            str(findings_path),
+            "--diagnostics",
+            str(diagnostics_path),
+            "--policy",
+            str(policy_path),
+            "--out",
+            str(tmp_path / "report.md"),
+        ],
+        capsys,
+    )
+
+    _assert_envelope(envelope)
+    assert code == 2
+    assert envelope["status"] == "invalid_input"
+    assert "policy" in envelope["next_actions"][0]["message"]
 
 
 def test_schema_documented_form_with_trailing_output(

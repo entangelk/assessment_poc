@@ -145,6 +145,7 @@ assessment-harness report \
 assessment-harness report \
   --findings work/findings.json \
   --diagnostics work/integrity_diagnostics.json \
+  --policy config/policy.yaml \
   --semantic-verifications work/semantic_verification/semantic_verifications.yaml \
   --review-queue work/compacted/review_queue.json \
   --format html \
