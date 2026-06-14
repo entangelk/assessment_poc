@@ -4,18 +4,47 @@ A fully synthetic, multi-phase take-over/debugging assignment used to demonstrat
 the harness on a **complex** assignment format — closer to a real maintenance
 hand-off than the per-rule scaffolding under [`fixtures/`](../../fixtures).
 
-This directory is the harness **input** (a candidate-facing `spec.md` plus an
-evaluator-only `rubric.md`), not a candidate solution. Unlike `fixtures/`, which
-holds pre-extracted YAML for unit tests, this is a raw assignment a reader can run
-end-to-end to watch the harness review the *assessment design itself*.
+This directory carries two layers:
+
+1. The harness **input** — `spec.md` (candidate-facing) + `rubric.md`
+   (evaluator-only). Unlike `fixtures/` (pre-extracted YAML for unit tests), this
+   is a raw assignment a reader can run end-to-end to watch the harness review the
+   *assessment design itself*. The harness reads only these two files.
+2. The **assignment codebase** under [`codebase/`](codebase) — a small, runnable
+   DeskHive back-office repo with the five reported defects actually present in
+   code. It exists so a reviewer can confirm that the `spec.md` claims map to real
+   behavior, not just prose. The harness does **not** consume it.
 
 ## Files
 
 ```text
-spec.md     # candidate-facing assignment (Phase 0–4, 5 defects, boundaries)
-rubric.md   # evaluator-only rubric (8 scored + 2 bonus + 1 qualitative)
-notes.md    # human context (Korean): complexity intent + seeded signals
+spec.md      # candidate-facing assignment (Phase 0–4, 5 defects, boundaries)
+rubric.md    # evaluator-only rubric (8 scored + 2 bonus + 1 qualitative)
+notes.md     # human context (Korean): complexity intent + seeded signals
+codebase/    # runnable assignment repo (FastAPI) with the 5 defects in code
 ```
+
+## The assignment codebase
+
+The defects in `spec.md` are real in `codebase/`. Reproduce all five at once,
+with no dependencies, from `codebase/`:
+
+```bash
+cd codebase
+python3 scripts/show_symptoms.py
+```
+
+| Defect | File | Seeded bug |
+|---|---|---|
+| B1 | `app/services/membership.py` | zero usage rate → returns `Infinity` |
+| B2 | `app/services/membership.py` | frozen days computed but not added to expiry |
+| B3 | `app/services/passes.py` | free + paid passes summed, distinction lost |
+| B4 | `app/services/analytics.py` | UTC month bucketing (no KST conversion) |
+| B5 | `app/services/matching.py` | always returns the lowest-id eligible host |
+
+For the real HTTP endpoints, `pip install -r codebase/requirements.txt` then
+`uvicorn app.main:app` (or `docker compose up`) — see
+[`codebase/README.md`](codebase/README.md).
 
 ## Seeded spec↔rubric signals
 

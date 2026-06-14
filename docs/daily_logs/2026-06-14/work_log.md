@@ -88,6 +88,58 @@
   `check` reproduced `provisional_findings`, high=3 / medium=11, blocking=0 —
   identical to the pre-move run, confirming the path change broke nothing.
 
+## Runnable assignment codebase for the DeskHive example
+
+### Goals
+
+- Make the example verifiable, not just prose: a reviewer should be able to
+  confirm that `spec.md`'s B1–B5 defect claims map to real code, the way a real
+  assignment repo would let them.
+
+### Completed work
+
+- Added `examples/deskhive_assignment/codebase/` — a small runnable FastAPI
+  back-office repo with the five defects actually present in code:
+  - B1 `app/services/membership.py`: zero usage rate → previous dev "handled" it
+    by returning `Infinity`.
+  - B2 `app/services/membership.py`: frozen days computed (`_frozen_days`) but a
+    handover TODO never adds them to the expiry.
+  - B3 `app/services/passes.py`: free + paid passes summed into one `remaining`,
+    losing the breakdown.
+  - B4 `app/services/analytics.py`: counts by raw UTC month, no KST (+9)
+    conversion.
+  - B5 `app/services/matching.py`: always returns the lowest-id eligible host.
+  - Support files: `app/models.py`, `app/seed.py` (pinned clock 2026-02-10,
+    in-memory data, no DB/network), `app/main.py` (FastAPI endpoints),
+    `scripts/show_symptoms.py` (stdlib-only reproduction), `docs/business_rules.md`,
+    `docs/data_model.md`, `README.md` (candidate-facing, Korean), `requirements.txt`,
+    `Dockerfile`, `docker-compose.yml`.
+- Updated example `README.md` and `notes.md` to describe the two layers (harness
+  input vs runnable codebase) and the defect→file map; the harness still consumes
+  only `spec.md` + `rubric.md`.
+
+### Issues found
+
+- B1 first raised `ZeroDivisionError` (Python `float / 0.0` raises, unlike JS).
+  Changed the seeded bug to the realistic "previous dev returned `float('inf')`",
+  which matches the spec symptom "shows infinity" and the fix target "return a
+  finite number".
+- Over the HTTP layer, FastAPI's `jsonable_encoder` coerced `inf` → `null`. Added
+  a plain-`json.dumps` response (`_json`) on the detail endpoint only so the wire
+  shows `Infinity`, matching the reported symptom without changing the value.
+
+### Verification (this run)
+
+- `python3 codebase/scripts/show_symptoms.py` reproduces all five: B1 `inf`
+  (Alice) vs `56.0` (Bob); B2 frozen=6 but expiry `2026-02-09` (un-extended);
+  B3 `{remaining: 5}` (mixed); B4 reported `1` vs actual KST Feb joiners `2`;
+  B5 5 calls → only `{H1}`.
+- `fastapi.testclient` smoke on `app.main`: health ok; `GET /api/members/M1/detail`
+  wire shows `"estimated_exhaustion_days": Infinity`; other endpoints match the
+  script.
+- `python3 -m py_compile` passes for all app/script files. `__pycache__` is
+  gitignored.
+
 ### Next steps
 
 - When a live SDK runner lands, re-run this sample to compare deterministic vs
