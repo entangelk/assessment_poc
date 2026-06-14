@@ -412,3 +412,39 @@
 
 - Continue the same pattern for the remaining ideation history documents if full
   bilingual parity is desired (`v2.md`, `v2.1.md`, `v2.2.md`).
+
+## Ideation v2.2 English canonical flip
+
+### Goals
+
+- Continue the planning-doc translation pass with the current Rubric Lint Rules
+  ideation document.
+- Preserve the Korean final-locked v2.2 text as a `.ko.md` mirror while making
+  `.md` the English canonical file.
+
+### Completed work
+
+- Created `docs/planning/ideation_assessment_harness_v2.2.ko.md`.
+  - Added a KO-active language-switch header.
+  - Preserved the previous Korean body.
+- Rewrote `docs/planning/ideation_assessment_harness_v2.2.md` as the English
+  canonical version.
+  - Added the EN-active language-switch header.
+  - Translated natural-language prose and headings.
+  - Preserved rule names, finding type literals, status strings, policy keys,
+    code blocks, and file paths.
+- Updated Korean navigation links in `README.ko.md` and `HANDOFF.ko.md` to point
+  to `ideation_assessment_harness_v2.2.ko.md`.
+
+### Verification (this run)
+
+- `git diff --check` passed after the ideation v2.2 flip.
+- Link-target verification for `README.md` and `README.ko.md` passed.
+- Header checks confirmed EN-active header on `.md` and KO-active header on
+  `.ko.md`.
+
+### Next steps
+
+- Continue with the remaining planning ideation documents:
+  `ideation_assessment_harness_v2.md` and
+  `ideation_assessment_harness_v2.1.md`.

@@ -8,7 +8,7 @@
 
 ## 현재 상태
 
-- 구현 계획은 v1.32(`docs/planning/implementation_plan_assessment_harness_poc_v1.md`)이며, `docs/planning/ideation_assessment_harness_v2.2.md`(2026-05-27 제자리 개정, v2.1 대체)보다 우선하는 정식 구현 진실의 원천(source of truth)이다.
+- 구현 계획은 v1.32(`docs/planning/implementation_plan_assessment_harness_poc_v1.md`)이며, `docs/planning/ideation_assessment_harness_v2.2.ko.md`(2026-05-27 제자리 개정, v2.1 대체)보다 우선하는 정식 구현 진실의 원천(source of truth)이다.
 - 공개 미러 상태(2026-06-14): 구현 계획은 `docs/planning/implementation_plan_assessment_harness_poc_v1.ko.md` KO-active 미러를 갖고 있으며, 본문은 현재 한국어 원본과 일치한다. 1,825줄 구현 계획의 전체 영어 정본 재작성은 아직 pending이다. README 링크는 이 번역이 완료될 때까지 한국어 원본 anchor를 가리킨다.
 - **Rule 0 가동 중**: 소스 스냅샷 그라운딩, 증거 완전성/참조 무결성 검사, 필수 `--source-manifest`, 구조화된 잘못된 입력 복구가 구현되었다.
 - **Rule 1 기능 완성**(plan v1.19 §6): `possible_orphan_scored_rubric_item`, `unconfirmed_trace_coverage`, `orphan_bonus_rubric_item`이 모두 구현되었다. CLI는 이들의 검토 액션과 잠정 심각도 카운트를 노출하며, slice 3.1은 보너스 전용 `(high=0, medium=0, informational=1)` 경계를 포함해 공개 envelope/schema 계약을 고정한다.
