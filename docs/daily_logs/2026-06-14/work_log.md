@@ -316,3 +316,66 @@
 
 - If the publication copy is later flipped to English-primary README, mirror this
   new PoC-report framing into the English canonical version and Korean mirror.
+
+## Publication bilingual handoff cleanup
+
+### Goals
+
+- Continue the publication-doc bilingual pass after another AI worker exhausted
+  its translation session.
+- Finish the implementation-plan mirror surface that can be verified safely:
+  Korean mirror presence, README links, language-pair routing, and current-state
+  handoff/changelog notes.
+
+### Completed work
+
+- Verified `docs/planning/implementation_plan_assessment_harness_poc_v1.ko.md`.
+  - The file has a KO-active language-switch header.
+  - Its body exactly matches the current Korean
+    `docs/planning/implementation_plan_assessment_harness_poc_v1.md`.
+  - Line counts at verification time: `.md` 1,825 lines, `.ko.md` 1,831 lines
+    including the header.
+- Attempted to delegate the full English canonical rewrite of the 1,825-line
+  implementation plan to a worker agent. The worker stopped without partial
+  writes because the translation was too large to complete reliably in this
+  turn.
+- Updated README routing to avoid overclaiming:
+  - `README.md` now links implementation-plan §5/§9 references to the current
+    Korean-source `.ko.md` anchors and states that the full English mirror is
+    pending.
+  - `README.ko.md` documentation-map label now points to the `.ko.md` file name
+    rather than displaying `.md` while linking to `.ko.md`.
+- Updated `HANDOFF.md`, `HANDOFF.ko.md`, and `CHANGELOG.md` with the current
+  publication mirror status.
+
+### Issues found
+
+- The full English implementation-plan flip remains incomplete. The canonical
+  `.md` implementation plan is still Korean-source and does not yet contain the
+  English-active language header, English title, or stable English headings
+  `## 5. Data Contracts` / `## 9. Phased Implementation Plan`.
+- Because that translation is pending, README English links intentionally point
+  to Korean-source anchors rather than pretending the English anchors exist.
+
+### Verification (this run)
+
+- README/README.ko linked file targets exist.
+- Implementation-plan KO mirror body equality check passed against the current
+  Korean `.md` body.
+- `git diff --check` passed after the link/status updates.
+
+### Decisions
+
+- Do not write a partial or low-quality English implementation-plan translation.
+  A partial rewrite would be worse than an explicitly pending mirror for a
+  source-of-truth technical contract.
+- Preserve the Korean-source implementation plan as authoritative until a
+  dedicated full translation pass can complete and be verified.
+
+### Next steps
+
+- Run a dedicated long-context translation pass for
+  `docs/planning/implementation_plan_assessment_harness_poc_v1.md`.
+- After that pass, verify exact headings `## 5. Data Contracts` and
+  `## 9. Phased Implementation Plan`, then switch README English links back to
+  the English `.md` anchors.

@@ -17,7 +17,7 @@
   결정 [C1](decisions.ko.md)을 참조.
 
 결정 서사 자체는 [decisions.md](decisions.ko.md)에 있고, 측정된 테스트/smoke 증거는
-[evaluation.md](evaluation.md)에 있다.
+[evaluation.md](evaluation.ko.md)에 있다.
 
 ## 작업 로그 (날짜별)
 

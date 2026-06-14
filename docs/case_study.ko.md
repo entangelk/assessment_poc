@@ -31,7 +31,7 @@ deterministic하고 감사(audit) 가능한 하네스. 그리고 **절대 자동
 범위에 대한 정직함을 먼저 밝힌다. 이것은 **proof-of-concept**다. deterministic validation
 core와 review/verdict 흐름은 구현·테스트되어 있지만, 그것들에 입력을 공급할 multi-run
 agent extraction 파이프라인은 계약/기반(foundation)만 잡혀 있다. 그 경계는
-[아키텍처 다이어그램](../README.md)과 [구현 현황](../README.md) 표에 정직하게 그려져 있다.
+[아키텍처 다이어그램](../README.ko.md)과 [구현 현황](../README.ko.md) 표에 정직하게 그려져 있다.
 
 ## 핵심 결정 (이 프로젝트의 심장)
 
@@ -106,7 +106,7 @@ green 테스트 스위트는 코드가 테스트가 말하는 대로 작동함�
 워크플로. 초기 `extract` / `compact` / `verify` 오케스트레이션은 deterministic
 `mock_fixture` 경로에 한해 존재한다. mock verifier는 실제 모델 판단을 주장하지 않고
 보수적인 semantic proposal만 기록한다. 영역별 정직한 상태는
-[구현 현황 표](../README.md)를 참조.
+[구현 현황 표](../README.ko.md)를 참조.
 
 ## 어떻게 검증되었나
 

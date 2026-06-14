@@ -1,3 +1,11 @@
+<!-- .ko mirror created on finalize (publication_plan §7b) -->
+
+<p align="center">
+  <a href="./publication_plan_v1.md"><img src="https://img.shields.io/badge/Language-EN-111111?style=for-the-badge" alt="English"></a>
+  <a href="./publication_plan_v1.ko.md"><img src="https://img.shields.io/badge/Language-KO-6B7280?style=for-the-badge" alt="한국어"></a>
+</p>
+<p align="center"><sub>Switch language / 언어 전환</sub></p>
+
 # Assessment Spec Harness — Publication Plan v1.0
 
 ## 0. Purpose of this document

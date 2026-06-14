@@ -1,20 +1,28 @@
-# Assessment Harness PoC 결과 보고서
+<!-- .ko mirror created on finalize (publication_plan §7b) -->
 
-작성일: 2026-06-14 KST  
-대상: `examples/deskhive_assignment`, `examples/pulse_assignment`  
-산출물: 반복 실행 결과는 `work/poc_report_runs/run{1,2,3}/...` 아래에 보관했다.
+<p align="center">
+  <a href="./report.md"><img src="https://img.shields.io/badge/Language-EN-111111?style=for-the-badge" alt="English"></a>
+  <a href="./report.ko.md"><img src="https://img.shields.io/badge/Language-KO-6B7280?style=for-the-badge" alt="한국어"></a>
+</p>
+<p align="center"><sub>Switch language / 언어 전환</sub></p>
 
-## 결론
+# Assessment Harness PoC Results Report
 
-`examples/`의 두 샘플은 현재 프로젝트의 검증 방식으로 정상 실행된다. 동일한 공식 흐름을 3회 반복했을 때 두 샘플 모두 같은 finding 분포를 재현했고, Rule 0 reference integrity 진단은 전 회차에서 0건이었다.
+Date: 2026-06-14 KST
+Targets: `examples/deskhive_assignment`, `examples/pulse_assignment`
+Artifacts: the repeated-run outputs are kept under `work/poc_report_runs/run{1,2,3}/...`.
 
-이 결과는 "assessment design 자체를 검토한다"는 PoC 목적에 맞다. `check`는 후보자의 합격/불합격을 직접 내리지 않고 `provisional_findings`를 생성하며, 안전한 기본 final review 초안 때문에 `gate`는 `pending_review`로 멈춘다. 즉 현재 결과는 실패가 아니라 "사람 검토가 필요한 설계 리스크를 안정적으로 찾아냈다"는 의미다.
+## Conclusion
 
-단, 이번 검증은 live LLM extraction이 아니다. `deterministic_extraction` runner와 `mock_fixture` semantic verifier를 사용한 offline wiring/grounding 검증이다. real SDK runner는 프로젝트 문서상 아직 deferred scope다.
+Both samples under `examples/` run cleanly through the project's current validation flow. Running the same official workflow three times, both samples reproduced the same finding distribution, and Rule 0 reference integrity diagnostics were 0 in every repetition.
 
-## 검증 방법
+This result matches the PoC's purpose of "evaluating the assessment design itself." `check` does not directly pass/fail a candidate — it produces `provisional_findings`, and because of the safe default final-review draft, `gate` stops at `pending_review`. In other words, the current result is not a failure but a sign that "design risks needing human review were reliably surfaced."
 
-각 샘플마다 아래 흐름을 3회 반복했다.
+That said, this run is not a live LLM extraction. It is an offline wiring/grounding validation using the `deterministic_extraction` runner and the `mock_fixture` semantic verifier. Per the project's documentation, the real SDK runner is still deferred scope.
+
+## Validation method
+
+For each sample, the flow below was repeated three times.
 
 ```bash
 PYTHONPATH=src python3 -m assessment_harness.cli extract \
@@ -34,92 +42,91 @@ PYTHONPATH=src python3 -m assessment_harness.cli gate ...
 PYTHONPATH=src python3 -m assessment_harness.cli materialize-review ...
 ```
 
-추가 확인:
+Additional checks:
 
 - `PYTHONPATH=src python3 -m assessment_harness.cli schema --command check --output json`
 - `PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src python3 -m pytest -q -p no:cacheprovider`
 - DeskHive: `python3 scripts/show_symptoms.py`
-- Pulse: `go version` 확인
+- Pulse: confirm `go version`
 
-## 3회 반복 결과
+## Three-repetition results
 
 ### DeskHive
 
-| 회차 | extract | check | high | medium | info | findings | Rule 0 diagnostics | gate |
+| Run | extract | check | high | medium | info | findings | Rule 0 diagnostics | gate |
 |---:|---|---|---:|---:|---:|---:|---:|---|
 | 1 | success, valid_run_count=3 | provisional_findings | 3 | 11 | 0 | 14 | 0 | pending_review, pending=14 |
 | 2 | success, valid_run_count=3 | provisional_findings | 3 | 11 | 0 | 14 | 0 | pending_review, pending=14 |
 | 3 | success, valid_run_count=3 | provisional_findings | 3 | 11 | 0 | 14 | 0 | pending_review, pending=14 |
 
-Finding type 분포는 세 회차 모두 동일했다.
+The finding-type distribution was identical across all three runs.
 
-| Type | Count | 해석 |
+| Type | Count | Interpretation |
 |---|---:|---|
-| `unconfirmed_trace_coverage` | 7 | Phase 0 semantic status가 아직 human accepted가 아니므로 정상적인 provisional coverage 경고 |
-| `possible_orphan_scored_rubric_item` | 1 | R5의 trace quote가 spec과 verbatim 일치하지 않도록 의도적으로 심은 신호 |
-| `uncovered_must_spec_item` | 1 | AI usage log가 must spec인데 scored rubric coverage가 없음 |
-| `optionality_mismatch` | 1 | optional dashboard panel이 10점 scored rubric으로 잡힘 |
-| `double_scored_spec` | 1 | CTO report가 scored와 bonus 양쪽에서 추적됨 |
-| `bonus_grades_mandatory_only` | 2 | bonus rubric이 이미 required work를 보상함 |
-| `mandatory_spec_bonus_only_traced` | 1 | must spec이 bonus-only로만 커버됨 |
+| `unconfirmed_trace_coverage` | 7 | Normal provisional coverage warning, since Phase 0 semantic status is not yet human-accepted |
+| `possible_orphan_scored_rubric_item` | 1 | A deliberately planted signal: R5's trace quote does not match the spec verbatim |
+| `uncovered_must_spec_item` | 1 | The AI usage log is a must spec but has no scored rubric coverage |
+| `optionality_mismatch` | 1 | An optional dashboard panel is captured by a 10-point scored rubric |
+| `double_scored_spec` | 1 | The CTO report is traced by both scored and bonus rubrics |
+| `bonus_grades_mandatory_only` | 2 | A bonus rubric rewards already-required work |
+| `mandatory_spec_bonus_only_traced` | 1 | A must spec is covered by bonus only |
 
-DeskHive 코드베이스 직접 재현도 README/spec와 일치했다. `scripts/show_symptoms.py`는 B1 `inf`, B2 freeze 6일 미반영, B3 free+paid pass 합산, B4 KST 월경계 불일치, B5 항상 `H1` 추천을 재현했다.
+Direct reproduction of the DeskHive codebase also matched the README/spec. `scripts/show_symptoms.py` reproduced B1 `inf`, B2 not reflecting a 6-day freeze, B3 summing free+paid passes, B4 KST month-boundary mismatch, and B5 always recommending `H1`.
 
 ### Pulse
 
-| 회차 | extract | check | high | medium | info | findings | Rule 0 diagnostics | gate |
+| Run | extract | check | high | medium | info | findings | Rule 0 diagnostics | gate |
 |---:|---|---|---:|---:|---:|---:|---:|---|
 | 1 | success, valid_run_count=3 | provisional_findings | 2 | 7 | 1 | 10 | 0 | pending_review, pending=10 |
 | 2 | success, valid_run_count=3 | provisional_findings | 2 | 7 | 1 | 10 | 0 | pending_review, pending=10 |
 | 3 | success, valid_run_count=3 | provisional_findings | 2 | 7 | 1 | 10 | 0 | pending_review, pending=10 |
 
-Finding type 분포는 세 회차 모두 동일했다.
+The finding-type distribution was identical across all three runs.
 
-| Type | Count | 해석 |
+| Type | Count | Interpretation |
 |---|---:|---|
-| `unconfirmed_trace_coverage` | 6 | Phase 0 semantic status가 아직 human accepted가 아니므로 정상적인 provisional coverage 경고 |
-| `possible_orphan_scored_rubric_item` | 1 | R4가 malformed line을 nonzero exit으로 요구해 spec의 skip-and-continue와 충돌 |
-| `optionality_mismatch` | 1 | optional windowing이 15점 scored rubric으로 잡힘 |
-| `orphan_bonus_rubric_item` | 1 | Prometheus bonus가 spec에 없는 항목이며 informational로만 기록됨 |
-| `uncovered_must_spec_item` | 1 | malformed input "must not crash"가 qualitative-only coverage에 머묾 |
+| `unconfirmed_trace_coverage` | 6 | Normal provisional coverage warning, since Phase 0 semantic status is not yet human-accepted |
+| `possible_orphan_scored_rubric_item` | 1 | R4 requires a nonzero exit on a malformed line, conflicting with the spec's skip-and-continue |
+| `optionality_mismatch` | 1 | Optional windowing is captured by a 15-point scored rubric |
+| `orphan_bonus_rubric_item` | 1 | The Prometheus bonus is not in the spec and is recorded as informational only |
+| `uncovered_must_spec_item` | 1 | The malformed-input "must not crash" stays at qualitative-only coverage |
 
-Pulse reference solution은 문서상 핵심 요구와 대체로 맞는다. 다만 현재 환경에는 Go toolchain이 없어 `go test ./...`와 `go run`은 실행하지 못했다. `README.md`와 `notes.md`가 이미 이 제한을 밝히고 있으므로 문서와 상태는 일치하지만, "Go reference solution 실행 검증 완료"라고 주장하면 안 된다.
+The Pulse reference solution broadly matches the documented core requirements. However, the current environment has no Go toolchain, so `go test ./...` and `go run` could not be executed. `README.md` and `notes.md` already state this limitation, so the documentation and the state are consistent — but one must not claim "Go reference solution execution verified."
 
-## 결과가 의도와 맞는지
+## Do the results match the intent
 
-맞다.
+Yes.
 
-DeskHive는 복잡한 maintenance assignment에서 Rule 1, Rule 2, Rule 3, L1, L5, L6를 모두 건드리도록 설계되어 있고, 실제 결과도 그 분포를 안정적으로 재현했다. R5 non-verbatim trace, R8 optional scored item, RB1 must-but-bonus-only, R7/RB2 double scoring이 기대한 finding으로 나타났다.
+DeskHive is designed so that a complex maintenance assignment touches Rule 1, Rule 2, Rule 3, L1, L5, and L6, and the actual results reproduced that distribution stably. R5 non-verbatim trace, R8 optional scored item, RB1 must-but-bonus-only, and R7/RB2 double scoring all appeared as the expected findings.
 
-Pulse는 다른 언어/다른 과제 유형에서 DeskHive와 다른 branch를 보여주도록 설계되어 있고, 실제 결과도 그렇게 나왔다. 특히 `orphan_bonus_rubric_item` informational branch와 qualitative-only Rule 2 boundary가 DeskHive와 다른 신호로 확인됐다.
+Pulse is designed to exhibit different branches than DeskHive across a different language / different assignment type, and the results came out that way. In particular, the `orphan_bonus_rubric_item` informational branch and the qualitative-only Rule 2 boundary were confirmed as signals distinct from DeskHive.
 
-Rule 0 diagnostics가 모든 회차에서 0건인 것도 중요하다. 즉 finding들은 source grounding이나 schema/reference 깨짐 때문에 생긴 것이 아니라, compacted artifact가 유효한 상태에서 설계상 검토 포인트로 발생한 것이다.
+It also matters that Rule 0 diagnostics were 0 in every run. That is, the findings did not arise from broken source grounding or schema/reference issues; they arose as by-design review points on valid compacted artifacts.
 
-## 발견한 리스크와 주의점
+## Risks and caveats found
 
-1. **Live SDK runner 검증은 아니다.**  
-   현재 `deterministic_extraction`은 rubric의 `Traceable spec quote` 힌트에서 후보를 만드는 offline stand-in이다. 이 보고서는 샘플과 harness pipeline의 재현성 검증이지, 실제 LLM runner 품질 검증이 아니다.
+1. **This is not live SDK runner validation.**
+   The current `deterministic_extraction` is an offline stand-in that derives candidates from the rubric's `Traceable spec quote` hints. This report is a reproducibility validation of the samples and the harness pipeline, not a quality validation of an actual LLM runner.
 
-2. **Semantic verifier는 conservative mock이다.**  
-   이번 실행의 `semantic_verification_count`는 0이고 report에도 semantic verification proposal이 없다. 그래서 `unconfirmed_trace_coverage`가 남는 것은 정상이다.
+2. **The semantic verifier is a conservative mock.**
+   This run's `semantic_verification_count` is 0 and the report carries no semantic verification proposals. So it is normal that `unconfirmed_trace_coverage` remains.
 
-3. **DeskHive 문서 표현에 작은 혼선 가능성이 있다.**  
-   candidate spec은 B1에 대해 finite number를 요구하지만, codebase business rules는 no-usage case의 표현으로 `null` 가능성을 언급한다. spec을 canonical로 보면 문제는 작지만, 공개 샘플에서는 후보자/평가자 혼선을 줄이려면 표현을 맞추는 편이 좋다.
+3. **There may be a small wording inconsistency in DeskHive's docs.**
+   The candidate spec requires a finite number for B1, but the codebase business rules mention a possible `null` as the representation for the no-usage case. Treating the spec as canonical, the issue is small, but for a public sample it is better to align the wording to reduce candidate/evaluator confusion.
 
-4. **Pulse reference solution은 이 환경에서 실행 검증하지 못했다.**  
-   `go version`이 `/bin/bash: line 1: go: command not found`로 실패했다. Go가 설치된 환경에서 `go test ./...`, `go run . testdata/events.csv`, `go run . --json testdata/events.csv`를 다시 확인해야 한다.
+4. **The Pulse reference solution could not be execution-verified in this environment.**
+   `go version` failed with `/bin/bash: line 1: go: command not found`. In an environment with Go installed, re-confirm `go test ./...`, `go run . testdata/events.csv`, and `go run . --json testdata/events.csv`.
 
-5. **Pulse public CLI surface 테스트가 더 있으면 좋다.**  
-   코드와 테스트데이터는 spec과 대체로 맞지만, file-vs-stdin 동등성, stderr skipped-count, JSON output이 `testdata/expected.json`과 일치하는지, text output shape 같은 public surface는 현재 테스트로 강하게 잠겨 있지 않다.
+5. **More tests on the Pulse public CLI surface would help.**
+   The code and test data broadly match the spec, but public surfaces such as file-vs-stdin equivalence, the stderr skipped-count, whether the JSON output matches `testdata/expected.json`, and the text output shape are not strongly locked by the current tests.
 
-6. **Review queue 경로는 구분해서 해석해야 한다.**  
-   `check --review-queue-out`은 DeskHive에서 lint safeguard queue 2건을 만들지만, Phase 2 `compact`/`verify`의 통합 queue는 이번 정상 실행에서 비어 있다. 현재 README가 경고하듯 Phase 0 check queue를 통합 queue 경로에 직접 쓰지 않는 구조다.
+6. **The review queue paths must be interpreted distinctly.**
+   `check --review-queue-out` produces 2 lint-safeguard queue entries for DeskHive, but the unified Phase 2 `compact`/`verify` queue is empty on this clean run. As the current README warns, the design does not write the Phase 0 check queue directly into the unified queue path.
 
-## 최종 판단
+## Final assessment
 
-`examples/`는 PoC 데모용 샘플로 적절하게 세팅되어 있다. 세 번 반복한 공식 workflow가 동일한 결과를 냈고, finding 분포도 샘플 문서가 의도한 설계 신호와 맞는다.
+`examples/` is set up appropriately as PoC demo samples. The official workflow, repeated three times, produced identical results, and the finding distribution matches the design signals the sample documents intended.
 
-보고서/포트폴리오 문맥에서는 다음처럼 표현하는 것이 안전하다.
+In a report/portfolio context, the following phrasing is safe.
 
 > The examples validate the deterministic harness workflow and demonstrate stable assessment-design findings across two different assignment archetypes. They do not yet validate live LLM extraction quality; real SDK runners remain future work.
-

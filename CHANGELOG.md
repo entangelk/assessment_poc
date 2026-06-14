@@ -2,6 +2,7 @@
 
 | Date | Change | Detail |
 |---|---|---|
+| 2026-06-14 | Publication-doc bilingual pass: README/report/evaluation/HANDOFF/publication-plan mirrors are present, implementation-plan KO mirror is present, and README links now point to the current Korean-source implementation-plan anchors while the full English implementation-plan rewrite remains pending. | [Work log](docs/daily_logs/2026-06-14/work_log.md) |
 | 2026-06-12 | HTML report rule catalog: `assessment-harness report` now includes Rule 0, Rule 1/2/3, and lint L1/L5/L6 meanings, finding-level rule context, and optional `--policy` rendering for the configured Rule 3 threshold. | [Work log](docs/daily_logs/2026-06-12/work_log.md) |
 | 2026-06-11 | Browser-viewable HTML report: `assessment-harness report --format html` now writes a standalone visual report over the existing findings, diagnostics, semantic verification, and review queue inputs without changing the underlying validation contract. | [Work log](docs/daily_logs/2026-06-11/work_log.md) |
 | 2026-06-07 | Docs reorganization: moved design/plan docs to `docs/planning/` and runner/sample guides to `docs/guidelines/`; updated active references (README, HANDOFF, cross-doc links, code comments). Historical `daily_logs`/`verifications` links were left as-is (path mapping recorded in the work log). | [Work log](docs/daily_logs/2026-06-07/work_log.md) |

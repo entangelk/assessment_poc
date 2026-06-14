@@ -1,42 +1,51 @@
+<!-- .ko mirror created on finalize (publication_plan §7b) -->
+
+<p align="center">
+  <a href="./README.md"><img src="https://img.shields.io/badge/Language-EN-111111?style=for-the-badge" alt="English"></a>
+  <a href="./README.ko.md"><img src="https://img.shields.io/badge/Language-KO-6B7280?style=for-the-badge" alt="한국어"></a>
+</p>
+<p align="center"><sub>Switch language / 언어 전환</sub></p>
+
 # Assessment Spec Harness PoC
 
-> CI for hiring assessments — 채용 과제의 공개 명세(spec)와 비공개 평가 rubric 사이의 불일치를 사전에 검출하는 하네스.
+> CI for hiring assessments — a harness that detects, in advance, mismatches between a hiring assignment's public spec and its private grading rubric.
 
-본 도구는 응시자를 평가하지 않는다. **평가 설계 자체를 평가한다.**
-
----
-
-## 지금 무엇을 증명했나
-
-이 PoC는 공개 `spec.md`와 비공개 `rubric.md` 사이의 설계 리스크를
-deterministic harness workflow로 찾아낸다.
-
-- `examples/deskhive_assignment`: 복잡한 유지보수/버그픽스 과제에서 optional
-  항목의 core scoring, must 항목의 bonus-only coverage, double scoring 등을
-  재현한다.
-- `examples/pulse_assignment`: Go greenfield CLI 과제에서 spec과 반대되는
-  rubric 요구, optional windowing 과대 배점, spec에 없는 bonus 항목 등을
-  재현한다.
-- 두 예제 모두 3회 반복 실행에서 같은 finding 분포를 재현했고, Rule 0
-  reference integrity diagnostics는 0건이었다.
-
-자세한 반복 실행 결과와 한계는 [PoC 결과 보고서](report.md)에 정리했다.
-중요한 제한도 있다: 이 결과는 `deterministic_extraction` + mock semantic
-verification 경로의 검증이며, live LLM SDK runner 품질 검증은 아직 아니다.
+This tool does not evaluate the candidate. **It evaluates the assessment design itself.**
 
 ---
 
-## 1차 사용자: AI 에이전트
+## What this proves today
 
-본 도구의 1차 호출 주체는 Claude Code, Codex, Gemini 같은 AI 에이전트다. CLI 계약, 종료 코드, 출력 형식은 모두 agent-consumable하게 설계되었다. 사람은 최종 검토자로만 참여한다.
+This PoC finds the design risks between a public `spec.md` and a private
+`rubric.md` through a deterministic harness workflow.
 
-사람이 직접 CLI를 호출해도 동작한다 (보조 사용 경로).
+- `examples/deskhive_assignment`: in a complex maintenance/bugfix assignment, it
+  reproduces optional items scored as core, must items covered by bonus only,
+  double scoring, and more.
+- `examples/pulse_assignment`: in a Go greenfield CLI assignment, it reproduces
+  a rubric requirement that contradicts the spec, over-weighted optional
+  windowing, bonus items absent from the spec, and more.
+- Both examples reproduced the same finding distribution across three repeated
+  runs, and Rule 0 reference integrity diagnostics were 0.
+
+The detailed repeated-run results and limitations are collected in the
+[PoC results report](report.md). One important caveat: these results validate
+the `deterministic_extraction` + mock semantic verification path; they are not
+yet a quality validation of a live LLM SDK runner.
 
 ---
 
-## 빠른 시작
+## Primary user: AI agents
 
-### 0. 설치 (PoC 단계: 로컬 개발)
+The primary caller of this tool is an AI agent such as Claude Code, Codex, or Gemini. The CLI contract, exit codes, and output formats are all designed to be agent-consumable. Humans participate only as final reviewers.
+
+Direct human CLI invocation also works (a secondary usage path).
+
+---
+
+## Quick start
+
+### 0. Install (PoC stage: local development)
 
 ```bash
 git clone <repo>
@@ -44,22 +53,24 @@ cd assessment_poc
 pip install -e .
 ```
 
-### 1. 현재 contract 확인 (caller agent 첫 단계 권장)
+### 1. Check the current contract (recommended first step for a caller agent)
 
 ```bash
 assessment-harness schema --command check --output json
 ```
 
-매번 schema introspection으로 stable core / informational / exit codes / next_actions types를 확인하라. 문서를 따라잡지 않아도 안전한 통합이 가능하다.
+Use schema introspection every time to confirm the stable core / informational fields / exit codes / next_actions types. Safe integration is possible without keeping up with the docs.
 
-### 2. 예제 PoC 결과 보기
+### 2. See the example PoC results
 
-최신 예제 반복 검증 요약은 루트의 [report.md](report.md)를 먼저 보면 된다.
-이 보고서는 `examples/deskhive_assignment`와 `examples/pulse_assignment`를
-각각 3회 end-to-end로 실행한 결과를 정리한다.
+For the latest example repeated-validation summary, start with the root
+[report.md](report.md). This report collects the results of running
+`examples/deskhive_assignment` and `examples/pulse_assignment` end-to-end three
+times each.
 
-예제 산출물은 gitignored `work/poc_report_runs/run{1,2,3}/...` 아래에 생성된다.
-직접 재실행하려면 아래 전체 흐름의 `extract` 입력을 예제 파일로 바꾸면 된다.
+The example outputs are generated under the gitignored
+`work/poc_report_runs/run{1,2,3}/...`. To re-run them yourself, swap the
+`extract` inputs of the full flow below for the example files.
 
 ```bash
 PYTHONPATH=src python3 -m assessment_harness.cli extract \
@@ -71,9 +82,9 @@ PYTHONPATH=src python3 -m assessment_harness.cli extract \
   --out-dir work/deskhive_run/runs
 ```
 
-### 3. 결정론적 검증만 (Phase 0)
+### 3. Deterministic validation only (Phase 0)
 
-수동으로 작성한 compacted YAML을 입력으로 Rule 0~3 검사.
+Run Rule 0–3 checks over manually authored compacted YAML inputs.
 
 ```bash
 assessment-harness check \
@@ -92,26 +103,27 @@ assessment-harness report \
   --out work/report.md
 ```
 
-`--source-manifest`는 Phase 0 `check`의 필수 인자다 (plan §5.0 / §5.1 / §11). 누락하면 `status=invalid_input`, exit `2`, 진단 `source_manifest_required`, next_action `provide_source_manifest`가 반환된다.
+`--source-manifest` is a required input for Phase 0 `check` (plan §5.0 / §5.1 / §11). Omitting it returns `status=invalid_input`, exit `2`, diagnostic `source_manifest_required`, and next_action `provide_source_manifest`.
 
-`--policy`도 필수다. `rules.optionality_mismatch.weight_threshold`가 없으면 Rule 3 경계를 조용히 건너뛰지 않고 `status=invalid_input`, exit `2`로 복구 지시를 반환한다.
+`--policy` is also required. If `rules.optionality_mismatch.weight_threshold` is absent, the Rule 3 boundary is not silently skipped; instead it returns `status=invalid_input`, exit `2`, with a recovery instruction.
 
-Phase 0에서 semantic verification 입력이 없으면 `ai_judgement` link는 의미 확인 대기 상태로 남는다. Agent 실행 흐름에서는 아래 `verify` 산출물을 후속 명령에 전달한다.
+In Phase 0, with no semantic verification input, `ai_judgement` links stay in a pending-semantic state. In an agent execution flow, you pass the `verify` outputs below to subsequent commands.
 
-Rule L1/L6 lint safeguard는 Phase 0 `check`에서도 `review_queue.json`에 기록된다.
-`--review-queue-out`을 생략하면 `--out` 옆에 생성되며, Rule 0 clean 실행에서
-finding이 없으면 빈 queue로 갱신되어 이전 검토 항목이 남지 않는다.
-Phase 0 `check` 출력은 lint safeguard 전용이다. Phase 2 `compact`는
-`--review-queue-in`으로 기존 queue를 보존하고 invalid run 항목을 추가할 수
-있다. Phase 2 `verify`도 `--review-queue-in`으로 기존 queue를 보존하고
-`ai_judgement_pending` 항목을 중복 없이 추가한다. `check`
-`--review-queue-out`은 여전히 lint safeguard 단독 출력이므로 기존 통합 queue
-경로에 직접 쓰지 않는다.
+The Rule L1/L6 lint safeguard is also recorded in `review_queue.json` by Phase 0 `check`.
+If `--review-queue-out` is omitted, it is created next to `--out`; on a Rule 0
+clean run with no findings, it is updated to an empty queue so no stale review
+items remain.
+Phase 0 `check` output is for the lint safeguard only. Phase 2 `compact` can
+preserve an existing queue via `--review-queue-in` and append invalid-run
+entries. Phase 2 `verify` also preserves an existing queue via `--review-queue-in`
+and appends `ai_judgement_pending` entries without duplicates. `check`
+`--review-queue-out` is still a standalone lint-safeguard output, so it is not
+written directly into the existing unified queue path.
 
-최종 검토가 `final_review.yaml`에 기록된 뒤에는 `gate`가 외부 판정을 낸다.
-final review의 finding decision은 `type` + 생성 식별자(`rubric_id`,
-`spec_id`, paired rubric IDs)만으로 finding을 가리키며, `message`나
-`evidence` payload를 복사하지 않는다.
+After the final review is recorded in `final_review.yaml`, `gate` issues the
+external verdict. A finding decision in the final review points to a finding by
+`type` + generated identifiers (`rubric_id`, `spec_id`, paired rubric IDs) only,
+and does not copy any `message` or `evidence` payload.
 
 ```bash
 assessment-harness gate \
@@ -119,24 +131,26 @@ assessment-harness gate \
   --output json
 ```
 
-### 4. 에이전트 실행 포함 전체 흐름 (Phase 2/3, 일부 구현)
+### 4. Full flow including agent execution (Phase 2/3, partially implemented)
 
-> ⚠️ 아래 전체 흐름 중 `extract` / `compact` / `verify` CLI는 초기
-> `mock_fixture` 경로만 구현되었다. 실제 SDK runner는 아직 미구현이다. 현재
-> `extract`는 fixture를 재생해 run별 `candidates.yaml`과 raw/audit trace를
-> 만들고, `compact`는 `--runs-dir` 아래 run별 `candidates.yaml`을 읽거나
-> 저수준 입력으로 `--candidates` 파일 목록을 받아 canonical YAML을 생성한다.
-> `verify`는 compacted trace link의 `ai_judgement` evidence를 별도
-> `semantic_verifications.yaml` 및 review queue 항목으로 기록하지만,
-> compacted link를 수정하거나 의미 판정을 확정하지 않는다. `id_map.yaml`이
-> 있으면 trace link canonical ID는 파일 순서가 아니라 id_map lineage에서
-> 가져온다. `check`는 이 제안을 원본 link에 쓰지 않고 in-memory effective
-> `semantic_status`로만 반영한다. compacted lineage가 있는 trace에
-> `--semantic-verifications`를 줄 때는 `--id-map`도 함께 전달해야 하며,
-> 그래야 `check`가 `verify`와 같은 lineage 기준으로 제안을 적용한다.
+> ⚠️ In the full flow below, the `extract` / `compact` / `verify` CLIs are
+> implemented only for the initial `mock_fixture` path. The real SDK runner is
+> not implemented yet. Currently `extract` replays a fixture to produce per-run
+> `candidates.yaml` and raw/audit traces, and `compact` reads per-run
+> `candidates.yaml` under `--runs-dir`, or takes a list of `--candidates` files
+> as a low-level input, to produce canonical YAML.
+> `verify` records the `ai_judgement` evidence of compacted trace links into a
+> separate `semantic_verifications.yaml` and review queue entries, but does not
+> modify the compacted links or finalize a semantic judgment. When `id_map.yaml`
+> is present, the trace link canonical ID is taken from id_map lineage rather
+> than file order. `check` does not write these proposals to the original links;
+> it reflects them only as an in-memory effective `semantic_status`. When passing
+> `--semantic-verifications` for a trace with compacting lineage, you must also
+> pass `--id-map`, so that `check` applies the proposals on the same lineage
+> basis as `verify`.
 
 ```bash
-# 복수 독립 실행
+# multiple independent runs
 assessment-harness extract \
   --spec fixtures/clean_assignment/source/spec.md \
   --rubric fixtures/clean_assignment/source/rubric.md \
@@ -145,13 +159,13 @@ assessment-harness extract \
   --runs 3 \
   --out-dir work/runs
 
-# compacting (자동 채택 없음, support/identity_basis/variants 보존)
+# compacting (no auto-acceptance; support/identity_basis/variants preserved)
 assessment-harness compact \
   --runs-dir work/runs \
   --policy config/policy.yaml \
   --out-dir work/compacted
 
-# 의미 검증 agent 복수 실행 (원문/link read-only, 제안 별도 저장)
+# multiple semantic verification agent runs (source/links read-only, proposals stored separately)
 assessment-harness verify \
   --compacted-dir work/compacted \
   --source-manifest work/source_snapshot/manifest.yaml \
@@ -160,7 +174,7 @@ assessment-harness verify \
   --policy config/policy.yaml \
   --out-dir work/semantic_verification
 
-# 결정론적 검사 (provisional findings 생성)
+# deterministic check (produces provisional findings)
 assessment-harness check \
   --spec-items work/compacted/spec_items.yaml \
   --rubric-items work/compacted/rubric_items.yaml \
@@ -172,7 +186,7 @@ assessment-harness check \
   --out work/findings.json \
   --diagnostics-out work/integrity_diagnostics.json
 
-# 사람용 report
+# human-facing report
 assessment-harness report \
   --findings work/findings.json \
   --diagnostics work/integrity_diagnostics.json \
@@ -180,7 +194,7 @@ assessment-harness report \
   --review-queue work/compacted/review_queue.json \
   --out work/report.md
 
-# 브라우저로 확인할 수 있는 HTML report
+# browser-viewable HTML report
 assessment-harness report \
   --findings work/findings.json \
   --diagnostics work/integrity_diagnostics.json \
@@ -190,7 +204,7 @@ assessment-harness report \
   --format html \
   --out work/report.html
 
-# 최종 human review 기록
+# record the final human review
 assessment-harness review \
   --compacted-dir work/compacted \
   --findings work/findings.json \
@@ -201,7 +215,7 @@ assessment-harness review \
   --reviewer kdt \
   --out-dir work/final_review
 
-# 최종 review 이후 외부 판정
+# external verdict after final review
 assessment-harness gate \
   --final-review work/final_review/review.yaml \
   --output json
@@ -209,13 +223,14 @@ assessment-harness gate \
 
 ---
 
-## 흐름 개요 (아키텍처)
+## Flow overview (architecture)
 
-전체 파이프라인은 **불변 소스 스냅샷**(sha256 + line/span `source_ref`)에 anchor된다.
-결정론적 검증 코어와 review/verdict 흐름은 **구현 완료**, 이를 먹이는 multi-run
-에이전트 추출 파이프라인은 **contract/foundation 단계**다. 아래 다이어그램은 그
-경계를 그대로 표기한다 — Rule 0로 들어가는 실선은 *현재* 입력 경로(수동/fixture),
-점선은 *구현 시* 에이전트 경로다.
+The whole pipeline is anchored to an **immutable source snapshot** (sha256 +
+line/span `source_ref`). The deterministic validation core and the
+review/verdict flow are **implemented**; the multi-run agent extraction pipeline
+that feeds them is at the **contract/foundation** stage. The diagram below marks
+that boundary directly — the solid line into Rule 0 is the *current* input path
+(manual/fixture), and the dashed line is the agent path *when implemented*.
 
 ```mermaid
 flowchart TB
@@ -249,31 +264,31 @@ flowchart TB
 
 ---
 
-## 핵심 데이터 계약
+## Core data contracts
 
-자세한 schema는 [구현 계획서 §5](docs/planning/implementation_plan_assessment_harness_poc_v1.md#5-데이터-계약) 참고. 요약:
+For detailed schemas, see [Implementation Plan §5](docs/planning/implementation_plan_assessment_harness_poc_v1.ko.md#5-데이터-계약). The implementation plan is still Korean-source at v1.32; its full English mirror is pending. Summary:
 
-- **spec_items / rubric_items / trace_links**: compacted artifacts. `support` (어느 run에서 발견), `identity_basis` (동일성 판단 기준), `variants` (미세 차이 보존)
-- **candidate artifacts**: run별 pre-compacting 후보. `classify_candidate_run_integrity`는 schema/audit trace attribution만 확인해 `structurally_validated`로 표시하고, `classify_deep_candidate_run_integrity`가 내부 reference, source grounding, token quote mismatch를 구분해 통과한 run만 `validated`로 승격한다.
-- **source_manifest / source_ref**: immutable input snapshot hash와 line/span anchor. DB/RAG 없이도 원문 grounding 검증
-- **id_map**: run-local ID를 compacted canonical ID로 remap한 provenance. 후속 프로젝트/버전 관리 확장 지점
-- **trace_links.evidence_quotes**: `verification_mode` 별 분기
-  - `token_sequence`: strict substring 매칭 (정량 marker 검증)
-  - `ai_judgement` (default): reference integrity만, 의미는 read-only verifier-agent 제안과 최종 human review로 확인
-- **semantic_verifications.yaml**: verifier-agent 복수 run의 `supported` / `rejected` / `uncertain` 제안 취합. compacted link는 수정하지 않으며, `check`는 이를 Rule 1 evidence의 effective status로만 사용. compacted lineage가 있는 trace에 `--semantic-verifications`를 줄 때는 `--id-map`도 함께 전달해야 하며, trace 순서가 아니라 canonical lineage로 proposal을 조인
-- **verify mock path**: `ai_judgement` evidence는 보수적으로 `agent_uncertain` proposal을 남긴다. quote-level `source_ref`가 없으면 `source_refs: []`로 불확실성을 드러내고 review queue에도 남긴다
-- **integrity_diagnostics.json**: Rule 0 위반 기록
-- **review_queue.json**: 기존 검토 entry 5종과 lint safeguard `double_scoring_review` / `mandatory_spec_bonus_review`. Phase 0에서는 Rule L1/L6가 각각 paired queue entry를 생성하며, Rule L5는 finding/action만 생성
-- **findings.json**: Rule 1~3 위반 (Rule 0는 별도 diagnostic)
-- **final_review/**: 최종 검토자의 accept/hold/rerun/override 기록. `review` 명령은 `status=success`/`provisional_findings`인 findings만 받아 모든 finding을 `hold`로 둔 draft `review.yaml`을 만들고, 사람이 이를 수정해 최종 결정으로 닫음. 기존 draft는 기본적으로 덮어쓰지 않으며, 의도적 재생성은 `--force`를 사용. Finding decision은 최소 `target_key`로 `findings.json` 항목을 닫음
-- **gate output**: final review 이후 외부 호출자가 소비하는 pass/fail/pending 판정. confirmed blocking finding이 있을 때만 exit `1`
+- **spec_items / rubric_items / trace_links**: compacted artifacts. `support` (which runs found it), `identity_basis` (the basis for sameness), `variants` (minor differences preserved)
+- **candidate artifacts**: per-run pre-compacting candidates. `classify_candidate_run_integrity` checks only schema/audit-trace attribution and marks runs as `structurally_validated`; `classify_deep_candidate_run_integrity` distinguishes internal reference, source grounding, and token-quote mismatch, promoting only passing runs to `validated`.
+- **source_manifest / source_ref**: immutable input snapshot hash and line/span anchors. Source grounding can be verified without a DB/RAG.
+- **id_map**: provenance for remapping run-local IDs to compacted canonical IDs. An extension point for later project/version management.
+- **trace_links.evidence_quotes**: branched by `verification_mode`
+  - `token_sequence`: strict substring matching (quantitative-marker verification)
+  - `ai_judgement` (default): reference integrity only; meaning is confirmed by read-only verifier-agent proposals and a final human review
+- **semantic_verifications.yaml**: aggregates `supported` / `rejected` / `uncertain` proposals across multiple verifier-agent runs. It does not modify compacted links; `check` uses it only as the effective status of Rule 1 evidence. When passing `--semantic-verifications` for a trace with compacting lineage, you must also pass `--id-map`, so proposals are joined by canonical lineage rather than trace order
+- **verify mock path**: for `ai_judgement` evidence it leaves a conservative `agent_uncertain` proposal. When a quote-level `source_ref` is missing, it surfaces the uncertainty as `source_refs: []` and also records it in the review queue
+- **integrity_diagnostics.json**: records Rule 0 violations
+- **review_queue.json**: the five existing review entry types plus the lint-safeguard `double_scoring_review` / `mandatory_spec_bonus_review`. In Phase 0, Rule L1/L6 each create a paired queue entry, while Rule L5 creates only a finding/action
+- **findings.json**: Rule 1–3 violations (Rule 0 is a separate diagnostic)
+- **final_review/**: the final reviewer's accept/hold/rerun/override record. The `review` command accepts only findings with `status=success`/`provisional_findings`, and produces a draft `review.yaml` that leaves every finding as `hold`; a human edits it into final decisions. An existing draft is not overwritten by default; intentional regeneration uses `--force`. A finding decision closes a `findings.json` entry with a minimal `target_key`
+- **gate output**: the pass/fail/pending verdict consumed by an external caller after the final review. Exit `1` only when there is a confirmed blocking finding
 
 ---
 
-## 정책 파일
+## Policy file
 
-모든 정책은 `config/policy.yaml` 하나로 통합. Phase 0 `check`에는 최소한
-`rules.optionality_mismatch.weight_threshold`가 필요하다.
+All policy is unified into a single `config/policy.yaml`. Phase 0 `check`
+requires at minimum `rules.optionality_mismatch.weight_threshold`.
 
 ```yaml
 rules:
@@ -292,114 +307,115 @@ verification:
   default_mode: ai_judgement
 ```
 
-CLI는 `--policy config/policy.yaml` 하나로 모든 정책을 받는다.
+The CLI receives all policy through the single `--policy config/policy.yaml`.
 
 ---
 
-## CLI 출력 계약 (agent-consumable)
+## CLI output contract (agent-consumable)
 
-모든 명령은 `--output json` flag로 machine-readable 출력 지원.
+Every command supports machine-readable output via the `--output json` flag.
 
-### 종료 코드
+### Exit codes
 
-| Code | 의미 |
+| Code | Meaning |
 |---|---|
-| 0 | success/provisional/pending; final blocking verdict 없음 |
-| 1 | `gate`에서 confirmed blocking finding 존재 |
-| 2 | input/integrity 오류 (Rule 0 violation 포함) |
-| 3 | internal 오류 (runner 실패 등) |
+| 0 | success/provisional/pending; no final blocking verdict |
+| 1 | a confirmed blocking finding exists in `gate` |
+| 2 | input/integrity error (including Rule 0 violations) |
+| 3 | internal error (runner failure, etc.) |
 
-### Stable Core (모든 명령 필수)
+### Stable core (required for every command)
 
 - `status`: `success` / `provisional_findings` / `pending_review` / `fail` / `invalid_input` / `internal_error`
 - `exit_code`: 0/1/2/3
-- `command`: 실행된 명령 이름
-- `next_actions`: caller agent용 hint 배열 (없으면 빈 배열)
+- `command`: the name of the executed command
+- `next_actions`: array of hints for the caller agent (empty array if none)
 
-그 외 필드는 informational이며 사전 통지 없이 변경 가능. caller agent는 **항상 `schema` 명령으로 현재 contract 확인** 권장.
-
----
-
-## 구현 상태
-
-| 영역 | 상태 |
-|---|---|
-| Phase 0 결정론적 검증 코어 (Rule 0~3 + lint L1/L5/L6, fixture 회귀) | 완료 |
-| review / gate finding-level 흐름 | 초기 구현 완료 |
-| AgentRunner protocol | 기반 완료 |
-| Candidate artifact schema | 기반 완료 |
-| Candidate audit-trace attribution | 기반 완료 |
-| Runner artifact normalization | 기반 완료 |
-| Candidate integrity 분류 (structural + staged model) | 기반 완료 |
-| Deep candidate Rule 0 검증 헬퍼 (3-way 격리) | 기반 완료 |
-| `extract` CLI 오케스트레이션 (`mock_fixture`) | 초기 구현 완료 |
-| `compact` CLI 오케스트레이션 | 초기 구현 완료 |
-| `verify` 오케스트레이션 (`mock_fixture`) | 초기 구현 완료 |
-| `materialize-review` CLI 오케스트레이션 | 초기 구현 완료 |
-| in-repo examples 반복 검증 (`deterministic_extraction` + mock verifier) | 완료, [report.md](report.md) |
-| 실제 SDK runner | 미구현 |
-| live LLM 기반 Phase 2/3 E2E 워크플로 | 미구현 |
-
-> 진행은 선형 단계가 아니었다. Phase 2 기반(runner·candidate 계열)이 먼저 들어왔고,
-> deterministic 예제 workflow는 동작하지만, 실제 SDK runner 기반 live extraction은
-> 아직이다. 그래서 단계 번호 대신 영역별 상태로 표기한다.
-
-상세 진입 조건/완료 기준: [구현 계획서 §9, §12](docs/planning/implementation_plan_assessment_harness_poc_v1.md#9-단계별-구현-계획)
+All other fields are informational and may change without prior notice. The caller agent is recommended to **always confirm the current contract via the `schema` command**.
 
 ---
 
-## 문서 지도 (Documentation Map)
+## Implementation status
 
-어떤 목적엔 어느 문서를 보면 되는지 정리한 지도다.
-
-**이 프로젝트를 이해하고 싶다면 (3~5분)**
-
-| 문서 | 역할 |
+| Area | Status |
 |---|---|
-| [docs/case_study.md](docs/case_study.md) | **여기서 시작** — 문제 / 목표 / 핵심 결정 / 무엇을 만들었나 / 검증 / 한계의 서사 |
-| [report.md](report.md) | 최신 PoC 예제 반복 검증 결과 — DeskHive/Pulse 3회 실행, finding 분포, 한계 |
-| [docs/decisions.md](docs/decisions.md) | 왜 이렇게 설계했는가 — 동시대 출처를 인용한 결정 vignette 모음 |
-| [docs/evaluation.md](docs/evaluation.md) | 측정된 테스트·smoke 근거 (날짜 박힌 moving snapshot) |
-| [docs/audit_index.md](docs/audit_index.md) | 작업 일지 + 독립 검증 기록 큐레이션 인덱스 |
+| Phase 0 deterministic validation core (Rule 0–3 + lint L1/L5/L6, fixture regression) | Complete |
+| review / gate finding-level flow | Initial implementation complete |
+| AgentRunner protocol | Foundation complete |
+| Candidate artifact schema | Foundation complete |
+| Candidate audit-trace attribution | Foundation complete |
+| Runner artifact normalization | Foundation complete |
+| Candidate integrity classification (structural + staged model) | Foundation complete |
+| Deep candidate Rule 0 verification helper (3-way isolation) | Foundation complete |
+| `extract` CLI orchestration (`mock_fixture`) | Initial implementation complete |
+| `compact` CLI orchestration | Initial implementation complete |
+| `verify` orchestration (`mock_fixture`) | Initial implementation complete |
+| `materialize-review` CLI orchestration | Initial implementation complete |
+| in-repo examples repeated validation (`deterministic_extraction` + mock verifier) | Complete, [report.md](report.md) |
+| real SDK runner | Not implemented |
+| live LLM-based Phase 2/3 E2E workflow | Not implemented |
 
-**명세와 설계 (정본)**
+> Progress was not a linear sequence of phases. The Phase 2 foundation (runner /
+> candidate family) landed first, and the deterministic example workflow works,
+> but live extraction backed by a real SDK runner is not there yet. That is why
+> status is shown by area rather than by phase number.
 
-| 문서 | 역할 |
+Detailed entry conditions / completion criteria: [Implementation Plan §9, §12](docs/planning/implementation_plan_assessment_harness_poc_v1.ko.md#9-단계별-구현-계획)
+
+---
+
+## Documentation Map
+
+A map of which document to read for which purpose.
+
+**If you want to understand this project (3–5 min)**
+
+| Document | Role |
 |---|---|
-| [docs/planning/implementation_plan_assessment_harness_poc_v1.md](docs/planning/implementation_plan_assessment_harness_poc_v1.md) | **구현 명세 (1순위 SoT)** — 현재 v1.32 |
-| [docs/planning/ideation_assessment_harness_v2.2.md](docs/planning/ideation_assessment_harness_v2.2.md) | Rubric Lint Rules 가족 (2순위, 2026-05-27 final + in-place 개정) |
-| [docs/planning/ideation_assessment_harness_v2.1.md](docs/planning/ideation_assessment_harness_v2.1.md) | 제품 목적과 장기 방향 (3순위) |
+| [docs/case_study.md](docs/case_study.md) | **Start here** — the narrative of problem / goal / key decisions / what I built / verification / limitations |
+| [report.md](report.md) | Latest PoC example repeated-validation results — DeskHive/Pulse 3 runs, finding distribution, limitations |
+| [docs/decisions.md](docs/decisions.md) | Why it is designed this way — a collection of decision vignettes citing contemporaneous sources |
+| [docs/evaluation.md](docs/evaluation.md) | Measured test/smoke evidence (a dated moving snapshot) |
+| [docs/audit_index.md](docs/audit_index.md) | A curated index of work logs + independent verification records |
+
+**Spec and design (canonical)**
+
+| Document | Role |
+|---|---|
+| [docs/planning/implementation_plan_assessment_harness_poc_v1.ko.md](docs/planning/implementation_plan_assessment_harness_poc_v1.ko.md) | **Implementation spec (1st-priority SoT)** — currently v1.32; Korean source, full English mirror pending |
+| [docs/planning/ideation_assessment_harness_v2.2.md](docs/planning/ideation_assessment_harness_v2.2.md) | Rubric Lint Rules family (2nd priority, 2026-05-27 final + in-place revision) |
+| [docs/planning/ideation_assessment_harness_v2.1.md](docs/planning/ideation_assessment_harness_v2.1.md) | Product purpose and long-term direction (3rd priority) |
 | [docs/planning/ideation_assessment_harness_v2.md](docs/planning/ideation_assessment_harness_v2.md) · [v1](docs/planning/ideation_assessment_harness_v1.md) | historical reference |
-| [docs/planning/publication_plan_v1.md](docs/planning/publication_plan_v1.md) | 이 공개 작업 자체의 계획 (메타 프로세스) |
-| [schemas/](schemas/) | JSON Schema 데이터 계약 |
-| [docs/guidelines/sdk_runner_decisions.md](docs/guidelines/sdk_runner_decisions.md) | 실제 SDK runner 구현 전 결정해야 할 credential / sample / trace retention 체크리스트 |
-| [docs/guidelines/sample_assignment_guidelines.md](docs/guidelines/sample_assignment_guidelines.md) | AI가 PoC용 테스트 과제 spec/rubric 샘플을 만들 때 따를 작성 가이드 |
+| [docs/planning/publication_plan_v1.md](docs/planning/publication_plan_v1.md) | The plan for this public-release effort itself (meta-process) |
+| [schemas/](schemas/) | JSON Schema data contracts |
+| [docs/guidelines/sdk_runner_decisions.md](docs/guidelines/sdk_runner_decisions.md) | The credential / sample / trace-retention checklist to decide before implementing the real SDK runner |
+| [docs/guidelines/sample_assignment_guidelines.md](docs/guidelines/sample_assignment_guidelines.md) | Authoring guide for an AI to create a PoC test-assignment spec/rubric sample |
 
-**상세 기록 (감사 추적)**
+**Detailed records (audit trail)**
 
-| 문서 | 역할 |
+| Document | Role |
 |---|---|
-| [docs/verifications/](docs/verifications/) | 슬라이스별 독립 검증 기록 (자산) |
-| [docs/daily_logs/](docs/daily_logs/) | 동시대 작업 일지 |
-| [CHANGELOG.md](CHANGELOG.md) | 주요 milestone |
+| [docs/verifications/](docs/verifications/) | Independent per-slice verification records (assets) |
+| [docs/daily_logs/](docs/daily_logs/) | Contemporaneous work logs |
+| [CHANGELOG.md](CHANGELOG.md) | Major milestones |
 
-**에이전트·기여자용 (운영)**
+**For agents / contributors (operations)**
 
-| 문서 | 역할 |
+| Document | Role |
 |---|---|
-| [HANDOFF.md](HANDOFF.md) | 현재 상태 스냅샷, 다음 작업자용 |
-| [AGENTS.md](AGENTS.md) / [CLAUDE.md](CLAUDE.md) | 코딩 에이전트 행동 지침 |
+| [HANDOFF.md](HANDOFF.md) | Current-state snapshot for the next worker |
+| [AGENTS.md](AGENTS.md) / [CLAUDE.md](CLAUDE.md) | Coding-agent behavioral guidelines |
 
 ---
 
-## 비범위 (오해 방지)
+## Non-scope (to avoid misunderstanding)
 
-본 도구는 다음을 하지 않는다.
+This tool does not do the following.
 
-- 응시자 제출물 자동 채점
-- 합격/불합격 판정
-- 평가 결과 응시자 통보
-- 법적 공정성 판단
-- 평가자 대체
+- Auto-grade candidate submissions
+- Decide pass/fail
+- Notify candidates of evaluation results
+- Make legal fairness judgments
+- Replace evaluators
 
-이 영역들은 자동화로 다룰 수 없거나, 본 PoC가 해결하려는 문제 범위 밖이다.
+These areas either cannot be handled by automation, or are outside the problem scope this PoC addresses.

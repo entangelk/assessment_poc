@@ -1,0 +1,1830 @@
+<p align="center">
+  <a href="./implementation_plan_assessment_harness_poc_v1.md"><img src="https://img.shields.io/badge/Language-EN-6B7280?style=for-the-badge" alt="English"></a>
+  <a href="./implementation_plan_assessment_harness_poc_v1.ko.md"><img src="https://img.shields.io/badge/Language-KO-111111?style=for-the-badge" alt="한국어"></a>
+</p>
+<p align="center"><sub>Switch language / 언어 전환</sub></p>
+
+# Assessment Spec Harness PoC 구현 계획서 v1.32
+
+## 0. 문서 목적
+
+본 문서는 `Assessment Spec Harness`의 기술 PoC를 구현하기 위한 실행 계획이다.
+
+핵심 전제는 다음과 같다.
+
+> Phase 0에서는 agent 실행을 제외해 deterministic validation core를 먼저 검증한다. 그러나 최종 PoC는 반드시 복수 agent 실행, 실행별 검증, 결과 취합, deterministic validation, 최종 human review의 전체 흐름을 포함한다.
+
+따라서 수동 입력 단계는 최종 제품 범위의 축소가 아니라, 확률적 agent 결과와 규칙 엔진의 책임을 분리하여 테스트하기 위한 첫 단계다.
+
+## 1. 문서 우선순위
+
+본 PoC 구현 중 문서가 충돌할 경우 다음 순서로 해석한다.
+
+1. 본 구현 계획서: 구현 범위, 단계, 입력/출력 계약, 완료 기준
+2. `docs/planning/ideation_assessment_harness_v2.2.md`: lint 가족과 최신 ideation 결정
+3. `docs/planning/ideation_assessment_harness_v2.1.md`: 제품 목적과 장기 방향
+4. `docs/planning/ideation_assessment_harness_v2.md`: historical reference
+5. `docs/planning/ideation_assessment_harness_v1.md`: historical ideation reference
+
+본 계획서가 `v2.2` 또는 `v2.1`의 핵심 목적과 충돌하는 경우에는 임의 구현하지 않고 결정을 다시 기록한다.
+
+## 2. PoC 목표
+
+### 2.1 최종 목표
+
+자유 형식의 candidate-facing spec과 evaluator-facing rubric을 입력받아:
+
+1. agent runner가 독립 실행을 여러 번 수행하여 구조화 후보와 trace link 후보를 제안한다.
+2. 하네스가 각 실행 산출물의 schema/reference/evidence integrity를 검사한다.
+3. 하네스가 유효한 실행 결과를 **compacting**한다 (자동 채택/분류 없음, 중복 통합 + support·variants 보존).
+4. 별도 semantic verifier-agent가 source snapshot과 compacted trace link를 읽기 전용으로 복수 검증하고, 의미적 support/reject/uncertain 제안을 저장한다.
+5. deterministic rule engine이 compacted 입력과 semantic verification 산출물에서 diagnostic/finding을 산출한다. 이 단계는 판정 gate가 아니다.
+6. 사람이 마지막에 compacted 결과, verifier 제안, compacting 자체의 타당성, finding, trace 근거를 검토한다.
+7. 외부 호출자는 최종 review record를 입력으로 받는 별도 `gate` 명령을 통해서만 판정 결과를 소비한다.
+
+최종 PoC의 정체성은 다음과 같다.
+
+> Agent-assisted, multi-run, deterministically checked assessment design validator with final human review.
+
+### 2.2 검증하려는 가설
+
+- 기술 가설: agent 실행 경로가 달라도 동일한 compacted artifacts와 동일한 semantic verification artifacts가 주어지면 validation 결과는 동일하게 재현된다.
+- 안정성 가설: 복수 실행 결과를 compacting하고 support/variants를 보존하면, 단일 확률적 실행보다 사람이 최종 검토하기 좋은 근거를 제공한다.
+- 유용성 가설: 실제 과제 1건에서 공개 명세와 평가 rubric 사이의 검토할 만한 불일치를 surfaced 할 수 있다.
+- compacting 가설: identity_basis(동일성 판정 알고리즘) 자체가 review 대상이 되어, 잘못된 compacting도 사람이 발견할 수 있다.
+
+비즈니스 수요, 판매 모델, 외부 플랫폼 경쟁성은 본 PoC 완료 조건에 포함하지 않는다.
+
+## 3. 원칙과 비범위
+
+### 3.1 구현 원칙
+
+- agent 출력은 후보이며 truth가 아니다.
+- high severity assessment finding은 실행별 무결성 검사를 통과하고 compacted 데이터에 대한 deterministic rule에서만 생성한다. 단, 최종 review 전 finding은 `provisional`이며 외부 blocking verdict가 아니다.
+- 실행별 candidate, 검증된 candidate, compacted artifact, 최종 human-reviewed 결과를 분리한다.
+- **compacting은 분류·자동 채택이 아니다.** 동일 entry로 합쳐졌다는 사실(support/variants/identity_basis)을 모두 보존하며, 사람이 compacting 자체의 타당성을 검토할 수 있어야 한다.
+- 각 phase는 이전 phase의 결과를 깨지 않고 기능을 추가한다.
+- 실제 과제 원문 또는 비공개 rubric은 권한과 공개 범위를 확인한 뒤 fixture로 사용한다.
+- **본 도구의 1차 실행 주체는 AI 에이전트다.** CLI 계약, 종료 코드, 출력 포맷, 에러 메시지는 모두 agent-consumable해야 한다. 사람은 최종 검토자로 참여하며, 검토 화면/리포트는 machine-readable 결과에서 파생한다.
+- **Agent runner는 framework-agnostic protocol 위에 구현한다.** PoC는 Claude Agent SDK를 기본 구현으로 사용하되, Codex/Gemini/기타 에이전트 환경 통합은 단일 모듈 교체로 가능해야 한다.
+- **하나의 판단을 하나의 agent run에 의존하지 않는다.** 동일 입력에 대한 복수 run을 개별 검증한 뒤 취합하고, 불일치는 숨기지 않고 review 대상으로 남긴다.
+- **후보 생성과 의미 검증 agent 역할을 분리한다.** semantic verifier-agent는 원문 snapshot과 compacted link만 읽고 검증 제안을 저장하며, spec/rubric/trace 후보를 생성하거나 수정하지 않는다.
+- **검사와 판정을 분리한다.** `check`는 diagnostic/finding을 생성하고, `gate`만 final review 이후의 외부 판정 상태를 반환한다.
+
+### 3.2 최종 PoC 비범위
+
+- 응시자 제출물 자동 채점
+- 합격/불합격 추천
+- 평가 결과 발송 시스템
+- 법적 공정성 판정
+- VectorDB, clustering, pattern provenance
+- 여러 모델/프레임워크 간 consensus 자동 운영 (동일 configured runner의 복수 실행 취합은 PoC 범위에 포함)
+- 시장 검증 또는 유료화 실험
+
+### 3.3 Phase 0 비범위
+
+- agent runner 실행 및 framework별 prompt/tool orchestration
+- agent runner 모듈 (Phase 2에서 추가)
+- 일반 compacting/verifier `review_queue.json` 파일 생성 (Phase 2부터). 단, Phase 0
+  `check`에서 발화하는 deterministic lint safeguard entry (`double_scoring_review`,
+  `mandatory_spec_bonus_review`)는 Rule L1/L6 finding과 분리할 수 없으므로 예외적으로
+  `review_queue.json`에 생성한다 (§5.7, §6 Rule L1/L6).
+- Time Budget Consistency
+- Rubric Version Lock
+- Disclosure/feedback 생성
+- GitHub Action merge blocking
+
+## 4. 최종 흐름
+
+```text
+caller agent (Claude Code / Codex / Gemini / ...)
+  |
+  | CLI invocation with structured I/O
+  v
+assessment-harness CLI
+  |
+  v
+spec.md + rubric source
+  |
+  v
+agent runner (framework-agnostic protocol)
+  | - Claude Agent SDK (PoC default)
+  | - tool set: read_spec_section, propose_spec_item,
+  |             propose_trace_link, flag_ambiguity, ...
+  | - multi-turn loop with recovery
+  v
+  +--> run_001/agent_trace.*
+  +--> run_001/candidate artifacts -- run integrity check --+
+  +--> run_002/agent_trace.*                               |
+  +--> run_002/candidate artifacts -- run integrity check --+--> compacting
+  +--> run_NNN/...                                         |      | (identity_basis,
+                                                              v     support, variants)
+                                                    compacted artifacts
+                                                    + review_queue.json
+                                                              |
+                                                              v
+                                                    semantic verifier-agent
+                                                    (read-only, multi-run)
+                                                              |
+                                                              v
+                                                    semantic_verifications.yaml
+                                                    + verifier run records
+                                                              |
+                                                              v
+                                                    deterministic validation core
+                                                              |
+                                                              +--> findings.json (provisional)
+                                                              +--> report.md
+                                                              |
+                                                              v
+                                                    final human review
+                                                    (accept | hold | rerun | override)
+                                                              |
+                                                              v
+                                                    external gate decision
+```
+
+`review_queue.json`은 다음을 통합 기록한다: 무결성 실패로 제외된 후보, compacting 시 identity 충돌이 명확하지 않은 variants, deterministic rule로 판정할 수 없는 모호성, 사람이 반드시 봐야 할 최종 검토 대상. 이는 `findings.json`과 분리한다. 일반 compacting/verifier queue 파일 생성은 Phase 2부터 수행한다. 다만 Phase 0의 deterministic lint finding이 직접 요구하는 safeguard entry (`double_scoring_review`, `mandatory_spec_bonus_review`)는 finding과 함께 검토 가능해야 하므로 `check`가 예외적으로 파일에 기록한다.
+
+`compacting`은 분류가 아니다. 자동 채택은 발생하지 않으며, 모든 candidate(invalid run에서 제외된 것 제외)는 사람이 검토해야 할 entry로 남는다. 동일한 entity로 합쳐진 경우 `support`(어느 run에서 발견되었는지), `identity_basis`(동일성 판단 기준), `variants`(약간 다른 표현들)를 보존하여 compacting 자체의 타당성도 review 대상이 된다.
+
+각 run은 독립된 trace를 가진다. 같은 입력에서도 agent path가 갈라질 수 있으므로 candidate는 trace 참조를 보존한다. validation core의 결정성은 compacted artifacts와 semantic verification artifacts가 입력으로 확정된 시점부터 시작하며, agent 단계의 비결정성은 run별 trace와 review_queue에 격리된다.
+
+compacting 또는 verifier 실행 자체는 reproducibility를 보장하지 않는다 (입력 candidate 및 검증 제안 집합이 같지 않을 수 있으므로). invariant는 "동일 compacted artifacts + 동일 semantic verification artifacts → 동일 findings"에 한정한다.
+
+trace는 목적별로 분리한다.
+
+- `agent_trace.raw.jsonl`: SDK가 노출하는 원본 event/tool interaction 기록. 디버깅 및 하네스 개선용으로 별도 보호 저장한다.
+- `agent_trace.audit.jsonl`: tool call, tool result reference, 산출 후보, 종료 사유, 관측 가능한 결정 요약을 담는 운영/audit 기록이다.
+
+하네스는 모델의 비공개 내부 추론을 생성하도록 요구하지 않는다. SDK가 제공하는 원본 기록을 보관할지는 자격 증명, 비공개 rubric, 개인정보의 redaction/retention 정책과 함께 결정한다.
+
+### 4.1 검사, 검토, 판정의 경계
+
+하네스는 다음 네 종류의 상태를 혼합하지 않는다.
+
+| Layer | 산출물 | 의미 | 외부 blocking 여부 |
+|---|---|---|---|
+| Integrity check | `integrity_diagnostics.json` | 입력/run이 해석 가능한 구조인지 | 실행 불가 입력이면 exit `2` |
+| Semantic verification | `semantic_verifications.yaml` | verifier-agent가 제안한 trace 의미 상태 | 제안일 뿐이며 blocking 아님 |
+| Assessment check | `findings.json` | compacted artifact에서 관찰된 규칙 위반 후보 | 최종 review 전에는 `provisional`, blocking 아님 |
+| Final decision | `final_review/` + `gate` output | 사람이 확인한 최종 판단 | 이 단계에서만 외부 blocking 가능 |
+
+Phase 0 규칙 회귀 테스트도 `provisional` finding의 존재와 severity를 검증한다. 일반 실행에서 exit `1`은 final review record를 입력받은 `gate`만 반환한다. agent multi-run 흐름에서 final review 이전의 high finding은 `status: provisional_findings`/exit `0`으로 반환하며, caller agent는 이를 실패 판정이 아니라 review/rerun 입력으로 취급한다.
+
+최종 판정 명령:
+
+```bash
+assessment-harness gate \
+  --final-review work/final_review/review.yaml \
+  --output json
+```
+
+`gate`는 unresolved `hold`, `rerun_requested`, pending semantic verification이 있으면 `pending_review`를 반환한다. 사람이 수락하거나 명시적 override로 닫은 항목만 최종 pass/fail 산정에 반영한다.
+
+## 5. 데이터 계약
+
+### 5.0 Source Manifest와 Canonical ID
+
+PoC는 DB/RAG 없이도 원문 grounding을 검증해야 한다. 입력 문서를 실행 시작 시 immutable snapshot으로 복사하고 manifest에 hash를 기록한다.
+
+```yaml
+project_id: assessment_demo
+assessment_version: v1
+documents:
+  - document_id: DOC_SPEC
+    role: candidate_spec
+    path: work/source_snapshot/README.md
+    sha256: "<sha256>"
+  - document_id: DOC_RUBRIC
+    role: evaluator_rubric
+    path: work/source_snapshot/rubric.md
+    sha256: "<sha256>"
+```
+
+각 run의 ID는 run-local reference일 뿐이다. `compact`는 spec/rubric item을 먼저 compacting하여 canonical item ID를 부여하고, 이후 trace link의 run-local reference를 canonical ID로 remap한다.
+
+Trace link 내부의 `rubric_id` / `spec_ids`는 spec/rubric item의 `id_map`을 따라 remap되는 종속 reference다. 별도로 trace link entry 자체도 compacted artifact로서 `support` / `identity_basis` / `variants`를 갖고, review queue나 compacting 검토에서 하나의 관계 entry로 지칭되어야 한다. 따라서 `id_map.entity_type`은 `spec_item`, `rubric_item`, `trace_link`를 모두 허용한다. Trace link의 canonical identity는 종속 item ID remap 이후의 관계 identity(예: canonical rubric + sorted canonical specs, 정책의 `compacting.identity_basis.trace_link`)를 기준으로 부여하며, 이 결정 자체도 final review에서 검토 가능한 provenance로 남긴다.
+
+```yaml
+id_map:
+  - canonical_id: S1
+    entity_type: spec_item
+    run_refs:
+      - { run_id: "run_..._a1b2", local_id: "S4" }
+      - { run_id: "run_..._c3d4", local_id: "S1" }
+```
+
+향후 프로젝트/버전 관리가 추가되면 `project_id`, `assessment_version`, canonical ID lineage를 확장한다. PoC에서는 snapshot manifest, run-local reference, compacted canonical ID, `id_map`까지 구현 범위로 둔다.
+
+### 5.1 Compacted Spec Item
+
+```yaml
+spec_items:
+  - id: S1
+    source: README.md
+    section: "Requirements > Refund Policy"
+    text: "Implement refund handling for cancelled orders."
+    source_ref:
+      document_id: DOC_SPEC
+      start_line: 42
+      end_line: 42
+      quote: "Implement refund handling for cancelled orders."
+    visibility: candidate_facing
+    requirement_level: must
+    support:
+      total_valid_runs: 3
+      found_in_runs: ["run_..._a1b2", "run_..._c3d4", "run_..._e5f6"]
+    identity_basis: "source+section+normalized_text"
+    variants: []
+```
+
+`source_ref`는 immutable source snapshot의 실제 line/span과 quote를 가리킨다. Rule 0는 `spec_item.text`끼리의 자기 일관성만 보지 않고 snapshot 원문에 대한 일치도 확인한다. `support`, `identity_basis`, `variants`는 compacting 산물이다. 단일 run에서만 발견되어도 entry는 그대로 보존되며, `found_in_runs` 길이가 1일 뿐이다 (자동 채택/배제 없음). `variants`는 동일성으로 판정되었으나 표현이 약간 다른 원본들의 목록이다. 빈 배열이면 모든 발견이 동일한 표현이다.
+
+`requirement_level`:
+
+- `must`: Rule 2의 coverage 대상
+- `optional`: Rule 3의 optionality 대상
+- `informational`: 평가 연결 의무가 없는 문맥
+
+### 5.2 Compacted Rubric Item
+
+```yaml
+rubric_items:
+  - id: R1
+    title: "Refund policy handling"
+    description: "Implements documented refund behavior."
+    source_ref:
+      document_id: DOC_RUBRIC
+      start_line: 18
+      end_line: 22
+    evaluation_role: scored
+    weight: 12
+    evidence_required:
+      - code
+      - test
+    support:
+      total_valid_runs: 3
+      found_in_runs: ["run_..._a1b2", "run_..._c3d4"]
+    identity_basis: "title+normalized_description"
+    variants:
+      - run_id: "run_..._c3d4"
+        title: "Refund policy handling"
+        description: "Implements the documented refund behavior."   # 미세한 차이
+```
+
+`evaluation_role`:
+
+- `scored`: 총점에 반영되며 Rule 1/Rule 3 대상
+- `bonus`: 명시적 가산점. v0에서는 Rule 1 차단 대상에서 제외하고, orphan인 경우 `informational` finding으로 report에 표시한다.
+- `qualitative`: 점수에 반영하지 않으며 Rule 1 대상이 아님
+
+v0에서는 `scored`만 차단성 검사 대상으로 삼는다. `bonus`는 report에 표시하되 fail을 발생시키지 않는다.
+
+`source_ref`는 rubric 원문 snapshot에 대한 anchor다. spec과 rubric 모두 원문 anchor를 가져야, agent가 존재하지 않는 requirement 또는 rubric item을 생성했을 때 Rule 0에서 배제할 수 있다.
+
+### 5.3 Compacted Trace Link
+
+```yaml
+trace_links:
+  - rubric_id: R1
+    spec_ids:
+      - S1
+    rationale: "R1 evaluates the documented refund requirement in S1."
+    evidence_quotes:
+      - spec_id: S1
+        quote: "Implement refund handling for cancelled orders."
+        verification_mode: token_sequence
+        source_ref:
+          document_id: DOC_SPEC
+          start_line: 42
+          end_line: 42
+    support:
+      total_valid_runs: 3
+      found_in_runs: ["run_..._a1b2", "run_..._c3d4", "run_..._e5f6"]
+    identity_basis: "rubric_id+sorted(spec_ids)"
+    variants: []
+    semantic_status: pending_verification
+    sources:
+      - kind: agent_run
+        run_id: "run_..._a1b2"
+      - kind: agent_run
+        run_id: "run_..._c3d4"
+      - kind: agent_run
+        run_id: "run_..._e5f6"
+    reviewed_by: null
+    reviewed_at: null
+```
+
+`spec_ids` 배열과 rubric item 여러 개의 반복 참조로 N:M 관계를 표현한다. 별도 trace link 구조를 사용하는 이유는 관계 수용량 때문이 아니라 link별 support 근거와 review 결과를 보존하기 위해서다.
+
+필드 의미:
+
+- `rationale`: trace의 제안 사유. PoC에서는 설명 자료이며 단독으로 신뢰하지 않는다. 복수 run에서 다른 rationale이 나오면 `variants`에 보존한다.
+- `evidence_quotes`: 각 `spec_id`에 대응하는 spec 원문 발췌와 `verification_mode`. 모든 `spec_ids` 원소에 대응되어야 한다.
+  - `verification_mode: token_sequence`: Rule 0가 strict substring 매칭으로 잔존·누락 정량 검증. 미리 삽입된 마커 검증에 사용 (예: "디버깅 섹션이 사라졌는지", "잘못된 코드가 잔존하는지" 같은 정량 확인 가능한 명시적 항목).
+  - `verification_mode: ai_judgement` (PoC default): Rule 0는 reference integrity만 검증(spec_id 유효, quote 비어있지 않음). substring 매칭은 skip한다. Phase 0에서는 link를 pending 상태로 보존하고, Phase 2의 verifier/queue 구현부터 `review_queue`에 `type: ai_judgement_pending` entry로 보내 semantic verifier-agent의 read-only 복수 검증과 최종 사람 검토를 거친다. 신규 구현·기능처럼 substring으로 검증 불가한 영역.
+- `support`: compacting 산물. `total_valid_runs`는 invalid run을 제외한 전체 분모, `found_in_runs`는 이 link를 제안한 run ID 목록.
+- `identity_basis`: 동일성 판단 알고리즘 식별자. 사람이 review에서 이 알고리즘이 적절했는지 평가할 수 있어야 한다 (예: `rubric_id+sorted(spec_ids)` vs `rubric_id+sorted(spec_ids)+normalized_rationale`).
+- `variants`: 동일성으로 판정되었으나 표현이 약간 다른 원본들 (예: rationale 문장이 미세하게 다름). 빈 배열이면 모든 발견이 동일.
+- `sources`: provenance 목록. `kind: agent_run` (run_id 포함), `kind: manual` (Phase 0/1), `kind: human_override` (최종 review에서 수정된 경우).
+- `reviewed_by`, `reviewed_at`: 최종 human review audit metadata. Phase 0/2에서는 null이며, Phase 3 최종 시연 산출물에서는 필수다.
+- `semantic_status`: link의 의미 검토 상태. `pending_verification | agent_supported | agent_rejected | agent_uncertain | human_accepted | human_rejected | human_overridden | rerun_requested` 중 하나이며, `ai_judgement` link는 final review 전 Rule 1의 confirmed coverage로 사용하지 않는다.
+
+`evidence_quotes`의 substring 검사는 PoC에서 참조 무결성만 보장한다. 문장이 rubric의 의미를 충분히 공개하는지에 대한 semantic disclosure 판정은 장기 목표이며, PoC에서는 review_queue와 최종 human review 대상으로 남긴다.
+
+### 5.3.1 Semantic Verification 상태와 채택 흐름
+
+`ai_judgement` link가 많아질 경우 사람이 모든 link의 1차 의미 판단을 직접 수행하면 “사람은 마지막에 검토한다”는 목표가 약해진다. 따라서 semantic verifier-agent 단계를 Phase 2/3의 필수 흐름으로 채택한다.
+
+```text
+candidate-generation runs
+  -> compact
+  -> semantic verifier-agent runs (read-only, trace link별 supported/rejected/uncertain 제안)
+  -> compact semantic verification proposals (자동 확정 없음)
+  -> check (finding은 provisional)
+  -> final human review
+  -> gate
+```
+
+verifier-agent는 immutable source snapshot, compacted spec/rubric/trace link, evidence quote만 읽는다. 새 item/link를 생성하거나 기존 compacted artifact를 수정하지 않으며, 결과는 run별 기록과 `semantic_verifications.yaml`에 별도로 보존한다. verifier 결과 역시 복수 run의 제안이므로 불일치는 숨기지 않고 `support`/`variants`와 함께 최종 review 자료로 남긴다.
+
+```yaml
+semantic_verifications:
+  - trace_link_id: T1
+    status_proposal: agent_supported
+    rationale: "Rubric criterion is explicitly disclosed by the referenced requirement."
+    source_refs:
+      - { document_id: DOC_SPEC, start_line: 42, end_line: 42 }
+      - { document_id: DOC_RUBRIC, start_line: 18, end_line: 22 }
+    support:
+      total_valid_runs: 3
+      found_in_runs: ["verify_..._a1b2", "verify_..._c3d4"]
+    variants: []
+```
+
+`check`는 compacted trace link의 초기 `pending_verification` 상태와 이 별도 산출물을 함께 읽어 effective semantic status를 계산한다. 검증 제안을 원본 link에 덮어쓰지 않는다.
+
+상태 의미:
+
+| semantic_status | 의미 | Rule 1 coverage 기여 |
+|---|---|---|
+| `pending_verification` | compact 직후, 의미 확인 전 | confirmed coverage 아님 |
+| `agent_supported` | verifier-agent가 근거와 함께 support | provisional coverage만 제공 |
+| `agent_rejected` | verifier-agent가 link 근거 불충분을 제안 | coverage 아님, review 대상 |
+| `agent_uncertain` | verifier-agent run이 갈리거나 판단 보류 | coverage 아님, review 대상 |
+| `human_accepted` | 최종 reviewer가 수락 | final coverage |
+| `human_rejected` | 최종 reviewer가 거절 | coverage 아님 |
+| `human_overridden` | reviewer가 수정 후 채택 | final coverage |
+| `rerun_requested` | 추가 검증 필요 | coverage 아님 |
+
+이 방식이면 agent가 후보 생성과 의미 검증을 분리 수행하되, 최종 판정은 사람의 마지막 검토와 `gate`에만 남는다.
+
+### 5.4 Candidate Artifact
+
+```yaml
+spec_item_candidates:
+  - candidate_id: SC1
+    proposed_item:
+      id: S1
+      text: "Implement refund handling for cancelled orders."
+      requirement_level: must
+      source_ref:
+        document_id: DOC_SPEC
+        start_line: 42
+        end_line: 42
+        quote: "Implement refund handling for cancelled orders."
+    agent_runner: claude_agent_sdk
+    agent_run_id: "run_2026-05-25T00:00:00Z_a1b2"
+    source_excerpt: "Implement refund handling for cancelled orders."
+    confidence: 0.82
+    integrity_status: pending_check
+```
+
+`agent_runner`는 후보를 생성한 runner의 식별자다. `agent_run_id`는 같은 run의 모든 candidate가 공유하며, 해당 run의 trace로 역추적할 수 있다.
+
+`integrity_status` 는 staged model이다. 초기 structural classifier는 schema와 audit
+trace 귀속만 확인하고 `structurally_validated`까지만 부여한다. Deep candidate Rule 0
+검사(내부 reference, quote/source grounding)가 끝난 뒤에만 `validated`를 부여하며,
+`compact`는 `validated` run만 소비한다.
+
+`integrity_status` enum:
+
+- `pending_check`: integrity check 이전 초기 상태
+- `structurally_validated`: candidate schema, audit trace schema, candidate `agent_run_id` → audit trace `run_id` 귀속 검사를 통과했지만 deep candidate Rule 0는 아직 통과하지 않은 중간 상태. compacting 대상 아님
+- `validated`: 내부 reference, quote/source grounding까지 포함한 모든 candidate Rule 0 항목 통과. compacting 대상이 됨
+- `trace_attribution_error`: candidate `agent_run_id`가 audit trace `run_id`에 귀속되지 않음
+- `invalid_reference`: duplicate id, dangling rubric/spec id, evidence_quote spec_id 불일치, evidence_quote 누락/공백 등 candidate 내부 reference/completeness 오류
+- `source_grounding_mismatch`: source document/hash/source_ref document/span 오류, item text 또는 source_ref.quote가 snapshot span에 없음, evidence_quote source_ref가 referenced spec span에 포함되지 않음, evidence_quote가 지정된 snapshot span에 없음
+- `quote_mismatch`: `verification_mode: token_sequence`인 evidence_quote가 referenced spec_item.text의 substring이 아님
+- `schema_violation`: candidate schema 위반
+- `blocked_by_runner_error`: max_turns 초과, tool error, partial output 등 runner 측 사유
+
+Deep candidate Rule 0에서 여러 상태 후보가 동시에 발생하면 대표 `integrity_status`는
+`invalid_reference > source_grounding_mismatch > quote_mismatch` 순서로 선택한다.
+상세 Rule 0 diagnostic은 모두 `errors`에 보존되므로, 대표 상태는 review/triage용
+첫 분류일 뿐이다.
+
+`validated` 외의 status는 모두 compacting/assessment 단계에서 제외되며, 해당 사유는 `integrity_diagnostics.json`과 `review_queue.json`에 보존된다.
+
+Candidate artifact는 assessment rule 입력이 될 수 없다. 먼저 run integrity check를 통과(`validated`)하고 compacting을 거쳐 compacted artifact가 된 후 rule engine에 입력한다. 최종 human review는 rule engine의 결과와 compacting 근거를 함께 확인한다.
+
+### 5.4.1 Agent Audit Trace
+
+```jsonl
+{"run_id":"run_2026-05-25T00:00:00Z_a1b2","turn":0,"role":"system","content_ref":"prompts/extract_v1.md"}
+{"run_id":"run_2026-05-25T00:00:00Z_a1b2","turn":1,"role":"agent","tool_call":{"name":"read_spec_section","args":{"section":"Requirements"}}}
+{"run_id":"run_2026-05-25T00:00:00Z_a1b2","turn":1,"role":"tool","name":"read_spec_section","result_ref":"work/trace/run_..._t1_result.txt"}
+{"run_id":"run_2026-05-25T00:00:00Z_a1b2","turn":2,"role":"agent","tool_call":{"name":"propose_spec_item","args":{"id":"S1","text":"...","requirement_level":"must"}}}
+{"run_id":"run_2026-05-25T00:00:00Z_a1b2","finish_reason":"complete","turns":7,"tool_call_count":12}
+```
+
+audit trace는 append-only JSONL이며, 각 candidate는 자신의 run_id로 trace 부분집합을 식별한다. Turn event는 감사 가능한 payload를 반드시 포함한다. `role: system`은 `content_ref`, `role: agent`는 `tool_call`, `role: tool`은 `name`과 `result_ref`를 요구한다. 큰 tool 결과는 외부 file로 분리하고 trace에는 ref만 남긴다. raw trace 저장 계약은 Phase 2 진입 전 retention/redaction 정책과 함께 확정한다.
+
+### 5.5 Finding
+
+```json
+{
+  "type": "orphan_scored_rubric_item",
+  "severity": "high",
+  "decision_status": "provisional",
+  "rubric_id": "R2",
+  "message": "Scored rubric item R2 has no validated compacted candidate-facing trace link."
+}
+```
+
+`decision_status`:
+
+- `provisional`: final review 전 생성된 관찰 결과. 외부 blocking verdict가 아님.
+- `confirmed`: final review와 `gate`가 반영한 최종 finding.
+- `dismissed`: final review에서 오탐 또는 해소됨으로 처리된 finding.
+
+### 5.6 Final Review Record
+
+```yaml
+review_id: "review_2026-05-25T11:30:00Z"
+reviewer: "kdt"
+reviewed_at: "2026-05-25T11:45:00Z"
+inputs:
+  compacted_dir: "work/compacted"
+  findings_path: "work/findings.json"
+  diagnostics_path: "work/integrity_diagnostics.json"
+  review_queue_path: "work/compacted/review_queue.json"
+  report_path: "work/report.md"
+decisions:
+  - target_type: trace_link
+    target_key: { trace_link_id: "T1" }
+    action: accept
+    note: "3/3 runs agree; identity_basis sound."
+  - target_type: trace_link
+    target_key: { trace_link_id: "T7" }
+    action: override
+    note: "Quote misspelled in 2/2 runs; corrected from spec."
+    override_payload:
+      evidence_quotes:
+        - spec_id: S5
+          quote: "Handle edge-case refund for partially shipped orders."
+  - target_type: spec_item
+    target_key: { id: "S12" }
+    action: hold
+    note: "Single-run finding; needs another extract pass."
+  - target_type: review_queue_entry
+    target_key: { entry_id: "rq_42" }
+    action: rerun_requested
+    note: "Identity_basis collapsed two distinct requirements."
+  - target_type: finding
+    target_key: { type: "optionality_mismatch", rubric_id: "R9" }
+    action: accept
+    note: "Optional-only scoring weight is confirmed as assessment-design risk."
+drift_observations:
+  - rubric_id: "R9"
+    linked_spec_ids: ["S8"]
+    observed_drift_summary: "Rubric scores microservice boundary design, but S8 only requires a REST API. Trace_link is structurally valid but criterion is outside the spec."
+    severity: medium
+    recommended_action: revise_rubric
+```
+
+`drift_observations[]`는 ideation v2.2 §5 Rule L8 수동 발견 기록 채널이다. 자동 검출(Rule L8)은 비용 대비 가치 부족으로 PoC 비범위지만, trace_link가 schema를 통과한 채로 실제 채점 기준이 spec 본문과 어긋나는 케이스를 final reviewer가 발견했을 때 audit log로 보존한다.
+
+각 observation의 field:
+
+- `rubric_id` (필수): drift가 발견된 rubric.
+- `linked_spec_ids` (필수): 해당 rubric이 trace_link로 가리키는 spec_id 목록.
+- `observed_drift_summary` (필수): 자유 텍스트. 어떤 평가축이 어느 spec 본문과 어긋나는지 reviewer가 한 문장 이상으로 기록.
+- `severity` (필수): `informational` / `medium` / `high`. final reviewer 판단.
+- `recommended_action` (필수): `revise_rubric` / `revise_spec` / `accept_with_note`. revise_rubric은 다음 라운드에서 rubric을 spec과 정합되게 다듬을 것, revise_spec은 spec에 누락된 평가축을 추가할 것, accept_with_note는 의도된 drift임을 인정하고 라운드는 진행할 것.
+
+본 field는 자동 finding을 발생시키지 않으므로 `check`/`gate` 결과 코드와 무관하다. 다음 라운드 운영 입력으로만 사용된다.
+
+`target_type: finding`은 `check`가 생성한 provisional finding을 final review가
+닫을 때 사용한다. `target_key`는 생성 식별자만 담는 최소 key여야 하며,
+`message`, `evidence`, rubric/spec 본문, title/description 같은 설명 데이터는
+넣지 않는다. 이는 review record가 finding payload를 복사해 비대해지거나
+본문 변경에 취약해지는 것을 막기 위한 계약이다.
+
+finding별 canonical `target_key`:
+
+| finding type | required target_key fields |
+|---|---|
+| `possible_orphan_scored_rubric_item` | `type`, `rubric_id` |
+| `unconfirmed_trace_coverage` | `type`, `rubric_id` |
+| `orphan_bonus_rubric_item` | `type`, `rubric_id` |
+| `uncovered_must_spec_item` | `type`, `spec_id` |
+| `optionality_mismatch` | `type`, `rubric_id` |
+| `double_scored_spec` | `type`, `spec_id`, `scored_rubric_id`, `bonus_rubric_id` |
+| `bonus_grades_mandatory_only` | `type`, `rubric_id` |
+| `mandatory_spec_bonus_only_traced` | `type`, `spec_id` |
+
+`gate`는 final review record의 finding decision을 `findings.json`의 provisional
+finding에 위 key로 매칭한다. 매칭되지 않는 decision, 같은 finding에 대한 중복
+decision, 또는 `findings.json` 내부의 같은 canonical key 중복은 최종 판정 입력을
+신뢰할 수 없으므로 `invalid_input`/exit `2`다. 아직 decision이 없는 provisional
+finding, `hold`, `rerun_requested`는 `pending_review`/exit `0`이다. `inputs`에
+`review_queue_path`가 있으면 `gate`는 `target_type: review_queue_entry` decision도
+`target_key: {entry_id}`로 매칭한다. `status: resolved`가 아닌 queue entry에
+decision이 없거나 decision action이 `hold` / `rerun_requested`이면
+`pending_review`/exit `0`이다. `accept` / `override`된 queue entry는 gate 외부
+blocking 판정을 만들지 않고 닫힌 review work item으로 취급한다.
+
+finding decision의 `accept`는 finding을 confirmed로 닫는다. 단,
+`possible_orphan_scored_rubric_item`과 `unconfirmed_trace_coverage`는 Rule 1의
+confirmed finding인 `orphan_scored_rubric_item` (`high`, `confirmed`)으로
+승급한다. `override`는 해당 finding을 `dismissed`로 닫는다. `hold`와
+`rerun_requested`는 pending 상태로 남기며 pass/fail 산정에 포함하지 않는다.
+
+`gate`의 blocking 판정 대상은 confirmed 상태의 blocking finding뿐이다:
+`orphan_scored_rubric_item`, `optionality_mismatch`,
+`mandatory_spec_bonus_only_traced`. Rule 2, L1, L5의 confirmed finding은 review
+결과로 기록되지만 현재 v0에서는 exit `1`을 만들지 않는다.
+
+Phase 0 `review` 명령은 final review record의 **draft writer**다. 최종 판단을
+자동으로 내리지 않는다. `review --findings <findings.json> --out-dir <dir>
+--reviewer <name>`은 `findings.json`의 각 provisional finding을 위 canonical
+`target_key`로 변환하고 `action: hold` decision을 생성한 뒤 `<dir>/review.yaml`에
+기록한다. `--review-queue <review_queue.json>`이 주어지면 `status: resolved`가
+아닌 queue entry도 `target_type: review_queue_entry`, `target_key: {entry_id}`로
+draft decision을 생성한다. `open` / `held` entry는 `hold`, `rerun_pending` entry는
+`rerun_requested`로 보존한다. reviewer는 이 draft를 열어 각 finding / queue entry를
+`accept`, `override`, `hold`, `rerun_requested` 중 하나로 수정한다. draft 그대로
+`gate`에 전달하면 미결 finding 또는 queue entry가 있는 경우 `pending_review`가
+정상 결과다.
+
+`review` draft 생성 규칙:
+
+- `target_key`는 §5.6의 finding별 canonical key만 포함한다.
+- review queue entry의 `target_key`는 `{entry_id}`만 포함한다.
+- `message`, `evidence`, rubric/spec 본문, title/description은 복사하지 않는다.
+- 알 수 없는 finding type이거나 canonical key field가 누락된 finding은
+  `invalid_input`/exit `2`다.
+- `findings.json`의 `status`는 `success` 또는 `provisional_findings`여야 한다.
+  Rule 0 invalid 기원의 `status: invalid_input` findings artifact는 review draft로
+  승격하지 않는다. 이 검사는 `review`에서 수행한다. `gate`는 이미 작성된
+  final_review record와 findings 구조를 소비하는 단계로 남겨 수동 복구/감사 흐름을
+  과도하게 차단하지 않는다.
+- finding이 없는 `findings.json`은 decisions가 빈 review record를 생성할 수 있다.
+  이 record는 `gate`에서 `success`가 된다.
+- `<out-dir>/review.yaml`이 이미 있으면 기본적으로 덮어쓰지 않고
+  `invalid_input`/exit `2`를 반환한다. 편집된 draft를 의도적으로 재생성하려면
+  `--force`를 명시한다. 별도 버전 관리는 현재 slice에서 자동 생성하지 않으며,
+  caller가 새 `--out-dir`을 선택해 draft version을 분리한다.
+
+review action enum:
+
+- `accept`: compacted entry를 그대로 채택
+- `hold`: 결정 보류. 다음 review 사이클에서 재검토
+- `rerun_requested`: 해당 영역에 대해 새 agent run 필요
+- `override`: 사람이 직접 수정. 결과는 trace_link의 `sources`에 `kind: human_override`로 추가 기록되고, audit log에 reviewer/reviewed_at/reason이 보존된다.
+
+`override`는 단순 오타·누락 수정에 사용한다. 해석이 갈리는 의미적 결정은 `rerun_requested`로 새 run을 요청하여 다시 compacting/review를 거치는 것이 원칙이다.
+
+`gate`는 final review record를 읽어 외부 pass/fail/pending verdict만 산출한다. 파일을
+수정하거나 reviewed artifact를 쓰지 않는다. Final review decision을 compacted
+artifact와 review_queue 상태에 반영하는 작업은 별도 `materialize-review` 명령이
+담당한다. 이 분리는 "검사/판정"과 "review 결과 산출물 반영"을 섞지 않기 위한
+계약이다.
+
+### 5.6.1 Review Materialization
+
+`materialize-review`는 final review record와 compacted artifacts를 읽어 사람이 검토한
+결과를 새 artifact directory에 materialize한다. 입력 파일은 절대 in-place로 수정하지
+않는다.
+
+초기 범위:
+
+- `target_type: trace_link` decision을 compacted `trace_links.yaml`에 반영한다.
+- `target_type: review_queue_entry` decision을 `review_queue.json` entry status에
+  반영한다.
+- `target_type: finding` decision은 `gate` 판정 입력으로만 사용하며 materialized
+  artifact를 만들지 않는다.
+- `target_type: spec_item` / `rubric_item` materialization은 후속 범위다. 이런
+  decision의 존재만으로 실패 verdict(`invalid_input`)를 내지 않는다. 입력 artifact는
+  그대로 보존하고, `materialization_summary.json`의 `unsupported_decision_count`에
+  후속 범위(spec_item/rubric_item) 결정 수로 집계한다.
+
+Trace link decision key:
+
+- `target_type: trace_link`의 materialization key는 `target_key: {trace_link_id}`다.
+- `trace_link_id`는 `id_map.yaml`의 `entity_type: trace_link` canonical ID와 매칭한다.
+- compacted trace link 자체에 explicit `id`가 없는 현재 schema에서는 `id_map.yaml`이
+  필수다. `trace_link` decision이 있는데 `id_map.yaml`이 없거나, key가 없거나, 한 link로
+  매칭되지 않으면 `invalid_input`/exit `2`다.
+- `{rubric_id, spec_ids}` 형태는 사람이 읽기 좋은 설명으로는 허용될 수 있지만,
+  materialization key로는 쓰지 않는다. 같은 관계가 compacting identity 변경으로 갈라질
+  수 있으므로 canonical trace-link ID를 단일 source of truth로 둔다.
+
+Trace link action mapping:
+
+- `accept` → matched trace link의 `semantic_status: human_accepted`,
+  `reviewed_by`, `reviewed_at`을 final review record 값으로 설정한다.
+- `override` → matched trace link에 `override_payload`를 얕은 병합으로 적용하고,
+  `semantic_status: human_overridden`, `reviewed_by`, `reviewed_at`을 설정한다. 또한
+  `sources[]`에 `kind: human_override`, `review_id`, `reviewer`, `reviewed_at`, `note`를
+  추가한다.
+- `hold` → artifact는 그대로 보존한다. `semantic_status`는 바꾸지 않는다.
+- `rerun_requested` → matched trace link의 `semantic_status: rerun_requested`,
+  `reviewed_by`, `reviewed_at`을 설정한다. 이는 accepted coverage가 아니며 후속
+  `check`에서 Rule 1 final coverage로 취급하지 않는다.
+
+Review queue action mapping:
+
+- `accept` / `override` → entry `status: resolved`.
+- `hold` → entry `status: held`.
+- `rerun_requested` → entry `status: rerun_pending`.
+- Queue entry는 삭제하지 않는다. `decision` 또는 `review_decision` metadata로
+  `review_id`, `reviewer`, `reviewed_at`, `action`, `note`를 보존한다.
+
+Output contract:
+
+- 입력: `--final-review`, `--compacted-dir`, `--out-dir`, 선택 `--review-queue`,
+  선택 `--id-map`.
+- `--id-map` 생략 시 `<compacted-dir>/id_map.yaml`을 사용한다.
+- `--review-queue` 생략 시 final review `inputs.review_queue_path`가 있으면 그 경로를
+  사용하고, 없으면 `<compacted-dir>/review_queue.json`이 존재할 때만 사용한다.
+- 출력: `<out-dir>/spec_items.yaml`, `<out-dir>/rubric_items.yaml`,
+  `<out-dir>/trace_links.yaml`, 선택 `<out-dir>/review_queue.json`,
+  `<out-dir>/materialization_summary.json`.
+- `materialization_summary.json`은 최소한 `review_id`, `trace_link_decision_count`,
+  `review_queue_decision_count`, `unsupported_decision_count`, `output_paths`를 기록한다.
+- `materialize-review --output json` envelope은 `status=success`/exit `0` 또는
+  `status=invalid_input`/exit `2`를 반환한다. 이 명령은 external blocking verdict를
+  반환하지 않으며, pass/fail/pending은 계속 `gate`만 담당한다.
+
+### 5.7 Review Queue Entry
+
+`review_queue.json`은 다음 종류의 entry를 통합 기록한다.
+
+```yaml
+review_queue:
+  - entry_id: "rq_001"
+    type: invalid_run
+    target: { run_id: "run_..._b9c0" }
+    reason: "Rule 0 quote_mismatch on R3↔S2 (token_sequence)."
+    related_runs: ["run_..._b9c0"]
+    status: open
+
+  - entry_id: "rq_002"
+    type: ai_judgement_pending
+    target:
+      rubric_id: R7
+      spec_ids: [S5]
+      evidence_quote_index: 0
+    reason: "verification_mode=ai_judgement; semantic disclosure check required."
+    related_runs: ["run_..._a1b2", "run_..._c3d4"]
+    status: open
+
+  - entry_id: "rq_003"
+    type: identity_collision
+    target: { compacted_entry_key: "trace_link/R4_S6" }
+    reason: "Two runs proposed structurally identical trace links with divergent rationale variants. Review identity_basis."
+    related_runs: ["run_..._a1b2", "run_..._e5f6"]
+    status: open
+
+  - entry_id: "rq_004"
+    type: low_support
+    target: { compacted_entry_key: "spec_item/S12" }
+    reason: "Single-run finding (1/3). Review whether to keep, hold, or rerun."
+    related_runs: ["run_..._c3d4"]
+    status: open
+
+  - entry_id: "rq_005"
+    type: semantic_disclosure
+    target:
+      rubric_id: R9
+      spec_ids: [S8]
+    reason: "rationale claims trace, but evidence_quote does not clearly disclose the rubric axis. Outside PoC auto-detect scope; raised for human review."
+    related_runs: ["run_..._a1b2"]
+    status: open
+```
+
+entry `type` enum:
+
+- `invalid_run`: Rule 0 위반으로 run/입력이 평가에서 제외됨
+- `ai_judgement_pending`: `verification_mode: ai_judgement`인 evidence의 verifier-agent 및 최종 사람 확인 대기
+- `identity_collision`: compacting 중 동일성 판단이 애매한 variants
+- `low_support`: 단일 run에서만 발견된 entry (자동 배제 없음 — 사람이 keep/hold/rerun 결정)
+- `semantic_disclosure`: 장기 목표 영역(PoC 자동 검출 비범위)으로 사람이 봐야 할 항목
+- `double_scoring_review` (v1.11 신설): Rule L1 발화에 짝지어지는 review queue entry. `target`은 `{ spec_id, scored_rubric_id, bonus_rubric_id }`. semantic verifier 또는 final reviewer가 "정당한 심화"인지 판단해 `human_overridden` 또는 confirmed로 처리.
+- `mandatory_spec_bonus_review` (v1.11 신설): Rule L6 발화에 짝지어지는 review queue entry. `target`은 `{ spec_id, bonus_rubric_ids: [...] }`. 의도적 가산 배치인지 설계 실수인지 판단.
+
+Phase 0 `check`의 lint safeguard 출력 계약 (v1.12 정합화):
+
+- Rule 0가 통과한 Phase 0 `check`는 lint safeguard queue artifact를 기록한다.
+  Rule L1/L6 finding이 발화하면 짝지어진 queue entry를 반드시 포함하고,
+  발화하지 않으면 stale review 대상이 남지 않도록 빈 queue를 기록한다.
+- `check --review-queue-out <path>`가 주어지면 해당 경로에 기록하고, 생략하면
+  `--out`과 같은 디렉터리의 `review_queue.json`에 기록한다.
+- Rule 0가 통과한 CLI envelope는 informational `review_queue_path`와
+  `review_queue_count`를 제공한다.
+- 이 예외는 lint finding의 안전장치에만 적용한다. compacting, verifier,
+  `ai_judgement_pending`, identity/low-support queue 생성은 여전히 Phase 2 범위다.
+- Phase 0 구현의 `--review-queue-out`은 lint safeguard queue의 단독 출력이다.
+  Phase 2에서 compact/verifier queue가 구현되면 기존 entry를 보존하면서 lint entry를
+  합치는 composition 계약을 먼저 구현해야 하며, 그 전에는 upstream queue 파일 경로를
+  이 출력 인자에 연결해 덮어쓰지 않는다.
+
+`status`: `open | held | rerun_pending | resolved`.
+
+- `accept`, `override`: `resolved`
+- `hold`: `held`
+- `rerun_requested`: `rerun_pending`
+
+후속 run/review에서 결론이 난 경우에만 `resolved`로 전환한다. entry는 audit 보존을 위해 삭제하지 않는다.
+
+## 6. v0 결정 규칙
+
+### Rule 0. Reference Integrity Diagnostic
+
+- 조건 (어느 하나라도):
+  - `spec_items` 또는 `rubric_items`의 `id`가 중복됨
+  - `trace_links.rubric_id`가 존재하지 않는 rubric을 참조
+  - `trace_links.spec_ids`가 존재하지 않는 spec을 참조
+  - `trace_links.evidence_quotes[*].spec_id`가 같은 link의 `spec_ids`에 없음
+  - `trace_links.evidence_quotes[*].quote`가 비어 있음
+  - `spec_items[*].source_ref` 또는 `rubric_items[*].source_ref`가 snapshot manifest의 문서/hash/span에 맞지 않음
+  - `trace_links.evidence_quotes[*].source_ref`가 referenced spec item의 snapshot anchor와 일치하지 않음
+  - `trace_links.evidence_quotes[*].verification_mode == token_sequence`이고 `quote`가 referenced `spec_item.text`의 부분문자열이 아님
+- 결과:
+  - diagnostic artifact (`integrity_diagnostics.json`)에는 `high` integrity issue로 기록한다.
+  - 해당 입력 또는 agent run은 invalid로 표시하고 Rule 1-3 평가 대상에서 제외한다.
+  - 단일 `check` 명령의 프로세스 종료 코드는 input error인 `2`다.
+  - **`findings.json`은 항상 생성한다** (caller agent의 파일 존재 가정 보호). invalid 시 내용:
+    ```json
+    {
+      "status": "invalid_input",
+      "findings": [],
+      "diagnostics_ref": "integrity_diagnostics.json",
+      "blocking_count": 0
+    }
+    ```
+- verification_mode별 처리:
+  - `token_sequence`: source snapshot의 anchor text와 evidence quote에 strict 비교를 적용한다. 비교는 normalized whitespace 기준의 토큰 시퀀스 동일성을 사용한다.
+  - `ai_judgement` (PoC default): substring 매칭 skip. Phase 0 `check`에서는 pending 상태로 남고 Rule 0 input error 판정 대상이 아니다. `review_queue`의 `type: ai_judgement_pending` entry 생성과 semantic verifier-agent/최종 사람 검토 연결은 Phase 2 구현 범위다.
+- 실행 지속 불가 여부: 예, 구조/참조 무결성 위반은 exit `2` input error다. 이는 `gate`의 외부 assessment blocking verdict가 아니다. 단, `ai_judgement` evidence의 의미 미확인은 input error가 아니다.
+- 의도: 손으로 작성했거나 agent가 제안한 구조화 입력의 참조 무결성을 검사한다. semantic disclosure 판정은 PoC 비범위이며 review_queue를 통해 사람이 본다.
+
+token_sequence 비교는 normalized whitespace 기준의 토큰 시퀀스 동일성을 사용한다. 더 느슨한 일치 정책(예: lemmatization)은 실제 과제 1건 적용 후 §13에 따라 조정한다.
+
+### Rule 1. Scored Rubric Coverage
+
+- 조건/결과:
+  - compacted trace link 자체가 없음: `possible_orphan_scored_rubric_item`, `high`, `provisional`
+  - link는 있으나 **어떤 link도** `semantic_status`가 `human_accepted` / `human_overridden`이 아님: `unconfirmed_trace_coverage`, `medium`, `provisional`. 이 분기는 pre-review 상태 (`pending_verification`, `agent_supported`, `agent_rejected`, `agent_uncertain`)와 post-review non-coverage 상태 (`human_rejected`, `rerun_requested`)를 모두 포함한다. §5.3.1 상태표에서 `Rule 1 coverage 기여`가 "coverage 아님"인 모든 상태가 여기에 해당한다.
+  - final review 이후 위 medium provisional이 지속되고 reviewer가 orphan을 확정: `orphan_scored_rubric_item`, `high`, `confirmed`. 이 confirmed finding은 `check`가 아닌 `gate`만 발행한다 (`gate`는 final review record를 읽어 medium provisional을 high confirmed로 승급한다).
+- 판정 상태: `human_accepted` / `human_overridden` link만 final coverage로 인정한다 (§5.3.1과 정합).
+- 차단 대상: `gate`의 confirmed finding에서만 예
+- 의도: 공개 명세와 무관한 점수 항목 탐지
+- bonus 처리: `evaluation_role == bonus`이며 trace link가 없는 rubric item은 `orphan_bonus_rubric_item` (`informational`, `provisional`) finding으로 report에 표시하되 차단하지 않는다. semantic_status는 확인하지 않는다 — bonus는 채점 자체가 보조이므로 link가 *있는 한* coverage 의문은 informational에도 미달한다고 본다.
+
+**Finding type naming convention**: Rule 1의 무추적(no-trace) 분기는 `{possible_orphan_scored, orphan_bonus}_rubric_item` 형태로 prefix만 다르고 접미사는 공유한다. 의도는 caller agent가 type 문자열만 보고도 "no-trace에 대한 finding이고 차이는 `evaluation_role`뿐"임을 추론하게 만드는 것. 향후 Rule 1 확장 (예: `orphan_qualitative_rubric_item`)에도 같은 convention을 적용한다. `scored`만 `possible_` prefix를 붙이는 이유는 §6의 셋째 분기에서 `gate`가 같은 rubric을 `orphan_scored_rubric_item` (`high`, `confirmed`)으로 승급할 수 있어 "현재 가능성" 단계임을 구분하기 위함이며, bonus / qualitative는 그러한 승급 경로가 없으므로 `possible_`을 붙이지 않는다.
+
+본 규칙의 final-coverage 경계 (`{human_accepted, human_overridden}`)는 Rule 1과 `gate`에서만 적용한다. Rule 2와 Rule 3은 `semantic_status`와 무관하게 §6의 본문 조건만으로 finding을 발화한다.
+
+### Rule 2. Required Spec Coverage
+
+- 조건: `requirement_level == must`이고 이를 참조하는 `scored` rubric item이 없음
+- 결과: `uncovered_must_spec_item`, `medium`, `provisional`
+- next_action: `review_uncovered_must_spec`
+- 판정 상태: final human review 전 `provisional`
+- 차단 대상: 아니오
+- 의도: 공개 핵심 요구사항이 실제 평가에서 누락되었는지 검토
+- severity 근거: Rule 1과 정합성 결함의 무게는 같지만, "rubric에 없는 must spec"은 평가자가 의도적으로 제외했을 여지가 있어 차단까지는 무리다. 검토 권장(medium)으로 두고 실제 과제 적용 후 high 승격 여부를 §13에 따라 재검토한다.
+- coverage 경계: 구조적 검사이므로 `semantic_status`를 참조하지 않는다. `pending_verification`을 포함한 어떤 상태의 link든 `scored` rubric이 해당 must spec을 참조하면 coverage로 인정한다. `bonus` 또는 `qualitative` link만 존재하면 coverage가 아니므로 finding을 발화한다.
+
+### Rule 3. Optionality Consistency
+
+- 조건: `requirement_level == optional`인 spec에만 trace된 `scored` rubric item의 `weight >= rules.optionality_mismatch.weight_threshold`
+- 결과: `optionality_mismatch`, `high`, `provisional`
+- next_action: `review_optionality_mismatch`
+- 판정 상태: final human review 전 `provisional`; `gate`의 confirmed finding에서만 차단
+- 차단 대상: final confirmed 상태에서만 예
+- 의도: 선택 항목이 실질적인 핵심 평가축으로 작동하는 경우 탐지
+- coverage 경계: 구조적 검사이므로 `semantic_status`를 참조하지 않는다. `scored` rubric의 trace 대상에 `must` 또는 `informational` spec이 하나라도 섞이면 optional-only가 아니므로 발화하지 않는다. `bonus` / `qualitative` rubric은 weight와 무관하게 Rule 3 대상이 아니다. trace가 없거나 weight가 threshold 미만인 scored rubric도 발화하지 않는다.
+
+초기 임계값 `10`은 `policy.yaml`의 PoC 기본값이다. 실제 사례를 적용한 뒤 configurable policy 또는 상대 가중치 기준으로 바꿀지 결정한다.
+
+### Rule L1. Cross-role Double Scoring (v1.11 신설, lint 가족)
+
+- **출처**: ideation v2.2 §4 Rule L1.
+- **조건**: 동일 `spec_id`가 `evaluation_role == scored` rubric의 `trace_links`와 `evaluation_role == bonus` rubric의 `trace_links` 양쪽에서 참조됨.
+- **결과**: `double_scored_spec`, `medium`, `provisional`.
+- **판정 상태**: final human review 전 `provisional`. semantic verifier 또는 final review가 `human_overridden`으로 정당성 판정 가능. `gate`가 confirmed로 승급할 수 있음(승급 시에도 `double_scored_spec` 유지, status만 `confirmed`).
+- **차단 대상**: 아니오. medium provisional은 check 단계에서 차단하지 않음.
+- **의도**: 같은 명세가 본채점과 가산 양쪽에서 점수화되어 실질 가중치가 부풀려지는 것을 검출. ideation v2.2 §1.4의 "창의 영역의 명세 잠식" 가장 직접적 형태.
+- **심화 확인 장치** (ideation §9.1 8번 / 11번과 정합):
+  - Finding payload에 다음 field 동봉: `scored_rubric_id`, `bonus_rubric_id`, `spec_id`, 양쪽 rubric의 `title` / `description` / `text`, 양쪽 link의 `semantic_status`. 리뷰어가 한 화면에서 정당/부당 구별 가능해야 함.
+  - 동시에 §5.7 `review_queue.json`에 `type: double_scoring_review` entry 생성. `target: { spec_id, scored_rubric_id, bonus_rubric_id }`.
+  - Phase 0 `check`는 §5.7 v1.12 예외 계약에 따라 이 entry를 즉시 파일로 기록한다.
+- **two-directional regression 가드** (§10.1):
+  - under-strict: 같은 spec_id가 scored+bonus 양쪽 trace → 발화 + payload에 양쪽 rubric_id + review_queue entry 생성.
+  - over-strict A: spec_id가 scored에만 trace → 미발화.
+  - over-strict B: 다른 spec_id끼리 (한쪽은 scored, 다른쪽은 bonus) → 미발화.
+- **fixture**: `fixtures/cross_role_double_scoring/` 신설 (또는 L5/L6와 통합한 `fixtures/bonus_misuse/`). 동일 spec_id가 scored R1과 bonus R2 양쪽에 trace된 시나리오 + over-strict 가드용 사례.
+
+### Rule L5. Bonus Traces Only Mandatory (v1.11 신설, lint 가족)
+
+- **출처**: ideation v2.2 §4 Rule L5.
+- **조건**: `evaluation_role == bonus`인 rubric_item의 **모든** trace 대상 spec_item의 `requirement_level == must`.
+- **결과**: `bonus_grades_mandatory_only`, `medium`, `provisional`.
+- **판정 상태**: final review 전 `provisional`. semantic verifier/final review가 `human_overridden`으로 통과시키지 않으면 `gate`가 confirmed로 승급.
+- **차단 대상**: 아니오.
+- **의도**: 가산이 "명세를 넘어선 행동"을 보상해야 하는데 모든 trace가 must로만 향한다면 가산의 정체성이 무너진다. ideation v2.1 §2의 조치 (3)("bonus/qualitative note로 격하") 거울.
+- **L1과의 차이** (§6 Rule L1 vs L5):
+  - L1: 같은 spec_id가 scored와 bonus 양쪽 — 직접적 double-counting.
+  - L5: bonus가 must spec만 본다 — scored와 겹치지 않더라도 bonus 의미 잘못 설계.
+- **two-directional regression 가드**:
+  - under-strict: bonus의 모든 trace가 must spec → 발화.
+  - over-strict A: bonus의 trace에 optional/informational spec이 하나라도 있음 → 미발화.
+  - over-strict B: trace가 아예 없는 bonus → 미발화 (Rule 1의 `orphan_bonus_rubric_item` 책임).
+- **fixture**: L1 fixture와 공유 가능. bonus rubric이 must spec만 trace하는 entry 추가.
+
+### Rule L6. Mandatory Spec Bonus-only Coverage (v1.11 신설, lint 가족)
+
+- **출처**: ideation v2.2 §4 Rule L6.
+- **조건**: `requirement_level == must`인 spec_item을 참조하는 trace가 존재하지만, 그 trace의 모든 rubric의 `evaluation_role == bonus`.
+- **결과**: `mandatory_spec_bonus_only_traced`, `high`, `provisional`.
+- **판정 상태**: final review 전 `provisional`. `human_overridden`이 없으면 `gate`가 confirmed로 승급.
+- **차단 대상**: confirmed 상태에서만 예 (Rule 1의 `orphan_scored_rubric_item`과 같은 위상).
+- **의도**: must 명세인데 본채점이 아예 없고 가산만 걸려있는 경우. Rule 2가 "must spec에 scored trace 없음"을 medium으로 잡지만, 본 룰은 한 단계 더 구체적이다 — "없을 뿐 아니라 *가산으로만* 평가되도록 설계됨".
+- **Rule 2와의 관계**: Rule 2의 특수 케이스. 동시 발화 가능. Rule 2가 medium, L6가 high — 둘 다 발화되면 reviewer는 L6 우선 처리.
+- **qualitative 경계 (Owner 확정, v1.13; Rule 2 구현 정합화 v1.14)**: `qualitative`는 점수화/가산 경로가 아니므로 L6의 `bonus-only` 위험에 포함하지 않는다. must spec이 qualitative만, 또는 bonus+qualitative로 trace되고 scored가 없는 경우는 L6가 발화하지 않으며, Rule 2의 `uncovered_must_spec_item`이 missing scored coverage를 검토 대상으로 남긴다.
+- **안전장치** (ideation §9.1 11번):
+  - Finding payload에 동봉: `spec_id` (must spec), 그 spec을 trace하는 모든 `bonus_rubric_ids[]`, 각 bonus rubric의 `title` / `description` / `text`, 각 link의 `semantic_status`, `spec_item.text` 또는 `source_ref`.
+  - §5.7 `review_queue.json`에 `type: mandatory_spec_bonus_review` entry. `target: { spec_id, bonus_rubric_ids: [...] }`.
+- **two-directional regression 가드**:
+  - under-strict: must spec에 trace는 있지만 모두 bonus → 발화 + payload + review_queue entry.
+  - over-strict A: must spec에 scored trace가 하나라도 있음 → 미발화.
+  - over-strict B: must spec에 trace 자체가 없음 → 미발화 (Rule 2 책임).
+  - over-strict C: must spec trace에 qualitative가 하나라도 있음 → 미발화 (Rule 2 `uncovered_must_spec_item` 책임).
+- **fixture**: L1/L5 fixture와 공유. must spec 하나에 bonus rubric 하나만 trace되는 entry 추가.
+
+### Lint 가족 공통 메모
+
+- Rule L1/L5/L6는 모두 Rule 0가 high 진단을 내지 않은 입력에서만 평가한다 (Rule 1의 선행 조건과 동일).
+- Rule L1/L5/L6는 `semantic_status`를 조건으로 사용하지 않는다 — 구조적 패턴만 검사. ideation v2.2 §3 분류상 L-DET.
+- `check`는 lint finding을 medium/high `provisional`로만 emit한다. `blocking_count` 산정에는 포함하지 않는다 (Rule 1과 동일 정책 — `check`는 차단 verdict 발행 안 함).
+- `next_actions`에는 `review_double_scoring` / `review_bonus_mandatory_only` / `review_mandatory_spec_bonus_only` 각 finding당 한 entry 추가. 명명은 §8.1과 §8.1.1 정책 따름.
+
+### 후속 규칙
+
+- L2 (Bonus Weight Encroachment), L4 (Duplicate Trace Link), L7 + C1 (Forbidden-clause Violation + `requirement_level: forbidden` 스키마 확장): ideation v2.2 §7 표의 v1.12+ 항목. plan 추가 시점에 본 절에서 별도 Rule 항목으로 승격.
+- Time Budget Consistency: effort 산정 방식이 정의된 뒤 추가
+- Rubric Version Lock: locked baseline, round state, approval log 계약이 정의된 뒤 추가
+- Disclosure Readiness: scoring evidence와 feedback 범위가 정의된 뒤 추가
+
+## 7. 모듈 구성
+
+```text
+assessment_poc/
+  pyproject.toml
+  assessment_harness/
+    __init__.py
+    cli.py
+    models.py
+    schemas.py
+    rules.py
+    report.py
+    final_review.py
+    review_materialization.py # final_review decision -> reviewed artifacts (in-place 수정 없음)
+    compacting.py       # union 기반 compacting (분류·자동 채택 없음, support/variants/identity_basis 보존)
+    semantic_verification.py # read-only verifier run 결과 취합 및 상태 제안
+    orchestrator.py
+    gate.py              # final review 이후 외부 판정 전용
+    agent_runners/
+      __init__.py
+      base.py            # AgentRunner protocol (framework-agnostic)
+      manual.py          # Phase 0/1: 사람이 직접 작성한 compacted 입력 사용
+      mock.py            # Phase 2: fixture YAML을 결정적으로 반환하는 fake runner (protocol contract test 전용)
+      # claude_sdk.py    — Phase 2에서 추가 (PoC default)
+      # codex.py         — 후속 MVP (실제 portability 검증용)
+      # gemini.py        — 후속
+    tools/
+      __init__.py
+      # spec_tools.py    — Phase 2: read_spec_section, list_sections
+      # rubric_tools.py  — Phase 2: list_rubric_items, get_rubric_item
+      # propose_tools.py — Phase 2: propose_spec_item, propose_trace_link, flag_ambiguity
+  schemas/
+    spec_items.schema.json
+    rubric_items.schema.json
+    trace_links.schema.json
+    candidates.schema.json
+    findings.schema.json
+    integrity_diagnostics.schema.json
+    review_queue.schema.json
+    final_review.schema.json
+    semantic_verifications.schema.json
+    source_manifest.schema.json
+    id_map.schema.json
+    compacting.schema.json
+    policy.schema.json        # rules, compacting, runs, verification 섹션 통합
+    agent_trace.schema.json
+    cli_output.schema.json
+  fixtures/
+    clean_assignment/
+    orphan_scored_rubric/
+    uncovered_must_spec/
+    optionality_mismatch/
+    reference_integrity/      # Rule 0 회귀 fixture
+    real_assignment/
+  tests/
+    test_models.py
+    test_rules.py
+    test_fixtures.py
+    test_report.py
+    # test_final_review.py          — Phase 3에서 추가
+    # test_compacting.py            — Phase 2에서 추가 (identity_basis, support, variants)
+    # test_semantic_verification.py — Phase 2에서 추가 (read-only verifier, proposal compacting)
+    test_cli_output_contract.py # CLI의 agent-consumable JSON 출력 회귀
+    # test_agent_runner_contract.py — Phase 2에서 추가
+    # test_agent_trace_contract.py  — Phase 2에서 추가
+    # test_orchestrator.py          — Phase 2에서 추가
+```
+
+`agent_runners/base.py`는 framework-agnostic protocol을 정의한다. PoC default 구현은 `claude_sdk.py`이며 Phase 2에 추가한다. `mock.py`는 fixture YAML을 결정적으로 반환하는 fake runner로, protocol contract test 전용이며 실제 평가에는 사용하지 않는다 (manual.py는 Phase 0/1의 사람 입력용, mock은 Phase 2의 contract 분리 증명용으로 역할이 다르다). 실제 Codex/Gemini 등 두 번째 framework 연동과 교체 비용 실증은 후속 MVP의 범위다.
+
+`tools/`는 agent runner가 사용하는 framework-agnostic tool 정의를 둔다. tool 자체는 Python 함수이며, 각 runner가 자신의 framework가 요구하는 형태(JSON schema, function definition 등)로 등록한다.
+
+정책 파일은 `config/policy.yaml` 하나로 통합한다. 섹션 구조:
+
+```yaml
+rules:
+  optionality_mismatch:
+    weight_threshold: 10
+compacting:
+  identity_basis:
+    spec_item: "source+section+normalized_text"
+    rubric_item: "title+normalized_description"
+    trace_link: "rubric_id+sorted(spec_ids)"
+runs:
+  min_valid_runs: 2
+  default_runs: 3
+  max_runs: 7
+verification:
+  default_mode: ai_judgement
+```
+
+CLI는 `--policy config/policy.yaml` 하나로 모든 정책을 받는다. 이전 v1.4의 `--identity-basis-config` flag는 통합되어 제거된다.
+
+## 8. CLI 계약
+
+### Phase 0 명령
+
+```bash
+assessment-harness check \
+  --spec-items fixtures/orphan_scored_rubric/spec_items.yaml \
+  --rubric-items fixtures/orphan_scored_rubric/rubric_items.yaml \
+  --trace-links fixtures/orphan_scored_rubric/trace_links.yaml \
+  --source-manifest fixtures/orphan_scored_rubric/source_manifest.yaml \
+  --policy fixtures/orphan_scored_rubric/policy.yaml \
+  --out findings.json \
+  --diagnostics-out integrity_diagnostics.json \
+  --review-queue-out review_queue.json
+
+assessment-harness report \
+  --findings findings.json \
+  --diagnostics integrity_diagnostics.json \
+  --out report.md
+```
+
+`--source-manifest`는 Phase 0의 필수 인자다 (§5.0 / §5.1 / §11). 생략하면 `check`는 `status=invalid_input`, exit `2`, 진단 코드 `source_manifest_required`, next_action `provide_source_manifest`를 반환한다. argparse 단계에서 거부하지 않고 구조화된 envelope을 stdout에 출력하므로 caller agent는 인자 누락도 정상 흐름의 결과로 복구 가능하다.
+
+`--policy`도 Phase 0 `check`의 필수 인자다. 특히 Rule 3은
+`rules.optionality_mismatch.weight_threshold`가 없으면 정상/위반 경계를 판정할
+수 없으므로, policy 자체가 없거나 해당 field가 누락된 경우 `check`는
+`invalid_input`/exit `2`를 반환한다. policy 인자 누락은 next_action
+`provide_policy`, policy 파일의 필수 field 누락은 `fix_input`으로 복구 지시한다.
+policy 파일이 schema validation을 통과하지 못하는 경우(예: `rules.optionality_mismatch`가
+dict가 아닌 type으로 작성된 경우)도 같은 `fix_input` recovery에 포함된다 —
+caller 입장에서는 "policy 파일이 사용 가능한 형태가 아니다"라는 동일한 복구
+지시를 받는다.
+
+Rule L1/L6 lint safeguard entry가 발화할 수 있는 입력에서 `--review-queue-out`을
+지정하면 queue 경로를 명시할 수 있다. 생략하면 Rule 0가 통과한 `check`는
+`--out`과 같은 디렉터리의 `review_queue.json`을 생성한다. lint finding이
+없을 때에도 빈 queue를 기록해 이전 실행의 stale review 항목이 재사용되지 않게 한다.
+
+Phase 0에서 `--semantic-verifications`가 생략된 경우 `token_sequence` evidence만 결정적으로 검사하며, `ai_judgement` trace link는 `pending_verification`으로 취급한다. Phase 2 이후 agent-assisted 흐름에서는 `verify` 산출물을 `check`/`report`/`review`에 명시적으로 전달한다. Compacting lineage(`variants`)가 있는 trace에 `--semantic-verifications`를 전달할 때는 `check --id-map work/compacted/id_map.yaml`도 함께 전달해야 한다. 그렇지 않으면 trace 순서 기반 fallback이 canonical ID lineage와 어긋날 수 있으므로 구현은 fail-loud해야 한다.
+
+`policy.yaml` 예시:
+
+```yaml
+rules:
+  optionality_mismatch:
+    weight_threshold: 10
+verification:
+  default_mode: ai_judgement
+```
+
+`--policy`가 생략되면 패키지에 포함된 기본 policy를 사용한다. fixture에는 명시적으로 포함시켜 회귀 시 정책 변동을 격리한다.
+
+### 8.1 Agent-consumable 출력 계약
+
+본 도구의 1차 user는 AI 에이전트다. 모든 명령은 다음을 만족해야 한다.
+
+- **종료 코드 표준**:
+  - `0`: 성공/검토 대기/provisional finding 존재; final blocking verdict 없음
+  - `1`: `gate`가 final review 이후 confirmed blocking finding을 판정함
+  - `2`: 입력/무결성 오류 (파일 없음, schema 위반, Rule 0 reference integrity 실패). 관련 diagnostic artifact는 가능한 범위에서 함께 생성한다.
+  - `3`: 내부 오류 (runner 실패, tool error 등)
+- **stdout / stderr 분리**:
+  - stdout: machine-readable 산출물 (`--output json` 시 JSON, 기본은 사람용 요약)
+  - stderr: progress, 경고, 디버그 메시지
+- **`--output json` 플래그**: 모든 명령이 지원. 출력은 `schemas/cli_output.schema.json`을 따른다.
+- **에러 메시지는 actionable**: 단순 "validation failed"가 아니라 "S5 referenced by R7.trace_links does not exist. Add S5 to spec_items.yaml or remove the reference from R7."처럼 다음 단계를 명시. 가능하면 `file:line` 포함.
+
+```bash
+assessment-harness check --output json ... 2>/dev/null
+# stdout 예시 (요약):
+# {
+#   "status": "provisional_findings",
+#   "blocking_count": 0,
+#   "findings_path": "findings.json",
+#   "report_path": "report.md",
+#   "next_actions": [
+#     {"type": "add_trace_link", "rubric_id": "R7"},
+#     ...
+#   ]
+# }
+```
+
+`next_actions`는 caller 에이전트가 다음 tool call로 자연스럽게 이어갈 수 있는 hint다. PoC에서는 보수적으로 생성하고, 신뢰할 수 있는 종류만 포함한다.
+
+### 8.1.1 Stable Core vs Informational Fields
+
+`cli_output.schema.json`은 두 계층으로 나뉜다.
+
+- **stable core**: 모든 명령 출력에 반드시 존재하며 변경 시 명시적 deprecation 절차를 거친다.
+  - `status`: 명령 결과 (`success` | `provisional_findings` | `pending_review` | `fail` | `invalid_input` | `internal_error`)
+  - `exit_code`: 종료 코드 (0/1/2/3)
+  - `command`: 실행된 명령 이름
+  - `next_actions`: caller agent용 hint 배열. 항목이 없으면 빈 배열로 항상 출력하며 형식은 stable.
+- **informational**: 명령별 추가 필드. 사전 통지 없이 추가/변경 가능. schema에 `"stability": "informational"`로 annotation.
+
+caller agent가 의존해도 안전한 것은 stable core뿐이다. 그 외 필드 사용은 §8.1.2 self-discovery 결과로만 한다. 안정 범위 확장은 실제 테스트 코드와 caller agent 사용 패턴이 누적된 후 점진적으로 승격한다.
+
+### 8.1.2 Self-discovery Command
+
+caller agent가 현재 contract를 매번 직접 확인할 수 있도록 introspection 명령을 제공한다.
+
+```bash
+assessment-harness schema --command check --output json
+# stdout 예시:
+# {
+#   "command": "check",
+#   "stable_core": ["status", "exit_code", "command", "next_actions"],
+#   "informational": ["findings_path", "report_path", "blocking_count", "diagnostics_path"],
+#   "exit_codes": {
+#     "0": "success/provisional/pending; no final blocking verdict",
+#     "1": "gate confirmed blocking finding after final review",
+#     "2": "input/integrity error",
+#     "3": "internal error"
+#   },
+#   "next_actions_types": ["add_trace_link", "review_orphan_rubric", ...]
+# }
+```
+
+이 명령으로 caller agent는 문서 동기화 없이 현재 stable contract와 informational 필드, exit code 의미, `next_actions` 가능 type을 알 수 있다. 새 caller agent 통합은 이 introspection 결과부터 읽어 시작한다.
+
+### 최종 PoC 명령
+
+```bash
+assessment-harness extract \
+  --spec assignment/README.md \
+  --rubric assignment/rubric.md \
+  --runner claude_sdk \
+  --runs 3 \
+  --out-dir work/runs
+
+assessment-harness compact \
+  --runs-dir work/runs \
+  --policy config/policy.yaml \
+  --out-dir work/compacted
+
+assessment-harness verify \
+  --compacted-dir work/compacted \
+  --source-manifest work/source_snapshot/manifest.yaml \
+  --runner claude_sdk \
+  --runs 3 \
+  --policy config/policy.yaml \
+  --out-dir work/semantic_verification
+
+assessment-harness check \
+  --spec-items work/compacted/spec_items.yaml \
+  --rubric-items work/compacted/rubric_items.yaml \
+  --trace-links work/compacted/trace_links.yaml \
+  --semantic-verifications work/semantic_verification/semantic_verifications.yaml \
+  --id-map work/compacted/id_map.yaml \
+  --policy work/compacted/policy.yaml \
+  --out work/findings.json \
+  --diagnostics-out work/integrity_diagnostics.json
+
+assessment-harness report \
+  --findings work/findings.json \
+  --diagnostics work/integrity_diagnostics.json \
+  --semantic-verifications work/semantic_verification/semantic_verifications.yaml \
+  --review-queue work/compacted/review_queue.json \
+  --out work/report.md
+
+assessment-harness review \
+  --compacted-dir work/compacted \
+  --findings work/findings.json \
+  --diagnostics work/integrity_diagnostics.json \
+  --semantic-verifications work/semantic_verification/semantic_verifications.yaml \
+  --review-queue work/compacted/review_queue.json \
+  --report work/report.md \
+  --reviewer kdt \
+  --out-dir work/final_review
+
+assessment-harness gate \
+  --final-review work/final_review/review.yaml \
+  --output json
+
+assessment-harness materialize-review \
+  --final-review work/final_review/review.yaml \
+  --compacted-dir work/compacted \
+  --out-dir work/reviewed \
+  --output json
+```
+
+`extract`는 `--source-manifest`가 명시되지 않으면 `--out-dir`의 sibling
+directory인 `source_snapshot/`에 입력 spec/rubric을 immutable snapshot으로 복사하고
+`source_snapshot/manifest.yaml`을 생성한다. 예를 들어 `--out-dir work/runs`이면
+manifest는 `work/source_snapshot/manifest.yaml`이다. 생성 manifest는 `DOC_SPEC`
+(`candidate_spec`)과 `DOC_RUBRIC`(`evaluator_rubric`) 문서를 기록하고, 각 snapshot
+파일의 `sha256`을 포함한다. `--source-manifest`가 명시되면 그 manifest를 그대로
+사용하며 자동 snapshot 생성을 수행하지 않는다.
+
+`compact`는 union 기반이며 자동 분류·채택을 하지 않는다. 모든 유효 candidate를 entry로 보존하고, 동일성으로 판정된 것만 하나의 entry로 묶으면서 `support`/`identity_basis`/`variants`를 기록한다.
+
+`verify`는 `ai_judgement` link에 대한 별도 read-only verifier-agent 실행이다. 각 run의 제안과 취합 결과를 저장하되 compacted artifact 또는 최종 판단을 수정하지 않는다.
+
+`review`는 최종 human review를 기록한다. 중간 candidate는 사람이 승인하는 대신 자동 integrity check와 compacting을 거치며, 모든 entry(단일 run 발견 포함)와 compacting 근거가 review 자료에 보존되어야 한다.
+
+`gate`는 외부 호출자가 pass/fail 또는 pending 상태를 소비하는 유일한 명령이다. `check`/`report`는 final review 전에는 provisional finding을 생성할 수 있으나 blocking exit `1`을 반환하지 않는다.
+
+`materialize-review`는 review 결과를 새 artifact directory에 반영하는 산출물 생성 명령이다. `gate` verdict와 독립적으로 실행할 수 있지만, 외부 release/merge 판단은 여전히 `gate` 결과만 사용한다.
+
+## 9. 단계별 구현 계획
+
+### Phase 0 - Deterministic Validation Core
+
+목표:
+
+- agent 실행과 무관하게 compacted YAML을 검사하는 validation core를 완성한다.
+
+작업:
+
+- Python package 및 CLI scaffold 생성
+- source manifest/id map/spec/rubric/trace/semantic verification/finding/policy 모델과 schema 작성
+- Rule 0-3 구현
+- JSON finding/integrity diagnostic과 Markdown report 생성
+- 수동 fixture 작성
+
+완료 기준:
+
+- `clean_assignment`는 blocking finding 없이 통과한다.
+- `reference_integrity`는 Rule 0 high integrity diagnostic을 생성하고 단일 `check`가 exit `2`로 종료된다 (중복 ID, dangling reference, quote non-substring 각 케이스).
+- `orphan_scored_rubric`은 Rule 1 high `provisional` finding을 생성하되 final gate 이전에는 exit `1`로 차단하지 않는다.
+- `uncovered_must_spec`는 Rule 2 `uncovered_must_spec_item` medium finding을 생성한다.
+- `optionality_mismatch`는 Rule 3 high finding을 생성한다.
+- 각 규칙 테스트는 under-strict와 over-strict 정상 사례를 함께 가진다.
+
+### Phase 1 - Real Assignment Manual Run
+
+목표:
+
+- toy fixture 밖에서 deterministic core가 검토 가치가 있는 결과를 내는지 확인한다.
+
+작업:
+
+- (선결) 자료 사용 권한 확인: 본인 응시 라운드 자료라면 NDA/공개 정책 검토, 익명화 기준 합의. 권한 미확정 시 Phase 1 진입 보류.
+- 사용 가능한 실제 과제 문서와 rubric을 수동으로 YAML화
+- 원문 snapshot manifest와 각 item/quote의 source reference를 함께 작성
+- 공개 불가 원문은 커밋하지 않고, 필요 시 익명화된 구조화 fixture만 저장
+- 생성 finding을 사람이 리뷰하여 true issue, false positive, policy question으로 분류
+
+완료 기준:
+
+- 실제 과제 1건이 end-to-end manual flow로 report까지 생성된다.
+- finding별로 사람이 판단한 결과와 필요한 schema/rule 수정사항이 기록된다.
+
+### Phase 2 - Agent Runner & Compacting
+
+목표:
+
+- 최종 PoC에 필수인 candidate-generation 및 semantic-verifier 복수 실행 단계를 작동하도록 한다.
+- 실행별 산출물의 검증, compacting, read-only semantic verification 경계를 검증한다.
+
+작업:
+
+- `AgentRunner` protocol 정의 (framework-agnostic; `run(spec_path, rubric_path, tools, max_turns, policy) -> AgentRunResult`)
+- Tool 집합 정의: `read_spec_section`, `list_sections`, `list_rubric_items`, `get_rubric_item`, `propose_spec_item`, `propose_trace_link`, `flag_ambiguity`
+- Claude Agent SDK 기반 첫 runner 구현 (PoC default)
+- 동일 입력에 대해 복수 독립 run을 실행하는 orchestrator 구현 (`--runs N`, 기본 3, 최대 7)
+- compacting 모듈 구현: union 기반, 자동 채택/분류 없음, support/identity_basis/variants 보존
+- run-local item ID를 compacted canonical ID로 remap하고 `id_map` provenance를 저장
+- identity_basis 알고리즘 초기 구현 (§13 Phase 2/3 결정 사항에 따라 선정)
+- mock runner contract test로 protocol 경계가 특정 SDK 구현에 결합되지 않았음을 확인
+- `agent_trace.raw.jsonl`/`agent_trace.audit.jsonl` 산출 및 저장 방침 정의 (큰 tool 결과는 외부 파일로 분리, audit trace에는 ref)
+- 회복 정책: max_turns 초과, tool error, schema-invalid output은 run 단위로 격리하고 audit trace의 `finish_reason`에 사유 기록. `integrity_status: blocked_by_runner_error`로 표시.
+- candidate에 `agent_runner`, `agent_run_id` 필드 채움
+- partial run failure 정책 적용: 최소 유효 run 수(`min_valid_runs`) 미달 시 동작 정의 (§13)
+- `ai_judgement` link를 별도 read-only verifier-agent 복수 run으로 검토하여 `semantic_status` 제안을 생성
+- verifier run별 결과와 취합 결과를 `semantic_verifications.yaml`에 저장하되 compacted link를 덮어쓰지 않음
+
+완료 기준:
+
+- 실제 과제 입력을 복수 실행하여 run별 candidate artifacts와 audit trace가 함께 생성된다.
+- Rule 0에 실패한 run은 diagnostic을 남기고 compacting 대상에서 제외된다.
+- 유효한 run들에서 compacted artifacts와 review_queue가 생성된다.
+- 단일 run에서만 발견된 entry도 compacted artifacts에 보존된다 (자동 배제 없음 확인).
+- 같은 compacted YAML과 같은 semantic verification artifact를 사용하면 Manual flow와 Agent-assisted flow의 findings/report가 동일하다.
+- Runner contract test가 Claude SDK runner 외에 최소 한 개의 mock runner로 통과한다 (protocol 분리 확인).
+- compacting 결과의 `identity_basis`가 audit 가능한 형태로 저장되고, fixture 기반 테스트로 알고리즘 변경 영향이 회귀 검증된다.
+- 서로 다른 run-local ID가 같은 compacted canonical ID와 trace link로 remap되는 fixture가 통과한다.
+- verifier-agent가 새 spec/rubric/trace candidate를 생성하지 않는 read-only 계약 테스트가 통과하고, 서로 다른 verifier 제안은 취합 산출물에 보존된다.
+
+### Phase 3 - Final Human Review and PoC Demonstration
+
+목표:
+
+- agent runner 복수 실행부터 deterministic report와 최종 human review까지 전체 흐름을 시연한다.
+- caller agent 시나리오에서도 종단간 작동을 확인한다.
+
+작업:
+
+- compacted result -> final review 기록 명령 구현
+- `materialize-review` 구현: trace_link review action 4가지(`accept` / `hold` / `rerun_requested` / `override`) 처리 및 audit metadata (`reviewed_by`, `reviewed_at`) 저장
+- `override` 발생 시 trace_link의 `sources`에 `kind: human_override` 추가 기록
+- review_queue final-review decision을 resolved/held/rerun_pending status로 materialize
+- spec_item/rubric_item materialization은 후속 범위로 보존하되 입력 artifact는 그대로 복사
+- 제외되거나 단일 run 발견 candidate의 retention 정책 적용 (§13에 따라 결정)
+- 실제 과제에 대해 agent-generated compacted artifacts, semantic verifier 제안, finding/review_queue를 사람이 최종 검토
+- 최종 findings/report 산출 및 결과 기록
+- final review record에 기반한 `gate` 판정 산출
+- final review record에 기반한 reviewed artifact 산출 (`materialize-review`)
+- (선택) caller agent 시나리오 1건 시연: Claude Code가 본 도구를 CLI로 호출하여 end-to-end 수행
+
+완료 기준:
+
+- `extract -> compact -> verify -> check -> report -> review -> gate -> materialize-review` 흐름이 실제 과제 1건에서 실행된다.
+- 무결성 실패 또는 단일 run 발견 항목이 review 자료에서 추적 가능하고, invalid candidate가 deterministic assessment 판정으로 유입되지 않음이 확인된다.
+- review에서 `override` 액션 1건 이상 시연되며, 결과가 reviewed artifact의 `sources`에 별도 provenance로 기록됨이 확인된다.
+- high assessment finding은 agent confidence가 아니라 compacted YAML과 Rule 1-3만으로 재현된다. Rule 0 diagnostic은 별도로 추적된다.
+- mock runner 계약 테스트로 protocol 경계를 확인한다. 실제 두 번째 framework 통합 실증은 후속 MVP 범위로 남긴다.
+- `gate`만 confirmed blocking finding에 대해 exit `1`을 반환하고, review 전 `check`는 provisional 상태를 유지한다.
+- 모든 CLI 명령이 `--output json` 모드에서 `cli_output.schema.json`을 통과한다.
+
+## 10. 테스트 전략
+
+### 10.1 Deterministic 규칙 테스트
+
+각 규칙에는 두 방향의 회귀 방어를 둔다.
+
+| Rule | Under-strict guard | Over-strict guard |
+|---|---|---|
+| Rule 0 | 중복 ID, dangling reference, quote non-substring의 diagnostic/exit `2` 처리를 놓치면 실패 | 정상 substring 및 유효한 reference를 invalid로 잡으면 실패 |
+| Rule 1 | scored orphan이 provisional/confirmed lifecycle에서 누락되면 실패 | pending semantic link를 final coverage로 처리하거나 human-accepted trace를 orphan으로 잡으면 실패 |
+| Rule 2 | must spec 미평가를 놓치면 실패 | optional/informational 미평가를 finding으로 잡으면 실패 |
+| Rule 3 | optional-only 고가중치 항목(복수 optional 포함)을 놓치면 실패 | 임계값 미만, must/informational 혼합, non-scored 또는 미추적 항목을 mismatch로 잡으면 실패 |
+
+### 10.2 Agent Runner 계약 테스트
+
+- runner 출력은 candidate schema로 normalize되어야 한다.
+- malformed runner output (schema 위반, partial output)은 compacted artifact나 assessment finding을 만들지 않고 run 단계에서 격리되어야 한다.
+- confidence 값은 deterministic severity 결과를 변경하지 않아야 한다.
+- 모든 runner는 동일한 `AgentRunner` protocol을 만족해야 한다 (mock runner로 contract test 작성, PoC에서는 protocol 분리만 확인).
+- audit trace는 schema validation을 통과하고, 모든 candidate의 `agent_run_id`가 audit trace에 존재해야 한다.
+- max_turns 초과 / tool error 시 partial candidate는 `integrity_status: blocked_by_runner_error`로 표시되고, audit trace의 `finish_reason`에 사유가 남아야 한다.
+- 복수 유효 run의 compacting 결과는 `compacting.schema.json`에 따라 재현 가능하게 출력되어야 한다. 같은 입력 candidate 집합과 같은 identity_basis 설정에서 같은 compacted artifacts가 생성되어야 한다.
+- compacting은 자동 채택/분류를 하지 않는다. 단일 run에서만 발견된 entry도 compacted artifacts에 포함되어야 한다.
+- 동일 entity에 대한 run-local ID 차이가 canonical ID remap으로 정규화되어야 한다.
+- verifier-agent는 immutable snapshot과 compacted link만 읽고 `semantic_verifications.yaml`을 생성해야 하며, candidate artifacts를 변경하면 실패한다.
+- verifier run 간 `supported`/`rejected`/`uncertain` 차이는 자동 확정되지 않고 variants 또는 review 대상에 보존되어야 한다.
+
+### 10.3 CLI 출력 계약 테스트
+
+- 모든 명령의 `--output json` 출력은 `cli_output.schema.json`을 통과해야 한다.
+- 종료 코드는 §8.1의 정의를 따라야 한다 (0/1/2/3).
+- stderr 메시지가 stdout JSON에 섞이지 않아야 한다.
+- 에러 메시지는 `next_actions` 또는 actionable hint를 포함해야 한다 (regex/keyword 기반 lint).
+- `check`는 pre-review high finding에서 `provisional_findings`/exit `0`을 반환하고, `gate`만 confirmed high finding에서 exit `1`을 반환해야 한다.
+
+### 10.4 End-to-End 테스트
+
+- Manual fixture와 Agent-assisted flow가 동일한 compacted artifact 및 semantic verification artifact를 입력으로 받으면 같은 report를 생성해야 한다.
+- 실제 과제 실행 기록에는 run별 candidate/trace, compacted artifacts, verifier run/result, review_queue, findings, report, final review 산출물이 남아야 한다.
+
+## 11. 검증 산출물
+
+Phase 0:
+
+- source snapshot manifest와 item/quote `source_ref`
+- `findings.json`
+- `integrity_diagnostics.json`
+- `report.md`
+- fixture별 expected findings
+- 테스트 결과
+
+최종 PoC:
+
+- agent run별 candidate artifacts와 분리 저장된 trace (`agent_trace.raw.jsonl`, `agent_trace.audit.jsonl`)
+- compacted artifacts (`support`, `identity_basis`, `variants` 포함)와 canonical `id_map`
+- semantic verifier run 기록과 취합된 `semantic_verifications.yaml`
+- `review_queue.json` (무결성 실패 사유, 모호성, 검토 대상 통합)
+- `integrity_diagnostics.json`
+- deterministic `findings.json`
+- human-readable `report.md`
+- final human review 기록 (`final_review/`)
+- external `gate` decision 출력
+- reviewed artifacts (`materialize-review` 산출물)
+- 실제 과제 적용 결과 요약
+
+## 12. 구현 순서와 게이트
+
+| 단계 | 진입 조건 | 완료 확인 | 다음 단계 차단 조건 |
+|---|---|---|---|
+| Phase 0 | 본 계획서 기준 승인 | Rule 0-3 fixture/test 통과 | 데이터 계약이 흔들리거나 규칙 결과가 재현되지 않음 |
+| Phase 1 | Phase 0 통과, 실제 자료 사용 권한 확인 완료, 익명화 기준 합의 | 실제 manual report 생성 | 자료 사용 권한 미확정 또는 익명화 기준 불일치 |
+| Phase 2 | compacted 데이터 구조 안정화, identity_basis 알고리즘 선정 | 실제 candidate/verifier multi-run 생성·격리·compacting | run output이 schema로 안정 정규화되지 않거나 identity_basis가 미정 |
+| Phase 3 | Phase 2 runner/compacting 동작 | 실제 E2E demo/report/final review/`gate` decision 생성 | invalid run 데이터가 판정에 섞임 |
+
+## 13. 남은 결정
+
+Phase 0 전 확정 (v1.5에서 채택됨):
+
+1. ✓ 본 계획서와 `v2.1`을 PoC 구현의 기준 문서로 채택 (§1 우선순위 그대로).
+2. ✓ Rule 0 evidence_quote 검증은 entry별 `verification_mode`로 분기: `token_sequence`(strict substring)와 `ai_judgement`(reference integrity만, 의미 검증은 review_queue로). PoC default는 `ai_judgement`. 정량 검증 필요한 명시적 marker만 `token_sequence`로 opt-in. (§5.3, §6 Rule 0)
+3. ✓ `cli_output.schema.json`은 stable core(`status`/`exit_code`/`command`/`next_actions`)와 informational 두 계층으로 분리. 안정 범위 확장은 실제 테스트 코드와 caller agent 사용 패턴을 보며 점진 확립. `assessment-harness schema --command <name>` self-discovery 명령으로 caller agent가 매번 직접 contract 확인 가능. (§8.1.1, §8.1.2)
+
+Phase 0/공통 계약으로 v1.6에서 채택:
+
+1. ✓ `check`는 final verdict를 내리지 않고 `provisional` findings만 산출한다. 외부 blocking verdict는 final review 이후 `gate` 명령만 반환한다.
+2. ✓ 원문 grounding은 DB/RAG 없이 immutable source snapshot manifest, document hash, line/span `source_ref`로 구현한다. RAG/DB화는 후속 범위다.
+3. ✓ 독립 run의 local ID는 compact 단계에서 canonical ID로 remap하고 `id_map` provenance를 보존한다. 프로젝트/버전 계층은 후속 확장 가능하게 둔다.
+
+Phase 2/3 공통 계약으로 v1.7에서 채택:
+
+1. ✓ `ai_judgement` semantic 확인은 별도 read-only verifier-agent가 복수 run으로 제안하고, 최종 human review가 승인/거절/override한다.
+2. ✓ verifier-agent 산출물은 compacted artifact를 수정하지 않고 별도 `semantic_verifications.yaml`과 run 기록으로 보존한다.
+
+Phase 1 전 확정할 사항:
+
+1. 첫 실제 과제로 사용할 자료의 위치, NDA/공개 정책, 익명화 범위.
+
+Phase 2/3 전 확정할 사항:
+
+1. Phase 2에서 연결할 Claude Agent SDK 자격 증명 제공 방식. 결정 전 검토 항목은
+   `docs/guidelines/sdk_runner_decisions.md`에 정리한다.
+2. compacting의 `identity_basis` 알고리즘:
+   - spec_item: 후보군 예시 — `source+section+normalized_text`, `source+normalized_text`, `normalized_text only`
+   - rubric_item: 후보군 예시 — `title+normalized_description`, `normalized_title only`
+   - trace_link: 후보군 예시 — `rubric_id+sorted(spec_ids)`, `rubric_id+sorted(spec_ids)+normalized_rationale`
+   - PoC default 권고: 가장 보수적(상세) 기준으로 시작 → 너무 자주 갈라지면 완화
+3. 복수 run 정책: 기본 run 수(권고 3), 최대 run 수(권고 7), 최소 유효 run 수(`min_valid_runs`, 권고 2). 미달 시 동작: error 종료 vs warn-and-proceed.
+4. ✓ 최종 human review의 `override` 사용 범위는 단순 오타·누락 materialization으로 제한한다. 해석이 갈리는 의미적 결정은 `rerun_requested`로 새 run을 요청하는 것이 원칙이다 (§5.6.1).
+5. `trace_link.rationale`의 최소 length 또는 quality guard 적용 여부.
+6. 제외/단일 발견 agent candidate 및 raw trace의 retention/redaction/access 정책.
+7. Agent runner `max_turns`, cost ceiling 정책.
+8. ✓ Tool 호출 사이드이펙트 정책: tool은 read-only로 유지하고, propose 계열은 파일을
+   직접 쓰지 않는다. 후보 생성은 runner가 도구 호출 결과를 collect한 뒤 run 종료 시
+   candidate artifact로 일괄 출력한다. 파일 직접 쓰기는 audit 경계를 흐리므로 PoC
+   기본 정책에서 제외한다.
+9. 복수 run의 형태: PoC는 candidate-generation role과 채택된 read-only semantic-verifier role 각각에서 동일 설정의 독립 반복으로 한정. 추가 critic/resolver 역할은 후속 MVP 범위.
+10. reproducibility 범위: "같은 candidate 집합 + 같은 identity_basis 설정 → 같은 compacted artifacts", "같은 compacted artifacts + 같은 semantic verification artifacts → 같은 findings"까지만 보장한다. 같은 spec/rubric을 N회 실행했을 때 같은 candidate 또는 verifier 제안이 나오는 것은 보장하지 않는다.
+
+구현하며 조정 가능한 사항:
+
+- `config/policy.yaml`의 `rules.optionality_mismatch.weight_threshold` 후속 조정
+- bonus orphan의 `informational` finding 표시 형식
+- Rule 2 severity의 high 승격 여부 (실제 과제 적용 후 재검토)
+- report 출력 문구와 정렬 방식
+- `next_actions` 출력의 종류 및 신뢰도 정책
+- `verification.default_mode`를 `token_sequence`로 승격할지 여부 (정량 검증 사용처 누적 후)
+- mock runner의 fixture 응답 형식 확장
+- `cli_output.schema.json`의 informational → stable core 승격 정책
+
+## 14. 최종 완료 정의
+
+다음 조건을 모두 만족해야 PoC를 완료로 본다.
+
+- source snapshot으로 grounding된 compacted YAML과 semantic verification artifact를 입력으로 Rule 0-3을 재현 가능하게 실행한다.
+- 수동 fixture와 실제 과제 manual run이 완료된다.
+- Claude Agent SDK 기반 agent runner가 복수 run의 spec/rubric/trace 후보와 분리된 trace(`agent_trace.raw.jsonl` + `agent_trace.audit.jsonl`)를 생성한다.
+- 하네스가 각 run을 검증하고 유효한 결과를 compacted artifacts(union, 자동 채택 없음)와 review_queue로 정리한다.
+- 하네스가 run-local ID를 canonical ID로 remap하고 provenance를 보존한다.
+- 별도 read-only verifier-agent가 `ai_judgement` trace link를 복수 실행으로 검토하고, 그 제안과 불일치를 원본 link와 분리해 저장한다.
+- 사람이 마지막에 compacted artifacts, semantic verifier 제안, compacting 근거(`identity_basis`/`support`/`variants`), 무결성 제외 내역, findings, report를 검토한다.
+- 실제 과제 1건에서 `extract -> compact -> verify -> check -> report -> review -> gate -> materialize-review`가 실행되며, `review`에서 `override` 액션 1건 이상이 reviewed artifact에 materialize된다.
+- final review 이전 finding은 provisional이며, 외부 blocking 판정은 `gate`에서만 발생한다.
+- 동일한 compacted artifacts와 semantic verification artifacts에 대해서는 agent runner 사용 여부와 무관하게 findings/report가 동일하다.
+- mock runner contract test가 통과하여 framework-agnostic protocol 경계를 확인한다. 실제 다른 framework 연동 실증은 후속 MVP에서 수행한다.
+- 모든 CLI 명령이 `--output json` 모드에서 agent-consumable 출력 계약(§8.1)을 만족한다.
+
+즉, agent runner 없는 Phase 0은 기반 공사이며, 복수 candidate-generation/verifier run의 검증·compacting과 최종 human review까지 이어지는 실행이 없는 상태는 최종 PoC 완료가 아니다.
+
+---
+
+## 15. 변경 이력
+
+### v1.32 (2026-06-07)
+
+핵심 변경: **`extract` source snapshot 자동 생성을 초기 구현 계약으로 확정**.
+
+- **CLI 동작**: `extract --source-manifest`가 생략되면 `--out-dir`의 sibling
+  `source_snapshot/`에 spec/rubric snapshot과 `manifest.yaml`을 생성한다. 예:
+  `--out-dir work/runs` → `work/source_snapshot/manifest.yaml`.
+- **명시 manifest 우선**: `--source-manifest`가 주어지면 해당 manifest를 그대로 쓰고
+  자동 snapshot 생성을 수행하지 않는다.
+- **문서 ID 계약**: 자동 manifest는 `DOC_SPEC` / `DOC_RUBRIC`를 사용해 기존 fixture와
+  runner 후보의 `source_ref.document_id` 계약을 유지한다.
+- **Tool side-effect 결정**: read-only tool 정책을 채택하고, propose 계열은 파일에 직접
+  쓰지 않는다. runner가 collect 후 candidate artifact를 일괄 출력한다.
+- **SDK runner 결정 보류**: credential, 샘플 assignment, raw trace 보관/마스킹 정책은
+  `docs/guidelines/sdk_runner_decisions.md`에 별도 checklist로 정리하고 추후 결정한다.
+- **Publication mirror 순서**: bilingual mirror / README EN-KO flip은 모든 작업 후
+  publication freeze 시점까지 계속 defer한다.
+
+### v1.31 (2026-06-04)
+
+핵심 변경: **final review materialization 명령 계약 확정.**
+
+- `gate`는 계속 외부 pass/fail/pending verdict만 산출하고 파일을 쓰지 않는다고
+  명시했다. Final review decision을 artifact에 반영하는 책임은 새
+  `materialize-review` 명령으로 분리한다.
+- `materialize-review`의 초기 범위를 trace_link status/provenance materialization과
+  review_queue status materialization으로 한정했다. `target_type: finding`은 `gate`
+  판정 입력으로만 사용하며, spec_item/rubric_item materialization은 후속 범위다.
+- Trace link materialization key는 `{trace_link_id}`만 허용하고, 이 ID는
+  `id_map.yaml`의 `entity_type: trace_link` canonical ID로 매칭한다고 고정했다.
+  `{rubric_id, spec_ids}`는 identity_basis 변경 시 모호할 수 있어 materialization key로
+  쓰지 않는다.
+- Trace link action mapping을 확정했다: `accept -> human_accepted`,
+  `override -> human_overridden + human_override source`, `hold -> no artifact change`,
+  `rerun_requested -> rerun_requested`.
+- Review queue action mapping을 확정했다: `accept`/`override -> resolved`,
+  `hold -> held`, `rerun_requested -> rerun_pending`.
+- `override` 사용 범위 결정을 닫았다. 단순 오타·누락 수정만 materialize하고, 의미적
+  판단 변경은 원칙적으로 `rerun_requested`를 사용한다.
+
+### v1.30 (2026-05-29)
+
+핵심 변경: **deep candidate Rule 0 diagnostic → integrity_status 3-way routing 확정.**
+
+- §5.4 enum에 `source_grounding_mismatch`를 추가했다. source document/hash,
+  `source_ref` document/span, item text/source quote snapshot mismatch, evidence
+  source_ref containment, evidence quote snapshot-span mismatch는 이 상태로 격리한다.
+- `quote_mismatch`는 `verification_mode: token_sequence` evidence_quote가 referenced
+  spec_item.text의 substring이 아닌 경우로 좁힌다. spec/rubric/evidence source
+  grounding 실패는 더 이상 `quote_mismatch`로 라벨링하지 않는다.
+- deep Rule 0 대표 상태 precedence를
+  `invalid_reference > source_grounding_mismatch > quote_mismatch`로 명시했다. 여러
+  diagnostic 계열이 동시에 발생하면 더 근본적인 reference/completeness 문제를 먼저
+  triage하고, 상세 diagnostic은 모두 errors에 보존한다.
+
+### v1.29 (2026-05-29)
+
+핵심 변경: **deep candidate Rule 0 integrity 헬퍼 추가.**
+
+- `classify_deep_candidate_run_integrity` 헬퍼를 추가해 structural integrity를 통과한
+  normalized candidate run을 기존 Rule 0 engine으로 검사한다. 내부 reference와
+  source/quote grounding diagnostic이 없을 때만 모든 candidate 복사본을
+  `validated`로 승격한다.
+- candidate 내부 dangling rubric/spec reference, evidence quote spec mismatch,
+  missing/empty evidence quote, source_ref 문서/span 오류 등 reference 계열 Rule 0
+  diagnostic은 run을 `invalid_reference`로 격리한다. token-sequence quote mismatch,
+  source snapshot span quote mismatch, spec/rubric source quote mismatch 등
+  quote/source grounding 계열 diagnostic만 있을 때는 `quote_mismatch`로 격리한다.
+- `ai_judgement` evidence quote는 기존 Rule 0 계약과 동일하게 spec text substring
+  검사를 요구하지 않는다. 단, 별도 `source_ref`가 제공된 경우에는 snapshot span
+  grounding 검사는 유지한다.
+- 이 슬라이스는 helper-level 구현이다. `extract`, `compact`, invalid-run
+  `review_queue` 보존, runner failure recovery, 실제 SDK runner는 여전히 후속 범위다.
+
+### v1.28 (2026-05-29)
+
+핵심 변경: **candidate integrity staged model 정합화.**
+
+- §5.4의 `integrity_status`를 staged model로 명시했다. `structurally_validated`는
+  candidate schema, audit trace schema, candidate `agent_run_id` → audit trace
+  `run_id` 귀속 검사를 통과한 중간 상태이며 compacting 대상이 아니다. `validated`는
+  내부 reference, quote/source grounding까지 포함한 deep candidate Rule 0를 모두
+  통과한 뒤에만 부여한다. `trace_attribution_error`를 추가해 audit trace 귀속 누락을
+  `invalid_reference`(candidate 내부 dangling reference)와 분리했다.
+- `classify_candidate_run_integrity`는 더 이상 `validated`를 emit하지 않고 clean
+  structural run을 `structurally_validated`로 표시한다. Deep Rule 0와 compacting은
+  후속 슬라이스에서 `structurally_validated` run을 입력으로 받아 `validated` 또는
+  `invalid_reference` / `quote_mismatch`로 승격·격리한다.
+
+### v1.27 (2026-05-29)
+
+핵심 변경: **normalized candidate run integrity 분류 헬퍼 추가.**
+
+- `classify_candidate_run_integrity` 헬퍼를 추가해 normalized candidate artifacts와
+  audit trace를 compacting 전 structural integrity 상태로 분류한다. candidate/audit
+  trace schema 오류는 `schema_violation`, audit trace run attribution 누락은
+  `trace_attribution_error`, 오류가 없는 structural run은 모든 candidate를
+  `structurally_validated`로 표시한다. 이 헬퍼는 원본 candidate 문서를 mutate하지 않고
+  상태가 반영된 복사본과 오류 목록을 반환한다. 아직 Rule 0 deep reference validation,
+  `validated` 승격, `blocked_by_runner_error` recovery, review_queue invalid-run entry
+  생성, compacting은 후속 범위다.
+
+### v1.26 (2026-05-29)
+
+핵심 변경: **runner artifact → candidate artifact 정규화 헬퍼 추가.**
+
+- `AgentRunResult.artifacts`의 fixture-shaped `spec_items` / `rubric_items` /
+  `trace_links`를 `candidates.schema.json`에 맞는 `spec_item_candidates` /
+  `rubric_item_candidates` / `trace_link_candidates` 문서로 변환하는
+  `normalize_result_candidates` 헬퍼를 추가했다. 정규화는 `agent_runner`,
+  `agent_run_id`, 초기 `integrity_status: pending_check`를 부여하고, fixture replay
+  산출물에 포함될 수 있는 compacting-only 필드(`support`, `identity_basis`,
+  `variants`, trace review/provenance 필드)는 candidate `proposed_item`에서 제거한다.
+  이는 mock runner contract test를 candidate schema 및 audit-trace attribution helper와
+  연결하는 작은 normalization 표면이며, 실제 `extract`, SDK runner, compacting,
+  failure recovery 정책은 여전히 후속 범위다.
+
+### v1.25 (2026-05-29)
+
+핵심 변경: **candidate audit-trace run attribution 검증 헬퍼 추가.**
+
+- §10.2의 "모든 candidate의 `agent_run_id`가 audit trace에 존재해야 한다"
+  계약을 `validate_candidate_audit_trace` 헬퍼와 회귀 테스트로 구현했다. 이 검증은
+  candidate schema와 audit trace event schema 오류를 함께 노출하고, spec/rubric/
+  trace candidate 세 배열의 `agent_run_id`가 audit trace의 `run_id` 집합에 존재하는지
+  확인한다. 이는 runner output normalization 이후의 run integrity check에서 재사용될
+  선행 경계이며, `extract`, 실제 SDK runner, compacting, runner failure recovery 정책은
+  여전히 후속 범위다.
+
+### v1.24 (2026-05-29)
+
+핵심 변경: **candidate artifact schema foundation 등록.**
+
+- §5.4의 candidate artifact 계약을 `candidates.schema.json`으로 구현 가능한
+  Phase 2 입력 표면에 올렸다. 스키마는 run 격리 산출물의 세 배열
+  (`spec_item_candidates`, `rubric_item_candidates`, `trace_link_candidates`)과
+  공통 provenance 필드(`candidate_id`, `agent_runner`, `agent_run_id`,
+  `integrity_status`)를 검증한다. 이는 candidate-to-audit-trace cross-reference,
+  run integrity check, compacting 구현의 선행 계약이며, compacting 알고리즘이나
+  runner failure recovery 정책은 아직 선택하지 않는다.
+
+### v1.23 (2026-05-28)
+
+핵심 변경: **agent audit trace role payload 경계 명시화.**
+
+- §5.4.1에 turn event의 role별 payload 요구를 명시했다. `role: system`은
+  `content_ref`, `role: agent`는 `tool_call`, `role: tool`은 `name`과
+  `result_ref`를 요구한다. 이는 `agent_trace.schema.json`이 bare
+  `{run_id, turn, role}` 이벤트를 허용하지 않도록 하는 계약 강화다.
+
+### v1.22 (2026-05-28)
+
+핵심 변경: **trace link canonical ID lineage 명시화.**
+
+- §5.0에 trace link ID lineage 경계를 추가했다. Trace link 내부의
+  `rubric_id` / `spec_ids`는 spec/rubric item `id_map`을 따라 remap되는
+  종속 reference지만, trace link entry 자체도 compacted artifact로서
+  `support` / `identity_basis` / `variants`와 review 대상성을 갖는다. 따라서
+  `id_map.entity_type`은 `spec_item`, `rubric_item`, `trace_link`를 모두 허용한다.
+  이는 v1.21 이후 추가된 `id_map.schema.json`의 `trace_link` enum을 정본
+  계약 안에 위치시키는 명시화다.
+
+### v1.21 (2026-05-28)
+
+핵심 변경: **policy invalid_input source를 명시적으로 확장.**
+
+- §8 905-911의 policy completeness 단락에 한 줄 추가: policy 파일이 schema
+  validation을 통과하지 못하는 경우(예: `rules.optionality_mismatch`가 dict가
+  아닌 type)도 `fix_input` recovery에 포함된다. 이는 v1.20 검증의 강화 follow-up
+  중 발견된 "두 다른 코드 경로가 같은 envelope outcome으로 수렴하지만 메시지가
+  다른" 케이스를 계약 안에 위치시킨다. 동작 변경 아님(코드는 v1.20 이래 동일).
+
+### v1.20 (2026-05-28)
+
+핵심 변경: **Phase 0 policy completeness를 입력 계약으로 확정.**
+
+- **`--policy` 필수화**: `check`는 `--policy` 누락 시 `invalid_input`/exit `2`와
+  next_action `provide_policy`를 반환한다. argparse `required=True`는 쓰지 않아
+  caller agent가 구조화된 JSON envelope으로 복구할 수 있게 한다.
+- **Rule 3 threshold 필수화**: schema-valid policy라도
+  `rules.optionality_mismatch.weight_threshold`가 없으면 `invalid_input`/exit `2`다.
+  Rule 3이 조용히 비활성화되어 optionality mismatch를 놓치는 경로를 제거했다.
+
+### v1.19 (2026-05-28)
+
+핵심 변경: **review draft writer의 입력/덮어쓰기 안전장치를 보강.**
+
+- **status guard**: `review`는 `findings.status`가 `success` 또는 `provisional_findings`인 경우만 draft를 생성한다. Rule 0 invalid 결과가 빈 findings라는 이유로 gate success까지 흐르는 것을 막되, `gate`는 수동 복구 final_review 소비자 역할로 남긴다.
+- **overwrite guard**: `review`는 기존 `<out-dir>/review.yaml`을 기본적으로 덮어쓰지 않는다. 명시적 `--force`가 있을 때만 재생성한다.
+- **versioning boundary**: timestamp/versioned draft 자동 생성은 별도 정책/lineage 결정이 필요하므로 이번 slice에서는 넣지 않는다. caller가 새 `--out-dir`을 선택해 version을 분리한다.
+
+### v1.18 (2026-05-28)
+
+핵심 변경: **Phase 0 `review` draft writer를 정의하고 구현에 진입.**
+
+- **review 역할 제한**: `review`는 final 판단자가 아니라 `final_review/review.yaml` 초안을 생성한다. 모든 finding decision은 기본 `hold`이며, 사람 reviewer가 이후 `accept`/`override`/`hold`/`rerun_requested`로 수정한다.
+- **최소 key 재사용**: draft decision도 v1.17 §5.6의 canonical finding key만 기록한다. `message`, `evidence`, 본문/제목/설명 payload는 복사하지 않는다.
+- **안전한 gate 연동**: draft 그대로 `gate`에 전달하면 finding이 있는 경우 `pending_review`, finding이 없는 경우 `success`가 된다.
+
+### v1.17 (2026-05-28)
+
+핵심 변경: **gate v1.16 검증의 조건부 합격 사유를 회귀와 계약으로 보강.**
+
+- **회귀 매트릭스 보강**: direct blocking confirm (`optionality_mismatch`, `mandatory_spec_bonus_only_traced`), nonblocking confirm (L1/L5), `hold`/`rerun_requested`, duplicate decision, missing key field, unknown finding type, invalid final_review schema, missing/invalid findings input, duplicate finding key를 named regression으로 잠갔다.
+- **입력 무결성 명문화**: `findings.json` 내부에서 같은 canonical gate target key가 중복되면 `invalid_input`/exit `2`로 처리한다고 §5.6에 명시했다.
+- **투기적 인자 제거**: `gate`는 정책 파일을 읽지 않으므로 `gate --policy` 인자를 제거하고 예시 명령에서도 삭제했다.
+
+### v1.16 (2026-05-28)
+
+핵심 변경: **`gate` 진입을 위해 final review가 provisional finding을 닫는 최소 매핑 계약을 확정.**
+
+- **최소 key 계약**: `target_type: finding`을 추가하고 finding type별 `target_key`를 생성 식별자만으로 제한했다. `message`, `evidence`, 원문 본문/제목/설명은 매칭 key에서 제외해 review record 비대화와 설명 payload drift를 방지한다.
+- **gate 판정 계약**: missing decision 또는 `hold`/`rerun_requested`는 `pending_review`/exit `0`, stale/중복 decision은 `invalid_input`/exit `2`, confirmed blocking finding은 `fail`/exit `1`로 확정했다.
+- **Rule 1 승급 경로**: `possible_orphan_scored_rubric_item` 또는 `unconfirmed_trace_coverage`를 reviewer가 accept하면 `gate`가 `orphan_scored_rubric_item` (`high`, `confirmed`)으로 승급한다.
+- **blocking 범위 제한**: v0에서 exit `1`을 만드는 confirmed finding은 `orphan_scored_rubric_item`, `optionality_mismatch`, `mandatory_spec_bonus_only_traced`로 한정한다. Rule 2/L1/L5 confirmed finding은 기록되지만 blocking verdict는 아니다.
+
+### v1.15 (2026-05-27)
+
+핵심 변경: **Rule 3 Optionality Consistency 출력 계약을 잠그고 구현 슬라이스에 진입.**
+
+- **출력 계약 확정**: optional spec에만 trace된 scored rubric의 weight가 `rules.optionality_mismatch.weight_threshold` 이상이면 `optionality_mismatch` (`high`, `provisional`)을 발화하고, caller action은 `review_optionality_mismatch`로 고정한다.
+- **Owner 결정 근거 이행**: finding literal은 기존 fixture와 policy namespace인 `optionality_mismatch`를 그대로 사용해 구성·검증·출력의 용어를 일치시킨다.
+- **구조적 경계 명시**: Rule 3은 `semantic_status`를 보지 않으며, must/informational이 섞인 trace, bonus/qualitative rubric, 미추적 scored rubric, threshold 미만 weight는 발화 대상이 아니다.
+- **회귀 fixture**: `fixtures/optionality_mismatch/`는 high optional-only, threshold 미만, must/informational 혼합, non-scored role, pending-status 경계를 검증한다.
+
+### v1.14 (2026-05-27)
+
+핵심 변경: **Rule 2 Required Spec Coverage 출력 계약을 잠그고 구현 슬라이스에 진입.**
+
+- **출력 계약 확정**: `requirement_level == must`이면서 scored rubric trace가 없는 spec에는 `uncovered_must_spec_item` (`medium`, `provisional`)을 발화하고, caller action은 `review_uncovered_must_spec`으로 고정한다.
+- **Owner 결정 근거 이행**: Rule 2는 rubric orphan이 아니라 spec coverage gap이므로 `_spec_item` 기반 `uncovered_*` naming family를 사용한다. 이는 HANDOFF에 기록된 owner 권고를 slice merge 전 canonical plan에 반영한 것이다.
+- **구조적 경계 명시**: Rule 2는 `semantic_status`를 보지 않는다. pending scored trace는 coverage이며, bonus-only 또는 qualitative-only must trace는 uncovered finding을 남긴다.
+- **회귀 fixture**: `fixtures/uncovered_must_spec/`는 uncovered, pending-scored-covered, bonus-only, qualitative-only, optional/informational 경계를 함께 검증한다.
+
+### v1.13 (2026-05-27)
+
+핵심 변경: **Rule L6의 bonus-only 경계를 payload 및 review contract와 일치시키고 구현에 진입.**
+
+- **Owner 결정 근거**: `qualitative`는 점수화가 아니라 평가 관찰 영역이며, 가산으로 책정될지 여부는 후속 판단이다. 따라서 L6는 명시적으로 `bonus`만으로 must spec을 평가하는 설계 위험을 잡고, qualitative-only 또는 bonus+qualitative 정합성 문제는 Rule 2 계열의 별도 규칙으로 분리한다.
+- **정본 정합화**: §6 Rule L6 조건의 `evaluation_role != scored (bonus 또는 qualitative)` 문구를 모든 trace rubric이 `evaluation_role == bonus`인 경우로 좁혀 `mandatory_spec_bonus_only_traced`, `bonus_rubric_ids[]`, `mandatory_spec_bonus_review` 계약과 일치시켰다.
+- **회귀 경계**: qualitative trace가 하나라도 포함된 must spec은 L6에서 미발화하는 over-strict C 가드를 추가한다.
+
+### v1.12 (2026-05-27)
+
+핵심 변경: **Phase 0 lint safeguard queue 예외를 명시하고 Rule L1 구현 계약을 닫음.**
+
+- **정본 정합화**: v1.11의 "review_queue 파일 생성은 Phase 2부터" 문구와 Rule L1/L6의 paired queue entry 생성 요구 충돌을 해소했다. 일반 compacting/verifier queue는 여전히 Phase 2 범위이나, deterministic lint safeguard entry는 Phase 0 `check`가 finding과 함께 기록한다.
+- **CLI 계약**: `check --review-queue-out <path>`를 lint safeguard artifact의 명시 경로로 추가했다. 생략 시 `--out` 옆 `review_queue.json`으로 기록하며, Rule 0 clean 실행은 finding이 없더라도 빈 queue를 덮어써 stale 항목을 방지한다. envelope는 informational `review_queue_path` / `review_queue_count`를 제공한다.
+- **Phase 2 composition 경계**: 현 Phase 0 출력은 lint safeguard 전용이다. compact/verifier queue와의 단일 파일 통합은 해당 단계 구현 시 기존 entry 보존/갱신 정책과 함께 추가하며, 그 전에 공유 경로로 덮어쓰지 않는다.
+- **문서 우선순위 정정**: §1에 이미 채택된 `ideation_assessment_harness_v2.2.md`를 v2.1 앞의 ideation 정본으로 명시해 HANDOFF와 plan 내부 참조를 일치시켰다.
+- **Owner 결정 근거**: L1/L6는 finding만 남기고 안전장치 queue를 잃으면 reviewer가 정당한 심화인지 판정할 경로가 사라진다. owner는 L1 구현 진행 시 이 paired queue를 Phase 0 예외로 두는 방향을 승인했다.
+
+### v1.11 (2026-05-27)
+
+핵심 변경: **ideation v2.2 (Rubric Lint Rules)의 v1.11 승격분을 §6 / §5.6 / §5.7에 반영. 코드 변경 없음 (spec-only).**
+
+- **§6 신규 항목 3개**: Rule L1 (`double_scored_spec`, medium/provisional), Rule L5 (`bonus_grades_mandatory_only`, medium/provisional), Rule L6 (`mandatory_spec_bonus_only_traced`, high/provisional) — 모두 lint 가족(L-DET). ideation v2.2 §4 본문과 정합하며 Rule 1과 같은 슬라이스 패턴(under/over-strict 가드, fixture 공유)으로 구현 진입.
+- **§6 "Lint 가족 공통 메모" 신설**: Rule 0 선행 의존, `semantic_status` 비참조(L-DET), `check`의 `blocking_count` 미가산, `next_actions` 명명을 한 자리에 정리.
+- **§5.6 `drift_observations[]` field 신설**: ideation v2.2 §5 Rule L8 자동 검출 기각의 짝. trace_link는 통과했지만 채점 기준이 spec과 어긋난 경우 final reviewer가 수동 기록. `rubric_id` / `linked_spec_ids` / `observed_drift_summary` / `severity` / `recommended_action` 5개 field. `check`/`gate` 결과 코드와 무관.
+- **§5.7 `review_queue` entry type 2개 신설**: `double_scoring_review` (Rule L1 짝), `mandatory_spec_bonus_review` (Rule L6 짝). 각 finding의 심화 확인 장치로 자동 생성됨. 기존 5개 type과 같은 schema/lifecycle 따름.
+- **승격 범위 결정 근거**: ideation v2.2 §7 표(2026-05-27 개정). 초안에서 L1+L5만 v1.11 후보였으나 L6 안전장치 구체 형태가 L1과 동일 패턴(payload + review_queue entry)으로 결정되면서 mechanism 일관성 + fixture 공유 이득이 분리 비용을 넘어 L6도 v1.11에 포함.
+- **구현 영향**: rules.py / cli.py / schemas는 본 plan 갱신 시점에 변경 없음. plan v1.11이 잠긴 뒤 별도 슬라이스 (L1 → L5 → L6)로 진입. 각 슬라이스는 finding payload schema 확장, review_queue.json 갱신, fixture 추가, two-directional 가드 테스트를 동반.
+- **Owner 결정 근거 (보존)**: lint 가족 명명 `Rule L*`, finding type literal은 ideation §3/§4 그대로(`double_scored_spec` 등 가독성 최우선), L1 심화 확인 장치는 payload+review_queue 양쪽, L6 안전장치도 L1과 동일 mechanism, L8은 자동 검출 비범위지만 수동 기록은 `drift_observations[]`로 audit 보존.
+
+### v1.10 (2026-05-26)
+
+핵심 변경: **§6 Rule 1 bonus 처리에 finding type 문자열을 명시 + naming convention 메모**.
+
+- v1.9까지의 §6 Rule 1은 "bonus orphan은 informational finding"이라고 적었으나 `type` 문자열을 지정하지 않았다. Phase 0 iteration 2 slice 3 구현에서 `orphan_bonus_rubric_item`을 사용하게 되어, 이 type 이름과 선택 근거를 plan 본문에 박아 다음 작업자가 같은 convention을 따르도록 한다.
+- 추가된 convention: Rule 1의 no-trace 분기는 `{possible_orphan_scored, orphan_bonus}_rubric_item` 형태. `possible_` prefix는 `gate`가 confirmed orphan으로 승급할 수 있는 scored 분기에만 붙인다. bonus/qualitative는 승급 경로가 없으므로 prefix를 생략한다.
+- bonus 처리 조건도 명시: trace link가 없는 경우만 finding이며, semantic_status는 확인하지 않는다.
+
+### v1.9 (2026-05-26)
+
+핵심 변경: **§6 Rule 1의 `unconfirmed_trace_coverage` 분기를 §5.3.1 상태표와 정합화**.
+
+- **이유**: v1.8까지의 §6 Rule 1은 `unconfirmed_trace_coverage` 발화 대상으로 `pending_verification` / `agent_supported` / `agent_rejected` / `agent_uncertain`만 열거했지만, §5.3.1 상태표는 `human_rejected`와 `rerun_requested`도 "coverage 아님"으로 분류한다. 두 절이 어긋나서, post-review non-coverage 상태가 `check` 단계에서 어떤 finding을 emit하는지 spec gap이 있었다. 구현 (Phase 0 iteration 2 slice 2)이 §5.3.1과 자동화 흐름의 의도에 맞게 두 상태도 medium provisional로 처리하고 있었으나, plan 본문은 그대로였다.
+- **§6 Rule 1 본문 갱신**: medium provisional 분기를 "어떤 link도 `human_accepted` / `human_overridden`이 아닌 경우"로 일반화하여 §5.3.1과 정합. 셋째 분기 (confirmed orphan)는 `gate`가 final review 이후 medium provisional을 high confirmed로 승급한다는 흐름을 명시.
+- **경계 적용 범위 명시**: final-coverage 경계 (`{human_accepted, human_overridden}`)는 Rule 1과 `gate`에서만 사용한다. Rule 2/3은 `semantic_status`와 무관하게 §6의 본문 조건만으로 finding을 발화한다 (HANDOFF Active Decisions 정정과 정합).
+- **구현 영향 없음**: rules.py / cli.py / 테스트는 이미 v1.9 본문과 일치한다. 본 v1.9는 plan 본문이 구현·§5.3.1과 정합하도록 spec gap을 닫는 변경이다.
+
+### v1.8 (2026-05-26)
+
+핵심 변경: **`--source-manifest`를 Phase 0 `check`의 필수 인자로 확정**.
+
+- **이유**: §5.0 ("PoC는 DB/RAG 없이도 원문 grounding을 검증해야 한다"), §5.1 ("Rule 0는 snapshot 원문에 대한 일치도 확인한다"), §11 ("Phase 0 산출물: source snapshot manifest와 item/quote `source_ref`") 세 절이 manifest를 입력 계약의 필수 요소로 못박는다. v1.7까지의 §8 CLI 예시가 manifest를 생략하고 있어 내부 충돌이 있었으나, 자동화 흐름은 `extract` 단계에서 manifest를 자동 생성하는 모델이므로 "필수" 쪽이 spec 정신과 운영 흐름 모두에 정합한다.
+- **CLI 동작**: `--source-manifest` 누락 시 argparse는 통과시키되 `_cmd_check`가 즉시 `status=invalid_input` / exit `2` / 진단 코드 `source_manifest_required` (severity `high`) / next_action `provide_source_manifest`를 반환한다. 이렇게 처리해야 caller agent가 stdout JSON envelope을 읽고 자동 복구할 수 있다 (argparse `required=True`는 usage text를 stderr로 내보내어 contract 위반).
+- **§8 예시 갱신**: §8 Phase 0 CLI 예시에 `--source-manifest` 인자 추가.
+- **fixture 갱신**: `fixtures/orphan_scored_rubric/`과 `fixtures/reference_integrity/`에 `source/spec.md`, `source/rubric.md`, `source_manifest.yaml`을 추가하여 grounded 입력으로 변환. `clean_assignment`는 이미 grounded.
+
+### v1.7 (2026-05-25)
+
+핵심 변경: **semantic verifier-agent를 권고안에서 최종 PoC 필수 단계로 채택**.
+
+- **검증 역할 분리**: candidate-generation agent와 별도 read-only semantic verifier-agent를 분리하고, verifier도 복수 run으로 실행한다.
+- **보존 경계**: verifier 제안은 compacted trace link를 덮어쓰지 않고 `semantic_verifications.yaml`과 run 기록으로 저장한다.
+- **실행 흐름 확정**: 최종 흐름을 `extract -> compact -> verify -> check -> report -> review -> gate`로 확정한다.
+- **사람의 역할 유지**: verifier의 `agent_supported`/`agent_rejected`/`agent_uncertain`은 제안이며, final coverage 및 외부 판정은 human review와 `gate`에서만 확정된다.
+
+### v1.6 (2026-05-25)
+
+핵심 변경: **검사 결과와 외부 판정을 분리하고, 원문 grounding 및 canonical ID 경계를 명시**.
+
+- **판정 경계**: `check` finding은 final review 전 `provisional`이며 외부 blocking 판정이 아님. final review record를 읽는 `gate` 명령만 confirmed pass/fail/pending 결과를 반환한다.
+- **semantic 상태**: trace link에 `semantic_status` lifecycle을 추가. `ai_judgement` link는 human-accepted/overridden 전에는 final Rule 1 coverage로 취급하지 않는다.
+- **권고 단계**: semantic 검토 부담을 줄이기 위해 별도 verifier-agent run이 `agent_supported` 등 상태를 제안하는 흐름을 Phase 2/3 미결정 사항으로 추가.
+- **원문 grounding**: DB/RAG 없이 immutable document snapshot, `sha256`, line/span `source_ref`로 item과 quote를 원문에 anchor한다.
+- **ID lineage**: 독립 run의 local ID를 compact 과정에서 canonical ID로 remap하고 `id_map`을 보존한다. 향후 프로젝트/버전 관리 확장 경계를 마련한다.
+- **review 상태**: `hold`와 `rerun_requested`를 resolved로 닫지 않고 `held`/`rerun_pending` 상태로 보존한다.
+- **CLI/schema 보완**: `gate.py`, source/id/compacting schema를 모듈 계획에 추가하고, stable `next_actions`는 항상 배열로 출력하도록 정리했다.
+
+### v1.5 (2026-05-25)
+
+핵심 변경: **검증 모드 entry별 분기 + CLI 안정 contract 분리 + 정책 파일 통합 + 보조 명세 보강**.
+
+- **verification_mode 도입** (§5.3, §6 Rule 0): evidence_quote별로 `token_sequence`(strict substring) vs `ai_judgement`(reference integrity만 + review_queue로) 분기. PoC default `ai_judgement`. 정량 검증 가능한 명시적 marker만 opt-in으로 `token_sequence`.
+- **Rule 0 findings.json 처리 명세화** (§6 Rule 0): invalid 시에도 `findings.json` 항상 생성하여 caller agent의 파일 존재 가정 보호. 내용은 `{"status":"invalid_input","findings":[],...}`.
+- **review_queue entry schema 신설** (§5.7): 5종 entry type — `invalid_run` / `ai_judgement_pending` / `identity_collision` / `low_support` / `semantic_disclosure`. resolved는 삭제 없이 status 표시.
+- **Mock runner 자리 신설** (§7): `agent_runners/mock.py`. fixture YAML 결정적 반환, protocol contract test 전용. `manual.py`(사람 입력용)와 역할 분리.
+- **정책 파일 통합** (§7, §8): `config/policy.yaml` 단일 파일에 `rules`/`compacting`/`runs`/`verification` 섹션 통합. CLI는 `--policy` 단일 flag. v1.4의 `--identity-basis-config` 제거.
+- **CLI Stable Core / Introspection** (§8.1.1, §8.1.2): stable core 4개 필드 명시(`status`, `exit_code`, `command`, `next_actions`) + informational 분리. `assessment-harness schema --command <name>` introspection 명령으로 caller agent self-discovery 지원.
+- **§13 결정 정리**: Phase 0 전 결정 3건 모두 채택 표시. 구현 중 조정 사항에 verification mode/informational 승격 정책 추가.
+
+### v1.4 (2026-05-25)
+
+핵심 시프트: **aggregation의 의미가 "분류된 합집합"에서 "audit 가능한 compacting"으로 재정의**. 자동 채택/분류 없음. 단일 run 발견 entry도 보존되며, compacting 자체의 타당성도 review 대상.
+
+- **개념 변경**: `aggregation` → `compacting`. union 기반, 자동 분류·채택 없음. `consolidated artifacts` → `compacted artifacts`로 용어 통일.
+- **데이터 계약**: §5.1/5.2/5.3에 `support`(`total_valid_runs`, `found_in_runs`), `identity_basis`, `variants` 추가. trace_link의 `consolidation_status` 제거.
+- **`integrity_status` enum 명시** (보강 A): `pending_check` / `validated` / `invalid_reference` / `quote_mismatch` / `schema_violation` / `blocked_by_runner_error` (§5.4).
+- **§5.6 Final Review Record 신설** (보강 D): review action 4가지(`accept`/`hold`/`rerun_requested`/`override`), `override`는 sources에 `kind: human_override`로 audit.
+- **명명 통일** (보강 B): "disagreement queue" 표현 모두 `review_queue`로 통일.
+- **partial run failure 자리 마련** (보강 C): §13 Phase 2/3 결정 3번에 `min_valid_runs`, 미달 시 동작 명시.
+- **CLI**: `aggregate` → `compact` 명령으로 변경. `--identity-basis-config` flag 추가. `--consolidated-dir` → `--compacted-dir`.
+- **모듈**: `aggregation.py` → `compacting.py`, `aggregation.schema.json` → `compacting.schema.json`, `test_aggregation.py` → `test_compacting.py`.
+- **§13 결정 사항 정리**: quorum/합의 임계값 제거(자동 채택 없음). identity_basis 알고리즘 후보군, 복수 run 형태(동일 반복), reproducibility 범위, override 사용 범위 추가.
+- **흐름 다이어그램** (§4): compacting 단계 명시, "정답 없음, 모든 entry 보존" 의미 반영. aggregation reproducibility는 미보장(같은 compacted YAML → 같은 findings만 보장).
+- **Phase 2/3 작업** 재정렬: compacting 구현, identity_basis 알고리즘 선정, `override` 시연 추가.
+
+### v1.3 (2026-05-25)
+
+핵심 정리: **단일 agent run의 후보를 사람이 중간 승인하는 흐름이 아니라, 복수 agent run을 검증·취합한 뒤 사람이 최종 결과만 review하는 하네스**로 정의한다.
+
+- **목표/경계 변경**: 중간 `human approval`을 제거하고 `multi-run -> integrity check -> aggregation -> deterministic validation -> final human review` 흐름으로 교체.
+- **데이터 계약**: `approved` 중심 용어를 `consolidated`/`reviewed` 중심으로 교체. candidate는 `integrity_status`로 실행별 검증 상태를 갖는다.
+- **무결성 이중 처리**: Rule 0 위반은 최종 리뷰용 diagnostic에 남기면서 해당 입력/run은 invalid로 제외하고 단일 `check`에서는 exit `2`로 처리.
+- **trace 정책**: raw trace와 audit trace를 분리하며, 내부 추론 생성을 요구하지 않고 관측 가능한 기록 및 SDK 제공 원본의 보호 저장만 다룬다.
+- **CLI 흐름**: `extract --runs N -> aggregate -> check -> report -> review`로 변경.
+- **portability 범위**: PoC는 mock runner로 protocol 분리를 확인하고, 실제 두 번째 framework 연동 실증은 후속 MVP로 이관.
+- **남은 핵심 결정**: aggregation quorum/합의 기준, 최종 review 결과 상태, raw trace 보관 정책.
+
+### v1.2 (2026-05-25)
+
+핵심 시프트: **본 도구의 1차 user는 AI 에이전트**이며, LLM 통합 부분은 **framework-agnostic agent runner protocol** 위에 구현한다. PoC default는 Claude Agent SDK, 후속 통합은 단일 모듈 교체로 가능.
+
+- **원칙 추가**: §3.1에 agent-as-user 원칙과 framework portability 원칙 명시.
+- **흐름 재정의**: §4 최종 흐름의 진입점에 caller agent를 명시. "LLM adapter"가 아닌 "agent runner (multi-turn, tool use)"로 변경. `agent_trace.jsonl` 산출물 추가.
+- **데이터 계약**: candidate에 `agent_runner`, `agent_run_id` 필드 추가. `source_model`은 제거. §5.4.1 `agent_trace.jsonl` schema 신설.
+- **모듈 구성**: `adapters/` → `agent_runners/` 명명. `tools/` 디렉토리 신설 (framework-agnostic tool 정의). `cli_output.schema.json`, `agent_trace.schema.json` 추가. Phase 0에서 `test_cli_output_contract.py` 포함.
+- **CLI 계약**: §8.1 agent-consumable 출력 표준 신설 — 종료 코드(0/1/2/3), `--output json`, stdout/stderr 분리, actionable error, `next_actions` hint.
+- **Phase 2 재정의**: §9 Phase 2를 "Agent Runner & Candidate Generation"으로 개편. AgentRunner protocol, tool 집합, Claude SDK runner, framework portability contract test, agent_trace 저장, 회복 정책.
+- **Phase 3 보강**: caller agent 시연 시나리오, framework 교체 portability 증명, `--output json` 계약 통과 추가.
+- **테스트**: §10.2를 Agent Runner 계약 테스트로 개편. §10.3 CLI 출력 계약 테스트 신설. trace replay, partial output 격리 케이스 추가.
+- **남은 결정**: 7~9번 추가 (CLI schema 안정 범위, max_turns/cost ceiling, tool side-effect 정책).
+- **최종 완료 정의**: agent_trace 산출, framework portability contract test, CLI `--output json` 계약 통과를 완료 조건에 추가.
+
+### v1.1 (2026-05-25)
+
+교차 검토(상대 AI + 자체 검토) 반영. 주요 변경:
+
+- **데이터 계약**: `trace_links`에 `evidence_quotes`, `source`, `approved_by`, `approved_at` 추가 (§5.3). rationale 단독 신뢰의 위험을 객관 증거(spec 원문 발췌)로 보완.
+- **규칙**: Rule 0 (Reference Integrity) 신설, blocking high (§6). ID 중복/dangling reference/quote non-substring을 통합 검사.
+- **규칙 정책**: Rule 1의 bonus 처리 명시 (orphan 시 `informational`만, 차단 안 함), Rule 2 severity 근거 1줄 추가 (§5.2, §6).
+- **CLI**: `--policy` flag 추가, `policy.yaml`로 임계값 외부화 (§6, §8).
+- **모듈**: Phase 0에서 `llm_provider.py`, `test_llm_adapter_contract.py` 제외하고 Phase 2부터 생성 (§3.3, §7).
+- **데이터 계약 vs 파일 생성 분리**: `review_queue.json`은 schema/계약만 Phase 0에 정의하고 실제 파일 생성은 Phase 2부터 (§3.3, §4).
+- **게이트**: Phase 1 진입 조건에 자료 사용 권한 확인과 익명화 기준 합의 명시 (§9, §12).
+- **남은 결정**: trace_link rationale quality guard, evidence_quote substring 비교 정책, 거절 candidate retention 정책 추가 (§13).
+
+### v1.0 (2026-05-25)
+
+초안. v2.1 ideation을 PoC 구현 명세로 변환. 문서 우선순위 §1로 명시, `evaluation_role` 의미 계약 §5.2, Time Budget / Version Lock은 후속 규칙으로 분리 §6.

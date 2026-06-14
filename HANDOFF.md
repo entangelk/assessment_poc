@@ -11,6 +11,7 @@
 ## Current Status
 
 - Implementation plan is at v1.32 (`docs/planning/implementation_plan_assessment_harness_poc_v1.md`) and is the canonical implementation source of truth, ahead of `docs/planning/ideation_assessment_harness_v2.2.md` (revised in-place 2026-05-27, supersedes v2.1).
+- Publication mirror status (2026-06-14): the implementation plan now has a KO-active mirror at `docs/planning/implementation_plan_assessment_harness_poc_v1.ko.md` whose body matches the current Korean source. The full English canonical rewrite of the 1,825-line implementation plan is still pending; README links point to the Korean-source anchors until that translation is completed.
 - **Rule 0 is live**: source snapshot grounding, evidence completeness/reference-integrity checks, mandatory `--source-manifest`, and structured invalid-input recovery are implemented.
 - **Rule 1 is feature-complete** (plan v1.19 §6): `possible_orphan_scored_rubric_item`, `unconfirmed_trace_coverage`, and `orphan_bonus_rubric_item` are all implemented. The CLI exposes their review actions and provisional severity counts; slice 3.1 locks the public envelope/schema contract, including the bonus-only `(high=0, medium=0, informational=1)` boundary.
 - **Rule 2 is implemented** (plan v1.19 §6): `uncovered_must_spec_item` is emitted as medium/provisional when no `scored` rubric traces a `must` spec, with `review_uncovered_must_spec` exposed through `check`. It is structural only: pending scored traces cover, while bonus-only or qualitative-only traces do not.
