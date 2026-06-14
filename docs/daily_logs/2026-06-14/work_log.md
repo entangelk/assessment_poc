@@ -488,3 +488,46 @@
 
 - Continue with the only remaining ideation-history translation:
   `docs/planning/ideation_assessment_harness_v2.1.md`.
+
+## Ideation v2.1 English canonical flip
+
+### Goals
+
+- Complete the remaining ideation-history translation target.
+- Preserve the original Korean v2.1 document as a `.ko.md` mirror while making
+  `.md` the English canonical file.
+
+### Completed work
+
+- Created `docs/planning/ideation_assessment_harness_v2.1.ko.md`.
+  - Added a KO-active language-switch header.
+  - Preserved the previous Korean body.
+- Rewrote `docs/planning/ideation_assessment_harness_v2.1.md` as the English
+  canonical version.
+  - Reused the already verified v2 English translation for the shared v2 body.
+  - Added the v2.1-specific Section 19 PoC implementation-principles material in
+    English.
+  - Preserved code blocks, adapter names, CLI examples, schema-like examples,
+    finding literals, and file paths.
+- Updated Korean navigation links in `README.ko.md` and `HANDOFF.ko.md` to point
+  to `ideation_assessment_harness_v2.1.ko.md`.
+- Updated `HANDOFF.md` / `HANDOFF.ko.md` to state that all ideation-history
+  documents now have EN canonical files plus KO mirrors.
+
+### Verification (this run)
+
+- `git diff --check` passed after the ideation v2.1 flip.
+- Link-target verification for `README.md` and `README.ko.md` passed.
+- Header checks confirmed EN-active header on `.md` and KO-active header on
+  `.ko.md`.
+
+### Decisions
+
+- Reuse the v2 English translation for the shared v2.1 body to avoid
+  translation drift between near-identical historical planning documents.
+
+### Next steps
+
+- The ideation-history translation pass is complete. The remaining known
+  large-document translation task is still the full English canonical rewrite of
+  `docs/planning/implementation_plan_assessment_harness_poc_v1.md`.

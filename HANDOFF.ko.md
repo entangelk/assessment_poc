@@ -9,7 +9,7 @@
 ## 현재 상태
 
 - 구현 계획은 v1.32(`docs/planning/implementation_plan_assessment_harness_poc_v1.md`)이며, `docs/planning/ideation_assessment_harness_v2.2.ko.md`(2026-05-27 제자리 개정, v2.1 대체)보다 우선하는 정식 구현 진실의 원천(source of truth)이다.
-- 공개 미러 상태(2026-06-14): 구현 계획은 `docs/planning/implementation_plan_assessment_harness_poc_v1.ko.md` KO-active 미러를 갖고 있으며, 본문은 현재 한국어 원본과 일치한다. 1,825줄 구현 계획의 전체 영어 정본 재작성은 아직 pending이다. README 링크는 이 번역이 완료될 때까지 한국어 원본 anchor를 가리킨다. Ideation v1, v2, v2.2는 이제 EN 정본 `.md`와 KO `.ko.md` 미러를 모두 갖고 있으며, ideation v2.1만 남은 ideation history 번역 대상이다.
+- 공개 미러 상태(2026-06-14): 구현 계획은 `docs/planning/implementation_plan_assessment_harness_poc_v1.ko.md` KO-active 미러를 갖고 있으며, 본문은 현재 한국어 원본과 일치한다. 1,825줄 구현 계획의 전체 영어 정본 재작성은 아직 pending이다. README 링크는 이 번역이 완료될 때까지 한국어 원본 anchor를 가리킨다. Ideation v1, v2, v2.1, v2.2는 이제 EN 정본 `.md`와 KO `.ko.md` 미러를 모두 갖고 있다.
 - **Rule 0 가동 중**: 소스 스냅샷 그라운딩, 증거 완전성/참조 무결성 검사, 필수 `--source-manifest`, 구조화된 잘못된 입력 복구가 구현되었다.
 - **Rule 1 기능 완성**(plan v1.19 §6): `possible_orphan_scored_rubric_item`, `unconfirmed_trace_coverage`, `orphan_bonus_rubric_item`이 모두 구현되었다. CLI는 이들의 검토 액션과 잠정 심각도 카운트를 노출하며, slice 3.1은 보너스 전용 `(high=0, medium=0, informational=1)` 경계를 포함해 공개 envelope/schema 계약을 고정한다.
 - **Rule 2 구현 완료**(plan v1.19 §6): 어떤 `scored` 루브릭도 `must` 스펙을 추적하지 않을 때 `uncovered_must_spec_item`이 medium/provisional로 발행되며, `review_uncovered_must_spec`이 `check`를 통해 노출된다. 이는 구조적 검사일 뿐이다: pending 상태의 scored 추적은 커버로 인정되지만, 보너스 전용 또는 정성(qualitative) 전용 추적은 인정되지 않는다.
@@ -289,7 +289,7 @@ Rule 3과 plan v1.15의 optional 전용 경계 강화가 소유자의 독립 AI 
 - `docs/planning/implementation_plan_assessment_harness_poc_v1.md`: 구현 진실의 원천(v1.32).
 - `docs/guidelines/sdk_runner_decisions.md`: 자격증명 러너 구현 전 라이브 SDK 러너 결정 체크리스트.
 - `docs/planning/ideation_assessment_harness_v2.2.md`: 최신 ideation(최종 2026-05-27, 같은 날 제자리 개정). Rubric Lint Rules 계열 추가 — 6개 수락(L1, L2, L4, L5, L6, L7), 3개 거부. plan v1.19 §6 린트 계열의 출처.
-- `docs/planning/ideation_assessment_harness_v2.1.md`: 최신 ideation, 우선순위 2위.
+- `docs/planning/ideation_assessment_harness_v2.1.ko.md`: 최신 ideation, 우선순위 2위.
 - `docs/planning/ideation_assessment_harness_v2.ko.md`, `docs/planning/ideation_assessment_harness_v1.ko.md`: 역사적 참조.
 - `docs/verifications/YYYY-MM-DD/<slug>.md`: 날짜 기반 하위 디렉터리의 독립 audit 기록(`docs/daily_logs/`를 반영); Rule 3 경계 강화 기록이 초기 철회된 Rule 3 판정을 대체한다.
 - `docs/daily_logs/2026-05-25/work_log.md`: 계획 반복(v1.0 → v1.7)과 Phase 0 반복 1 / 1.5의 전체 기록.
