@@ -174,6 +174,13 @@ docker compose run --rm harness --output json check \
 
 ## Next Tasks
 
+### Immediate Next Task — Implementation Plan English Canonical Rewrite
+
+- Translate `docs/planning/implementation_plan_assessment_harness_poc_v1.md` into a full English canonical `.md` document.
+- Preserve the current Korean source in `docs/planning/implementation_plan_assessment_harness_poc_v1.ko.md`; do not leave a partial English rewrite in the canonical file.
+- After translation, verify the English anchors expected by README references, especially `## 5. Data Contracts` and `## 9. Phased Implementation Plan`, then switch README English links away from Korean-source anchors.
+- Keep rule literals, schema keys, CLI command examples, YAML/JSON snippets, file paths, finding types, statuses, and policy keys unchanged unless the surrounding prose explicitly defines them.
+
 ### Sequencing Decision (Owner, 2026-05-27)
 
 **Rule 0-3 and lint family L1/L5/L6 are complete. Initial finding-level `review`/`gate` path is implemented.**

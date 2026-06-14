@@ -172,6 +172,13 @@ docker compose run --rm harness --output json check \
 
 ## 다음 작업
 
+### 즉시 다음 작업 — 구현 계획서 영어 정본 재작성
+
+- `docs/planning/implementation_plan_assessment_harness_poc_v1.md`를 전체 영어 정본 `.md` 문서로 번역한다.
+- 현재 한국어 원본은 `docs/planning/implementation_plan_assessment_harness_poc_v1.ko.md`에 보존한다. 정본 파일에 부분 영어 번역을 남기지 않는다.
+- 번역 후 README 참조가 기대하는 영어 anchor, 특히 `## 5. Data Contracts`와 `## 9. Phased Implementation Plan`을 검증한 뒤 README 영어 링크를 한국어 원본 anchor에서 영어 `.md` anchor로 되돌린다.
+- rule literal, schema key, CLI command 예시, YAML/JSON snippet, file path, finding type, status, policy key는 주변 본문이 명시적으로 정의하는 경우가 아니면 그대로 유지한다.
+
 ### 순서 결정 (소유자, 2026-05-27)
 
 **Rule 0-3과 린트 계열 L1/L5/L6 완료. 초기 finding 수준 `review`/`gate` 경로 구현됨.**

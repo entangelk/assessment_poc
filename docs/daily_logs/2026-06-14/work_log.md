@@ -531,3 +531,30 @@
 - The ideation-history translation pass is complete. The remaining known
   large-document translation task is still the full English canonical rewrite of
   `docs/planning/implementation_plan_assessment_harness_poc_v1.md`.
+
+## End-of-day handoff for implementation-plan translation
+
+### Goals
+
+- Close today's translation pass with a clear next task for the next worker.
+- Make the remaining implementation-plan English rewrite explicit in HANDOFF
+  rather than leaving it only as scattered status notes.
+
+### Completed work
+
+- Updated `HANDOFF.md` and `HANDOFF.ko.md` with an immediate next task:
+  translate `docs/planning/implementation_plan_assessment_harness_poc_v1.md`
+  into the full English canonical `.md` while preserving the current Korean
+  source in `.ko.md`.
+- Recorded the key verification targets for that future pass:
+  `## 5. Data Contracts`, `## 9. Phased Implementation Plan`, README English
+  anchor routing, and preservation of technical literals.
+
+### Verification (this run)
+
+- `git diff --check` passed after the handoff update.
+
+### Next steps
+
+- Start the implementation-plan English canonical rewrite in a dedicated
+  long-context pass.
