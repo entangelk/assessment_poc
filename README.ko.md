@@ -375,7 +375,7 @@ CLI는 `--policy config/policy.yaml` 하나로 모든 정책을 받는다.
 | [docs/planning/implementation_plan_assessment_harness_poc_v1.ko.md](docs/planning/implementation_plan_assessment_harness_poc_v1.ko.md) | **구현 명세 (1순위 SoT)** — 현재 v1.32 |
 | [docs/planning/ideation_assessment_harness_v2.2.md](docs/planning/ideation_assessment_harness_v2.2.md) | Rubric Lint Rules 가족 (2순위, 2026-05-27 final + in-place 개정) |
 | [docs/planning/ideation_assessment_harness_v2.1.md](docs/planning/ideation_assessment_harness_v2.1.md) | 제품 목적과 장기 방향 (3순위) |
-| [docs/planning/ideation_assessment_harness_v2.md](docs/planning/ideation_assessment_harness_v2.md) · [v1](docs/planning/ideation_assessment_harness_v1.md) | historical reference |
+| [docs/planning/ideation_assessment_harness_v2.md](docs/planning/ideation_assessment_harness_v2.md) · [v1](docs/planning/ideation_assessment_harness_v1.ko.md) | historical reference |
 | [docs/planning/publication_plan_v1.md](docs/planning/publication_plan_v1.ko.md) | 이 공개 작업 자체의 계획 (메타 프로세스) |
 | [schemas/](schemas/) | JSON Schema 데이터 계약 |
 | [docs/guidelines/sdk_runner_decisions.md](docs/guidelines/sdk_runner_decisions.md) | 실제 SDK runner 구현 전 결정해야 할 credential / sample / trace retention 체크리스트 |

@@ -290,7 +290,7 @@ Rule 3과 plan v1.15의 optional 전용 경계 강화가 소유자의 독립 AI 
 - `docs/guidelines/sdk_runner_decisions.md`: 자격증명 러너 구현 전 라이브 SDK 러너 결정 체크리스트.
 - `docs/planning/ideation_assessment_harness_v2.2.md`: 최신 ideation(최종 2026-05-27, 같은 날 제자리 개정). Rubric Lint Rules 계열 추가 — 6개 수락(L1, L2, L4, L5, L6, L7), 3개 거부. plan v1.19 §6 린트 계열의 출처.
 - `docs/planning/ideation_assessment_harness_v2.1.md`: 최신 ideation, 우선순위 2위.
-- `docs/planning/ideation_assessment_harness_v2.md`, `docs/planning/ideation_assessment_harness_v1.md`: 역사적 참조.
+- `docs/planning/ideation_assessment_harness_v2.md`, `docs/planning/ideation_assessment_harness_v1.ko.md`: 역사적 참조.
 - `docs/verifications/YYYY-MM-DD/<slug>.md`: 날짜 기반 하위 디렉터리의 독립 audit 기록(`docs/daily_logs/`를 반영); Rule 3 경계 강화 기록이 초기 철회된 Rule 3 판정을 대체한다.
 - `docs/daily_logs/2026-05-25/work_log.md`: 계획 반복(v1.0 → v1.7)과 Phase 0 반복 1 / 1.5의 전체 기록.
 - `docs/daily_logs/2026-05-26/work_log.md`: Phase 0 반복 2 Rule 1 슬라이스, 계약 회귀 후속, 공개 검토 기록.

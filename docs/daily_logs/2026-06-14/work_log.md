@@ -379,3 +379,36 @@
 - After that pass, verify exact headings `## 5. Data Contracts` and
   `## 9. Phased Implementation Plan`, then switch README English links back to
   the English `.md` anchors.
+
+## Ideation v1 English canonical flip
+
+### Goals
+
+- Continue the publication translation pass with a smaller historical planning
+  document that can be completed safely in one slice.
+- Preserve the original Korean ideation v1 text as a full-parity `.ko.md` mirror.
+
+### Completed work
+
+- Created `docs/planning/ideation_assessment_harness_v1.ko.md`.
+  - Added a KO-active language-switch header.
+  - Preserved the previous Korean body verbatim.
+- Rewrote `docs/planning/ideation_assessment_harness_v1.md` as the English
+  canonical version.
+  - Added the EN-active language-switch header.
+  - Translated natural-language prose and headings.
+  - Preserved code blocks, file paths, named products, and technical literals.
+- Updated Korean navigation links in `README.ko.md` and `HANDOFF.ko.md` to point
+  to `ideation_assessment_harness_v1.ko.md`.
+
+### Verification (this run)
+
+- `git diff --check` passed after the ideation v1 flip.
+- Link-target verification for `README.md` and `README.ko.md` passed.
+- Header checks confirmed EN-active header on `.md` and KO-active header on
+  `.ko.md`.
+
+### Next steps
+
+- Continue the same pattern for the remaining ideation history documents if full
+  bilingual parity is desired (`v2.md`, `v2.1.md`, `v2.2.md`).
