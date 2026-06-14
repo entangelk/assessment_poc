@@ -140,7 +140,62 @@
 - `python3 -m py_compile` passes for all app/script files. `__pycache__` is
   gitignored.
 
+## Third example: Pulse (Go greenfield build)
+
+### Goals
+
+- Cover a **different direction** of assignment than the prior two (both Python,
+  both build-or-fix-a-service): a different language (Go) and a different
+  archetype (greenfield build with design emphasis, not a debugging hand-off), to
+  confirm the harness reviews assessment design regardless of tech/archetype.
+
+### Completed work
+
+- Added `examples/pulse_assignment/` — a synthetic greenfield Go CLI assignment
+  (`pulse`: read service events → per-service count, error rate, p95 latency;
+  malformed-line resilience; optional windowing; JSON bonus).
+  - Harness input: `spec.md` (7 requirement groups) + `rubric.md` (7 scored +
+    2 bonus + 1 qualitative) + `notes.md` + `README.md`.
+  - `codebase/`: a working Go reference solution (`main.go`,
+    `internal/event/`, `internal/rollup/`, table+JSON output, nearest-rank p95),
+    `*_test.go` for parse/aggregate/malformed, `testdata/events.csv` +
+    `testdata/expected.json`, `docs/design.md`, `go.mod`. Unlike DeskHive (seeded
+    bugs), this is a *correct* reference build that demonstrates the assignment is
+    buildable and the rubric gradeable.
+- Seeded a deliberately **different finding mix** from DeskHive to widen rule
+  coverage:
+  - R4 → `possible_orphan_scored_rubric_item` (high): rubric quote
+    ("reject … exit nonzero") contradicts the spec's skip-and-continue.
+  - R5 → `optionality_mismatch` (high): optional "may" windowing scored at 15.
+  - RB1 → `orphan_bonus_rubric_item` (**informational**): bonus rewards
+    Prometheus output the spec never asks for. (New branch vs DeskHive.)
+  - Q1 → `uncovered_must_spec_item` (medium) on S8 "must not crash": traced only
+    by a *qualitative* note, no scored coverage. (Qualitative-only variant, new.)
+  - RB2 → no finding: a correctly-traced "may emit JSON" bonus (over-fire guard).
+
+### Issues found
+
+- RB2's quote first failed to trace: it ended with a period while the spec
+  sentence continued with a comma ("… text table, selected by a flag."). The
+  whitespace-only normalizer treats `.` vs `,` as a real mismatch, so the bonus
+  fell through to `orphan_bonus`. Split the spec sentence so the quote matches
+  verbatim; RB2 now traces cleanly (intended over-fire guard restored).
+- **Go toolchain is not installed in this environment**, so `go test` / `go run`
+  could not be executed here. The Go reference solution was authored and reviewed
+  but not run; `testdata/expected.json` and the tests are committed for a reviewer
+  with Go. This limitation is stated in the example `README.md` and `notes.md`.
+
+### Verification (this run)
+
+- `check` envelope: `status=provisional_findings`, high=2 / medium=7 /
+  informational=1, `blocking_count=0` (10 findings).
+- Full chain exercised: `extract` (valid_run_count=1) → `compact` → `verify` →
+  `check` → `report` → `review` → `gate` (`pending_review`, exit 0, 10 pending) →
+  `materialize-review` (success). Artifacts under `work/pulse_run/` (gitignored).
+
 ### Next steps
 
-- When a live SDK runner lands, re-run this sample to compare deterministic vs
-  real extraction on the same complex input.
+- When a live SDK runner lands, re-run all three samples to compare deterministic
+  vs real extraction on the same inputs.
+- If a Go toolchain becomes available, run `go test ./...` on the Pulse reference
+  solution to close the one unverified surface.

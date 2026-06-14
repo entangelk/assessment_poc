@@ -1,0 +1,14 @@
+[
+  {
+    "service": "checkout",
+    "count": 2,
+    "error_rate": 0.5,
+    "p95_latency_ms": 510
+  },
+  {
+    "service": "search",
+    "count": 2,
+    "error_rate": 0,
+    "p95_latency_ms": 27
+  }
+]
