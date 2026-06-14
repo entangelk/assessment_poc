@@ -448,3 +448,43 @@
 - Continue with the remaining planning ideation documents:
   `ideation_assessment_harness_v2.md` and
   `ideation_assessment_harness_v2.1.md`.
+
+## Ideation v2 English canonical flip
+
+### Goals
+
+- Continue the planning-doc translation pass with the historical v2 ideation
+  document.
+- Preserve the Korean v2 text as a full `.ko.md` mirror while keeping `.md` as
+  the English canonical file.
+
+### Completed work
+
+- Created `docs/planning/ideation_assessment_harness_v2.ko.md`.
+  - Added a KO-active language-switch header.
+  - Preserved the previous Korean body.
+- Rewrote `docs/planning/ideation_assessment_harness_v2.md` as the English
+  canonical version.
+  - Added the EN-active language-switch header.
+  - Translated natural-language prose and headings.
+  - Preserved YAML examples, CLI examples, report snippets, file paths, named
+    rule titles, and technical literals.
+- Updated Korean navigation links in `README.ko.md` and `HANDOFF.ko.md` to point
+  to `ideation_assessment_harness_v2.ko.md`.
+
+### Verification (this run)
+
+- `git diff --check` passed after the ideation v2 flip.
+- Link-target verification for `README.md` and `README.ko.md` passed.
+- Header checks confirmed EN-active header on `.md` and KO-active header on
+  `.ko.md`.
+
+### Decisions
+
+- Keep code blocks and structured examples unchanged during the prose
+  translation because they act as illustrative interface examples.
+
+### Next steps
+
+- Continue with the only remaining ideation-history translation:
+  `docs/planning/ideation_assessment_harness_v2.1.md`.

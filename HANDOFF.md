@@ -11,7 +11,7 @@
 ## Current Status
 
 - Implementation plan is at v1.32 (`docs/planning/implementation_plan_assessment_harness_poc_v1.md`) and is the canonical implementation source of truth, ahead of `docs/planning/ideation_assessment_harness_v2.2.md` (revised in-place 2026-05-27, supersedes v2.1).
-- Publication mirror status (2026-06-14): the implementation plan now has a KO-active mirror at `docs/planning/implementation_plan_assessment_harness_poc_v1.ko.md` whose body matches the current Korean source. The full English canonical rewrite of the 1,825-line implementation plan is still pending; README links point to the Korean-source anchors until that translation is completed.
+- Publication mirror status (2026-06-14): the implementation plan now has a KO-active mirror at `docs/planning/implementation_plan_assessment_harness_poc_v1.ko.md` whose body matches the current Korean source. The full English canonical rewrite of the 1,825-line implementation plan is still pending; README links point to the Korean-source anchors until that translation is completed. Ideation v1, v2, and v2.2 now have EN canonical `.md` files plus KO `.ko.md` mirrors; ideation v2.1 is the remaining ideation-history translation target.
 - **Rule 0 is live**: source snapshot grounding, evidence completeness/reference-integrity checks, mandatory `--source-manifest`, and structured invalid-input recovery are implemented.
 - **Rule 1 is feature-complete** (plan v1.19 §6): `possible_orphan_scored_rubric_item`, `unconfirmed_trace_coverage`, and `orphan_bonus_rubric_item` are all implemented. The CLI exposes their review actions and provisional severity counts; slice 3.1 locks the public envelope/schema contract, including the bonus-only `(high=0, medium=0, informational=1)` boundary.
 - **Rule 2 is implemented** (plan v1.19 §6): `uncovered_must_spec_item` is emitted as medium/provisional when no `scored` rubric traces a `must` spec, with `review_uncovered_must_spec` exposed through `check`. It is structural only: pending scored traces cover, while bonus-only or qualitative-only traces do not.
@@ -292,7 +292,7 @@ When a **verifier** claims branch coverage from probes, measure at the level tha
 - `docs/guidelines/sdk_runner_decisions.md`: live SDK runner decision checklist before credentialed runner implementation.
 - `docs/planning/ideation_assessment_harness_v2.2.md`: latest ideation (final 2026-05-27, in-place revised same day). Adds Rubric Lint Rules family — 6 accepted (L1, L2, L4, L5, L6, L7), 3 rejected. Source for plan v1.19's §6 lint family.
 - `docs/planning/ideation_assessment_harness_v2.1.md`: latest ideation, second in precedence.
-- `docs/planning/ideation_assessment_harness_v2.md`, `docs/planning/ideation_assessment_harness_v1.md`: historical references.
+- `docs/planning/ideation_assessment_harness_v2.md`, `docs/planning/ideation_assessment_harness_v2.ko.md`, `docs/planning/ideation_assessment_harness_v1.md`, `docs/planning/ideation_assessment_harness_v1.ko.md`: historical references.
 - `docs/verifications/YYYY-MM-DD/<slug>.md`: independent audit records in date-based subdirectories (mirroring `docs/daily_logs/`); the Rule 3 boundary-tightening record supersedes the initial withdrawn Rule 3 verdict.
 - `docs/daily_logs/2026-05-25/work_log.md`: full record of planning iterations (v1.0 → v1.7) and Phase 0 iteration 1 / 1.5.
 - `docs/daily_logs/2026-05-26/work_log.md`: Phase 0 iteration 2 Rule 1 slices, contract regression follow-up, and publication review record.
