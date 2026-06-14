@@ -199,3 +199,120 @@
   vs real extraction on the same inputs.
 - If a Go toolchain becomes available, run `go test ./...` on the Pulse reference
   solution to close the one unverified surface.
+
+## PoC report: repeated verification of in-repo examples
+
+### Goals
+
+- Respond to the owner request to check whether the in-repo `examples/` samples
+  are set up correctly and whether the project's own verification workflow
+  produces correct, stable results.
+- Run the official harness workflow three times and leave a durable Markdown
+  result report at `report.md`.
+
+### Completed work
+
+- Added `report.md` at the repository root.
+  - Summarizes the verification scope, exact workflow, three repeated runs,
+    finding distributions, interpretation, and risks.
+  - Records artifacts under `work/poc_report_runs/run{1,2,3}/...` (gitignored).
+- Re-ran the full workflow three times for both in-repo examples:
+  `extract --runner deterministic_extraction --runs 3` → `compact` → `verify`
+  (`mock_fixture`, `--runs 3`) → `check` → `report` → `review` → `gate` →
+  `materialize-review`.
+  - DeskHive reproduced the same result all three times: `check`
+    `provisional_findings`, high=3 / medium=11 / informational=0, 14 findings,
+    Rule 0 diagnostics=0, `gate` `pending_review` with 14 pending decisions.
+  - Pulse reproduced the same result all three times: `check`
+    `provisional_findings`, high=2 / medium=7 / informational=1, 10 findings,
+    Rule 0 diagnostics=0, `gate` `pending_review` with 10 pending decisions.
+- Checked sample setup with two parallel read-only explorer agents:
+  - DeskHive: confirmed B1-B5 map to real seeded defects and the seeded
+    spec/rubric signals are coherent.
+  - Pulse: confirmed the harness signals and Go reference solution mostly map to
+    the spec, while flagging the existing Go-toolchain limitation and some public
+    CLI test-surface gaps.
+
+### Issues found
+
+- This verification is still an offline wiring/grounding proof, not live LLM
+  extraction. `deterministic_extraction` and `mock_fixture` are stand-ins; real
+  SDK runners remain deferred.
+- The semantic verifier produced no semantic proposals in this path, so
+  `unconfirmed_trace_coverage` findings are expected and should not be read as
+  final orphan decisions.
+- DeskHive has a small documentation-alignment risk: the candidate spec asks for
+  a finite B1 result, while codebase business rules mention `null` as an allowed
+  no-usage representation. Treat `spec.md` as canonical unless the example docs
+  are tightened later.
+- Pulse cannot be executed end-to-end in this environment because `go` is not
+  installed. `go version` failed with `command not found`, matching the caveat
+  already stated in the sample docs.
+- Pulse's reference tests do not fully lock public CLI surfaces such as
+  file-vs-stdin equivalence, stderr skipped-count output, JSON expected-output
+  matching, and text output shape.
+
+### Verification (this run)
+
+- `PYTHONPATH=src python3 -m assessment_harness.cli schema --command check --output json`
+  returned the expected stable core and `check` informational fields.
+- `PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src python3 -m pytest -q -p no:cacheprovider`
+  passed.
+- `python3 scripts/show_symptoms.py` from
+  `examples/deskhive_assignment/codebase` reproduced all five intended symptoms:
+  B1 `inf`, B2 unextended expiry, B3 combined pass balance, B4 UTC/KST count
+  mismatch, B5 repeated `H1`.
+- `go version` from `examples/pulse_assignment/codebase` failed because the Go
+  toolchain is unavailable.
+
+### Decisions
+
+- The report frames the examples as validating the deterministic harness
+  workflow across two assignment archetypes, not as validating live LLM
+  extraction quality.
+- The repeated run uses `--runs 3` inside each workflow repetition and repeats
+  the whole workflow three times, so the result checks both multi-run artifact
+  handling and repeatability of the generated findings.
+
+### Next steps
+
+- Before public release, decide whether to tighten the DeskHive B1 finite/null
+  wording.
+- When Go is available, run `go test ./...`, `go run . testdata/events.csv`, and
+  `go run . --json testdata/events.csv` for the Pulse reference solution.
+- When a real SDK runner lands, re-run `report.md`'s scenario to compare
+  deterministic extraction against live LLM extraction.
+
+## README cleanup for PoC report
+
+### Goals
+
+- Make the root README reflect the latest example verification result.
+- Link the new `report.md` from the first-read path so readers can see the
+  current PoC evidence without digging through logs.
+
+### Completed work
+
+- Updated `README.md` with a new "지금 무엇을 증명했나" section.
+  - Summarizes DeskHive/Pulse example purpose and the stable 3-run result.
+  - Links directly to `report.md`.
+  - States the key limitation: deterministic extraction + mock semantic
+    verification is not live LLM SDK runner validation.
+- Added a quick-start subsection for the example PoC report and one concrete
+  `deterministic_extraction` command.
+- Updated the implementation-status table to distinguish completed in-repo
+  deterministic example validation from the still-unimplemented live LLM SDK
+  workflow.
+- Added `report.md` to the documentation map and changed the Phase 0 report
+  sample output path to `work/report.md` so it does not imply overwriting the root
+  PoC report.
+
+### Verification (this run)
+
+- Re-read the changed README sections for link/flow consistency.
+- `git diff --check` passed after the README edit.
+
+### Next steps
+
+- If the publication copy is later flipped to English-primary README, mirror this
+  new PoC-report framing into the English canonical version and Korean mirror.

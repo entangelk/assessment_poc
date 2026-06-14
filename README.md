@@ -6,6 +6,26 @@
 
 ---
 
+## 지금 무엇을 증명했나
+
+이 PoC는 공개 `spec.md`와 비공개 `rubric.md` 사이의 설계 리스크를
+deterministic harness workflow로 찾아낸다.
+
+- `examples/deskhive_assignment`: 복잡한 유지보수/버그픽스 과제에서 optional
+  항목의 core scoring, must 항목의 bonus-only coverage, double scoring 등을
+  재현한다.
+- `examples/pulse_assignment`: Go greenfield CLI 과제에서 spec과 반대되는
+  rubric 요구, optional windowing 과대 배점, spec에 없는 bonus 항목 등을
+  재현한다.
+- 두 예제 모두 3회 반복 실행에서 같은 finding 분포를 재현했고, Rule 0
+  reference integrity diagnostics는 0건이었다.
+
+자세한 반복 실행 결과와 한계는 [PoC 결과 보고서](report.md)에 정리했다.
+중요한 제한도 있다: 이 결과는 `deterministic_extraction` + mock semantic
+verification 경로의 검증이며, live LLM SDK runner 품질 검증은 아직 아니다.
+
+---
+
 ## 1차 사용자: AI 에이전트
 
 본 도구의 1차 호출 주체는 Claude Code, Codex, Gemini 같은 AI 에이전트다. CLI 계약, 종료 코드, 출력 형식은 모두 agent-consumable하게 설계되었다. 사람은 최종 검토자로만 참여한다.
@@ -32,7 +52,26 @@ assessment-harness schema --command check --output json
 
 매번 schema introspection으로 stable core / informational / exit codes / next_actions types를 확인하라. 문서를 따라잡지 않아도 안전한 통합이 가능하다.
 
-### 2. 결정론적 검증만 (Phase 0)
+### 2. 예제 PoC 결과 보기
+
+최신 예제 반복 검증 요약은 루트의 [report.md](report.md)를 먼저 보면 된다.
+이 보고서는 `examples/deskhive_assignment`와 `examples/pulse_assignment`를
+각각 3회 end-to-end로 실행한 결과를 정리한다.
+
+예제 산출물은 gitignored `work/poc_report_runs/run{1,2,3}/...` 아래에 생성된다.
+직접 재실행하려면 아래 전체 흐름의 `extract` 입력을 예제 파일로 바꾸면 된다.
+
+```bash
+PYTHONPATH=src python3 -m assessment_harness.cli extract \
+  --spec examples/deskhive_assignment/spec.md \
+  --rubric examples/deskhive_assignment/rubric.md \
+  --runner deterministic_extraction \
+  --runs 3 \
+  --policy config/policy.yaml \
+  --out-dir work/deskhive_run/runs
+```
+
+### 3. 결정론적 검증만 (Phase 0)
 
 수동으로 작성한 compacted YAML을 입력으로 Rule 0~3 검사.
 
@@ -50,7 +89,7 @@ assessment-harness check \
 assessment-harness report \
   --findings findings.json \
   --diagnostics integrity_diagnostics.json \
-  --out report.md
+  --out work/report.md
 ```
 
 `--source-manifest`는 Phase 0 `check`의 필수 인자다 (plan §5.0 / §5.1 / §11). 누락하면 `status=invalid_input`, exit `2`, 진단 `source_manifest_required`, next_action `provide_source_manifest`가 반환된다.
@@ -80,7 +119,7 @@ assessment-harness gate \
   --output json
 ```
 
-### 3. 에이전트 실행 포함 전체 흐름 (Phase 2/3, 일부 구현)
+### 4. 에이전트 실행 포함 전체 흐름 (Phase 2/3, 일부 구현)
 
 > ⚠️ 아래 전체 흐름 중 `extract` / `compact` / `verify` CLI는 초기
 > `mock_fixture` 경로만 구현되었다. 실제 SDK runner는 아직 미구현이다. 현재
@@ -297,11 +336,13 @@ CLI는 `--policy config/policy.yaml` 하나로 모든 정책을 받는다.
 | `compact` CLI 오케스트레이션 | 초기 구현 완료 |
 | `verify` 오케스트레이션 (`mock_fixture`) | 초기 구현 완료 |
 | `materialize-review` CLI 오케스트레이션 | 초기 구현 완료 |
+| in-repo examples 반복 검증 (`deterministic_extraction` + mock verifier) | 완료, [report.md](report.md) |
 | 실제 SDK runner | 미구현 |
-| 전체 Phase 2/3 E2E 워크플로 | 미구현 |
+| live LLM 기반 Phase 2/3 E2E 워크플로 | 미구현 |
 
 > 진행은 선형 단계가 아니었다. Phase 2 기반(runner·candidate 계열)이 먼저 들어왔고,
-> 실제 과제 manual run과 전체 E2E는 아직이다. 그래서 단계 번호 대신 영역별 상태로 표기한다.
+> deterministic 예제 workflow는 동작하지만, 실제 SDK runner 기반 live extraction은
+> 아직이다. 그래서 단계 번호 대신 영역별 상태로 표기한다.
 
 상세 진입 조건/완료 기준: [구현 계획서 §9, §12](docs/planning/implementation_plan_assessment_harness_poc_v1.md#9-단계별-구현-계획)
 
@@ -316,6 +357,7 @@ CLI는 `--policy config/policy.yaml` 하나로 모든 정책을 받는다.
 | 문서 | 역할 |
 |---|---|
 | [docs/case_study.md](docs/case_study.md) | **여기서 시작** — 문제 / 목표 / 핵심 결정 / 무엇을 만들었나 / 검증 / 한계의 서사 |
+| [report.md](report.md) | 최신 PoC 예제 반복 검증 결과 — DeskHive/Pulse 3회 실행, finding 분포, 한계 |
 | [docs/decisions.md](docs/decisions.md) | 왜 이렇게 설계했는가 — 동시대 출처를 인용한 결정 vignette 모음 |
 | [docs/evaluation.md](docs/evaluation.md) | 측정된 테스트·smoke 근거 (날짜 박힌 moving snapshot) |
 | [docs/audit_index.md](docs/audit_index.md) | 작업 일지 + 독립 검증 기록 큐레이션 인덱스 |
