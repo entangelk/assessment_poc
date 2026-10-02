@@ -33,13 +33,20 @@ The detailed repeated-run results and limitations are collected in the
 the `deterministic_extraction` + mock semantic verification path; they are not
 yet a quality validation of a live LLM SDK runner.
 
+**Status:** a supporting PoC. Work stopped at the two synthetic examples above; it has
+not been piloted on real assignment spec/rubric pairs.
+
 ---
 
-## Primary user: AI agents
+## Who uses it, and how it is called
 
-The primary caller of this tool is an AI agent such as Claude Code, Codex, or Gemini. The CLI contract, exit codes, and output formats are all designed to be agent-consumable. Humans participate only as final reviewers.
+The intended user is the person who designs or reviews a hiring assignment. That this
+spec/rubric drift is a real problem for assessment designers is a hypothesis; it has
+not been confirmed with hiring teams.
 
-Direct human CLI invocation also works (a secondary usage path).
+AI agents such as Claude Code, Codex, or Gemini are the main **calling interface**:
+the CLI contract, exit codes, and output formats are designed to be agent-consumable.
+Humans make the final review decision. Direct human CLI invocation also works.
 
 ---
 

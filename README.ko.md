@@ -30,13 +30,19 @@ deterministic harness workflow로 찾아낸다.
 중요한 제한도 있다: 이 결과는 `deterministic_extraction` + mock semantic
 verification 경로의 검증이며, live LLM SDK runner 품질 검증은 아직 아니다.
 
+**현재 상태:** 보조 PoC다. 위 합성 예제 2개까지 진행했고, 실제 과제의 spec/rubric으로
+파일럿을 하지는 않았다.
+
 ---
 
-## 1차 사용자: AI 에이전트
+## 누가 쓰고, 어떻게 호출하나
 
-본 도구의 1차 호출 주체는 Claude Code, Codex, Gemini 같은 AI 에이전트다. CLI 계약, 종료 코드, 출력 형식은 모두 agent-consumable하게 설계되었다. 사람은 최종 검토자로만 참여한다.
+사용자는 채용 과제를 설계·검토하는 사람이다. spec과 rubric 사이의 불일치가 과제
+설계자에게 실제 문제라는 것은 가설이며, 채용팀을 대상으로 확인하지는 않았다.
 
-사람이 직접 CLI를 호출해도 동작한다 (보조 사용 경로).
+Claude Code, Codex, Gemini 같은 AI 에이전트는 주된 **호출 방식**이다. CLI 계약, 종료
+코드, 출력 형식은 agent-consumable하게 설계했다. 최종 검토 판단은 사람이 한다. 사람이
+직접 CLI를 호출해도 동작한다.
 
 ---
 
